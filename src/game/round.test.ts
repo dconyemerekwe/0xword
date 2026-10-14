@@ -67,6 +67,29 @@ describe("Round", () => {
     assert.equal(round.result().answerTries, 1);
   });
 
+  it("doesn't count a skipped try as an answer try", () => {
+    const round = newRound();
+    guessAndSkip(round, "TEAM");
+    round.submitGuess(wordToHex("BAKE"));
+    round.submitAnswer("BYTE");
+    assert.deepEqual(round.result(), {
+      solved: true,
+      answer: "BYTE",
+      rowsUsed: 2,
+      answerTries: 1,
+      hintsUsed: false,
+    });
+  });
+
+  it("doesn't win on an all-right hex row alone", () => {
+    const round = newRound();
+    const outcome = round.submitGuess(wordToHex("BYTE"));
+    assert.ok(outcome.ok);
+    assert.ok(outcome.row.marks.every((mark) => mark === "right"));
+    assert.equal(round.phase, "answer");
+    assert.equal(round.isOver, false);
+  });
+
   it("allows only one answer try per row", () => {
     const round = newRound();
     round.submitGuess(wordToHex("TEAM"));
