@@ -17,13 +17,14 @@
   "categories": [
     "Other"
   ],
+  "activationEvents": [],
   "main": "./dist/extension.cjs",
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --loader:.txt=text --sourcemap --outfile=dist/extension.cjs",
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
     "test": "node --test",
-    "package": "vsce package",
+    "package": "vsce package --no-dependencies",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
