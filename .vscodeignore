@@ -1,4 +1,4 @@
-# Ship only the built extension, LICENSE and package.json.
+# Ship only the built extension, the built webview (media/), LICENSE and package.json.
 .claude/**
 .github/**
 .vscode/**
@@ -11,5 +11,5 @@ src/**
 .gitignore
 .npmrc
 CLAUDE.md
-tsconfig.json
+**/tsconfig.json
 *.vsix
