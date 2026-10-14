@@ -1,0 +1,14 @@
+# Ship only the built extension, LICENSE and package.json.
+.github/**
+.vscode/**
+docs/**
+scripts/**
+src/**
+**/*.map
+**/*.ts
+.gitattributes
+.gitignore
+.npmrc
+CLAUDE.md
+tsconfig.json
+*.vsix
