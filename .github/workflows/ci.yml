@@ -5,6 +5,8 @@ on:
     branches: [develop, main]
   push:
     branches: [develop, main]
+  # Run by hand from the Actions tab, e.g. to build a .vsix from any branch.
+  workflow_dispatch:
 
 # Read-only token: the workflow can't push, release or change settings.
 permissions:
@@ -42,5 +44,13 @@ jobs:
 
       - run: npm run build
 
-      # Dry run: catches manifest mistakes before release.
+      # Catches manifest mistakes before release.
       - run: npm run package -- --out "$RUNNER_TEMP/0xword.vsix"
+
+      # For playtesting: download from the run page, then "Install from VSIX...".
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: 0xword-vsix
+          path: ${{ runner.temp }}/0xword.vsix
+          retention-days: 14
+          if-no-files-found: error
