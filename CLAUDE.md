@@ -1,0 +1,63 @@
+# 0xWORD
+
+A "puzzles between prompts" VS Code extension: a short hex-decoding word game to play in a side panel while an AI agent works, instead of doomscrolling. It grew out of the owner's private `wordle` repo (a browser Wordle remake), but shares no code history with it.
+
+The build plan and current phase are in [docs/PLAN.md](docs/PLAN.md). Read it before starting work and keep its status up to date.
+
+## Security rules (mandatory)
+
+These protect the developers who install the extension. Check every change against them. If a change would need an exception (a new dependency, a network call, file access), stop and ask first.
+
+1. **Servers bind to localhost only.** Any dev or static server uses `server.listen(PORT, "127.0.0.1")`, never all interfaces. (The extension itself needs no server.)
+2. **Plain text, never HTML.** User input (typed answers, guesses) is rendered with `textContent` or text nodes. Never `innerHTML`, `insertAdjacentHTML` or string-built HTML for anything user-controlled.
+3. **Minimal, trusted dependencies.** Zero runtime dependencies. Dev dependencies only from well-known publishers (`typescript`, `esbuild`, `@types/vscode`, `@types/node`, `@vscode/vsce`). Pin exact versions and commit `package-lock.json`. Tests use Node's built-in `node:test`.
+4. **Fonts are bundled.** DM Sans and JetBrains Mono ship inside the extension with their OFL licence files. No Google Fonts or any CDN.
+5. **Strict webview Content Security Policy.** No outside network access (`default-src 'none'`). Scripts only from the extension's own bundle, loaded with a per-load nonce. No inline scripts and no inline event handlers (`onclick=` etc.); use `addEventListener`.
+6. **Webview loads only from `media/`.** `localResourceRoots` is limited to the extension's `media/` folder.
+7. **Webview messages are untrusted.** The extension host accepts only an allowlist of message types, validates every field, and never acts on paths, commands or code sent from the webview.
+8. **Never touch the user's files.** No workspace or file-system access. The extension reads only its own bundled assets and stores stats in VS Code `globalState`. Declare support for untrusted workspaces.
+9. **No telemetry.** Collect nothing and send nothing, and say so in the README.
+
+## Game rules
+
+- The hidden answer is a 4-letter English word shown as ASCII hex: 2 uppercase digits per letter, 8 digits in total (A–Z = `41`–`5A`).
+- Six hex rows. Each digit is scored Wordle-style, with repeated digits handled correctly: right spot, wrong spot, or not in the word.
+- **Every hex guess must decode to a real 4-letter word.**
+- After each row the player gets one try to type the plain-English word. Fewer rows used means a better score.
+- After 6 rows the hex grid locks and the player gets one forced final answer.
+- **No modes or difficulty levels.** An optional **Hints** button, off by default, shows the letter of each fully solved byte under the grid (e.g. `B ? T E`). The result records "no hints" or "hints used".
+- **How to play** (the `?` icon) shows the rules plus an A–Z ASCII cheatsheet, available to everyone.
+
+## Design
+
+- Side-panel layout about 400px wide. Screens: mid-game, mid-game with hints on, forced final answer, solved, and How to play.
+- Title: `0x` in blue JetBrains Mono followed by `WORD` in DM Sans at weight 1000.
+- Fonts: DM Sans for the interface, JetBrains Mono for hex.
+- Colours, our own and not Wordle's (dark theme values):
+  - right spot: blue `#2F6FE4` with white text
+  - wrong spot: orange `#F0A04B` with dark text `#1A1206`
+  - not in word: grey `#343944`
+  - background `#14161B`, panels `#1D2027`, text `#E8EAF0`
+  - wrongly guessed keypad keys are also struck through, so colour isn't the only cue
+- Light and dark themes: follow VS Code's theme by default, with a sun/moon toggle to override.
+- Tiles are grouped in byte pairs. Below the grid: an answer box, a 16-key hex keypad, then DEL and ENTER.
+- The solved screen shows each byte decoding to its letter (`42 → B`), with New round and Copy result buttons.
+- Accessibility: touch targets at least 44px, text contrast at least 4.5:1, real `<button>` and `<label>` elements, and reduced motion respected.
+- Trademark: never use the name "Wordle" or a "-dle" suffix anywhere in the product.
+
+## Tech stack
+
+- **Extension host:** TypeScript (`src/extension.ts`). It registers an activity-bar view container, a webview view and commands, and stores stats in `globalState`.
+- **Webview:** plain HTML, CSS and TypeScript in `media/`, with no framework, bundled by esbuild. It talks to the extension host with `postMessage`.
+- **Game engine:** pure TypeScript with no VS Code dependency, including the hard-coded word list, so it can be unit-tested with `node --test` (Node 24 runs `.ts` files directly).
+- **Distribution:** VS Code Marketplace (`vsce`) and Open VSX (`ovsx`) for Cursor, Windsurf and VSCodium.
+- **Later:** Claude Code hooks that open a `vscode://` link to start a round when a prompt is sent.
+
+## Workflow
+
+- Branches: `main` holds releases, `develop` is for integration, and work happens on `feature/<name>` branches with PRs into `develop`. Never commit directly to `main`.
+- Commit messages use Conventional Commits, e.g. `feat:`, `fix:`, `docs(readme):`, `style(docs):`, `chore:`.
+- Pull before starting work on a shared branch. To reword pushed commits, rebase only over commits that contain no merges, and push with `--force-with-lease`.
+- Only commit or push when the owner asks.
+- The owner runs the Marketplace and Open VSX logins and handles their access tokens.
+- Windows machine: PowerShell is the main shell and Git Bash is also available. `.gitattributes` should force LF line endings.
