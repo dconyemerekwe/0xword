@@ -19,10 +19,35 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.cjs",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "0xword",
+          "title": "0xWORD",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "0xword": [
+        {
+          "type": "webview",
+          "id": "0xword.game",
+          "name": "0xWORD"
+        }
+      ]
+    }
+  },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --loader:.txt=text --sourcemap --outfile=dist/extension.cjs",
-    "watch": "npm run build -- --watch",
-    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.ts",
+    "watch": "node scripts/build.ts --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p media",
     "test": "node --test \"test/**/*.test.ts\"",
     "verify": "npm run typecheck && npm test && npm run build",
     "package": "vsce package --no-dependencies",

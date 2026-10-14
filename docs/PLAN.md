@@ -6,7 +6,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 |---|---|---|
 | 0 | Repo setup and packages | Done |
 | 1 | Game engine (pure TypeScript and tests) | Done |
-| 2 | Extension shell | **Next** |
+| 2 | Extension shell | **In progress** |
 | 3 | Game UI, screen by screen | Not started |
 | 4 | Hardening and accessibility | Not started |
 | 5 | Packaging | Not started |
