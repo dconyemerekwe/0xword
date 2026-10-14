@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hexToWord, wordToHex } from "./hex.ts";
+import { hexToWord, wordToHex } from "../../src/game/hex.ts";
 
 describe("wordToHex", () => {
   it("converts each letter to two uppercase hex digits", () => {

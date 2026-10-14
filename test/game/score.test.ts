@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Mark, score } from "./score.ts";
+import { Mark, score } from "../../src/game/score.ts";
 
 const R = Mark.Right;
 const W = Mark.Wrong;

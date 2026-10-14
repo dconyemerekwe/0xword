@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORD_SET } from "./fixtures.ts";
-import { wordToHex } from "./hex.ts";
-import { MAX_ROWS, Round } from "./round.ts";
+import { wordToHex } from "../../src/game/hex.ts";
+import { MAX_ROWS, Round } from "../../src/game/round.ts";
 
 /** A round whose answer is BYTE (42 59 54 45). */
 function newRound(): Round {

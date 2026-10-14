@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { checkGuess } from "./guess.ts";
+import { checkGuess } from "../../src/game/guess.ts";
 
 const words: ReadonlySet<string> = new Set(["BYTE", "TEAM"]);
 

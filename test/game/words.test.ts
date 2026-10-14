@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORDS } from "./fixtures.ts";
-import { hexToWord, wordToHex } from "./hex.ts";
-import { parseWordList, pickAnswer } from "./words.ts";
+import { hexToWord, wordToHex } from "../../src/game/hex.ts";
+import { parseWordList, pickAnswer } from "../../src/game/words.ts";
 
 describe("bundled word list", () => {
   it("parses, and every word survives a hex round trip", () => {
