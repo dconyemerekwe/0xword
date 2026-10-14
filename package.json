@@ -24,6 +24,7 @@
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
+    "verify": "npm run typecheck && npm test && npm run build",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "npm run build"
   },

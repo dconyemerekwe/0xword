@@ -1,4 +1,5 @@
 # Ship only the built extension, LICENSE and package.json.
+.claude/**
 .github/**
 .vscode/**
 docs/**
