@@ -31,7 +31,7 @@ function round(overrides: Partial<FinishedRound> = {}): FinishedRound {
 
 /** A valid `roundFinished` message, as the webview would send it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: false, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 3, hintsUsed: false, ...overrides };
 }
 
 /** An in-memory `globalState` that counts writes and can be made to fail. */
@@ -388,7 +388,8 @@ describe("the host's message handling with a stats store", () => {
   it("updates the stored stats for a valid roundFinished", async () => {
     const storage = new FakeStorage();
     const store = new StatsStore(storage);
-    assert.equal(handleWebviewMessage(roundFinished({ rowsUsed: 4, hintsUsed: true }), handlersFor(store)), null);
+    const message = roundFinished({ rowsUsed: 4, answerTries: 4, hintsUsed: true });
+    assert.equal(handleWebviewMessage(message, handlersFor(store)), null);
     await settle();
     assert.deepEqual(store.current(), { played: 1, solved: 1, solvedRowsTotal: 4, hintsUsedCount: 1 });
   });
@@ -402,15 +403,16 @@ describe("the host's message handling with a stats store", () => {
 
   describe("leaves the stats unchanged for a malformed roundFinished", () => {
     const malformed: readonly (readonly [string, unknown])[] = [
-      ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2 }],
+      ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 3 }],
       ["an extra field", roundFinished({ answer: "BYTE" })],
       ['solved as the string "true"', roundFinished({ solved: "true" })],
       ["hintsUsed as 1", roundFinished({ hintsUsed: 1 })],
       ["rowsUsed: 0", roundFinished({ rowsUsed: 0, answerTries: 0 })],
-      ["rowsUsed above MAX_ROWS", roundFinished({ rowsUsed: MAX_ROWS + 1 })],
+      ["rowsUsed above MAX_ROWS", roundFinished({ rowsUsed: MAX_ROWS + 1, answerTries: MAX_ROWS + 1 })],
       ["a fractional rowsUsed", roundFinished({ rowsUsed: 2.5 })],
-      ["a huge rowsUsed", roundFinished({ rowsUsed: 1e9 })],
+      ["a huge rowsUsed", roundFinished({ rowsUsed: 1e9, answerTries: 1e9 })],
       ["answerTries above rowsUsed", roundFinished({ rowsUsed: 2, answerTries: 3 })],
+      ["fewer answer tries than rows", roundFinished({ rowsUsed: 3, answerTries: 2 })],
       ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: 3 })],
       ["not an object", "roundFinished"],
     ];
@@ -452,9 +454,9 @@ describe("the host's message handling with a stats store", () => {
   it("replies init with the stats after rounds have been recorded", async () => {
     const store = new StatsStore(new FakeStorage());
     const handlers = handlersFor(store);
-    handleWebviewMessage(roundFinished({ rowsUsed: 2 }), handlers);
-    handleWebviewMessage(roundFinished({ rowsUsed: 5, hintsUsed: true }), handlers);
-    handleWebviewMessage(roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: 1 }), handlers);
+    handleWebviewMessage(roundFinished({ rowsUsed: 2, answerTries: 2 }), handlers);
+    handleWebviewMessage(roundFinished({ rowsUsed: 5, answerTries: 5, hintsUsed: true }), handlers);
+    handleWebviewMessage(roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS }), handlers);
     await settle();
     assert.deepEqual(handleWebviewMessage({ type: "ready" }, handlers), {
       type: "init",

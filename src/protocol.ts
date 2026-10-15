@@ -101,8 +101,8 @@ const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hints
 /**
  * Checks the fields against what a real round can produce (see `Round`):
  * - `rowsUsed` is 1 to `MAX_ROWS`
- * - `answerTries` is 1 to `rowsUsed`: at most one try per row, and every
- *   round ends on an answer try (the solving one or the forced final answer)
+ * - `answerTries` equals `rowsUsed`: every scored row is followed by exactly
+ *   one answer try, with no skipping
  * - a failed round used every row and the forced final answer
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
@@ -116,10 +116,10 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
   if (typeof solved !== "boolean" || typeof hintsUsed !== "boolean") {
     return null;
   }
-  if (!isIntegerInRange(rowsUsed, 1, MAX_ROWS) || !isIntegerInRange(answerTries, 0, rowsUsed)) {
+  if (!isIntegerInRange(rowsUsed, 1, MAX_ROWS) || !isIntegerInRange(answerTries, 1, MAX_ROWS)) {
     return null;
   }
-  if (answerTries < 1 || (!solved && rowsUsed !== MAX_ROWS)) {
+  if (answerTries !== rowsUsed || (!solved && rowsUsed !== MAX_ROWS)) {
     return null;
   }
   return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };

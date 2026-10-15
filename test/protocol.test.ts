@@ -13,7 +13,7 @@ import { WORDS, WORD_SET } from "./game/fixtures.ts";
 
 /** A valid `roundFinished`; each case below changes one thing about it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: false, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 3, hintsUsed: false, ...overrides };
 }
 
 function without(key: string): Record<string, unknown> {
@@ -122,6 +122,12 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["a solved round with no answer tries", roundFinished({ solved: true, answerTries: 0 })],
   ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: 5, answerTries: 5 })],
   ["a failed round without the forced final answer", roundFinished({ solved: false, rowsUsed: 6, answerTries: 0 })],
+  // Fewer answer tries than rows: a row was skipped, which the game doesn't allow
+  ["rowsUsed 3 with answerTries 2", roundFinished({ rowsUsed: 3, answerTries: 2 })],
+  ["solved on row 2 with 1 answer try", roundFinished({ rowsUsed: 2, answerTries: 1 })],
+  ["solved with the forced final answer only", roundFinished({ solved: true, rowsUsed: MAX_ROWS, answerTries: 1 })],
+  ["failed with only the forced final answer", roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: 1 })],
+  ["failed with one try skipped", roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS - 1 })],
 ];
 
 describe("parseWebviewMessage", () => {
@@ -151,9 +157,8 @@ describe("parseWebviewMessage", () => {
   describe("roundFinished limits, valid edges", () => {
     const valid: readonly (readonly [string, Record<string, unknown>])[] = [
       ["solved on the first row", { solved: true, rowsUsed: 1, answerTries: 1 }],
+      ["solved on row 3 with 3 tries", { solved: true, rowsUsed: 3, answerTries: 3 }],
       ["solved on the last row with every try used", { solved: true, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS }],
-      ["solved with the forced final answer only", { solved: true, rowsUsed: MAX_ROWS, answerTries: 1 }],
-      ["failed with only the forced final answer", { solved: false, rowsUsed: MAX_ROWS, answerTries: 1 }],
       ["failed with every try used", { solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS }],
       ["hints used", { hintsUsed: true }],
     ];
@@ -335,27 +340,26 @@ function realRoundResults() {
   const guess = wordToHex(other);
   const results = [];
 
-  // Solved on the first row.
-  let round = new Round(answer, WORD_SET);
-  round.submitGuess(guess);
-  round.submitAnswer(answer);
-  results.push(round.result());
-
-  // Every row skipped, then solved or failed with the forced final answer.
-  for (const final of [answer, other]) {
-    round = new Round(answer, WORD_SET);
-    round.enableHints();
-    for (let row = 1; row < MAX_ROWS; row++) {
+  // Solved on each row (the last with the forced final answer), with and
+  // without hints, after a wrong answer try on every earlier row.
+  for (let solvedOn = 1; solvedOn <= MAX_ROWS; solvedOn++) {
+    for (const hints of [false, true]) {
+      const round = new Round(answer, WORD_SET);
+      if (hints) {
+        round.enableHints();
+      }
+      for (let row = 1; row < solvedOn; row++) {
+        round.submitGuess(guess);
+        round.submitAnswer(other);
+      }
       round.submitGuess(guess);
-      round.skipAnswer();
+      round.submitAnswer(answer);
+      results.push(round.result());
     }
-    round.submitGuess(guess);
-    round.submitAnswer(final);
-    results.push(round.result());
   }
 
   // Every try used and wrong, then failed with the forced final answer.
-  round = new Round(answer, WORD_SET);
+  const round = new Round(answer, WORD_SET);
   for (let row = 1; row <= MAX_ROWS; row++) {
     round.submitGuess(guess);
     round.submitAnswer(other);

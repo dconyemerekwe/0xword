@@ -2,8 +2,12 @@ import { hasExactKeys, isIntegerInRange, plainFields } from "./plain.ts";
 import { Round, type RoundState } from "./round.ts";
 import { pickAnswer } from "./words.ts";
 
-/** The saved-state format. Bump it, and migrate in `fromState`, when the format changes. */
-export const SESSION_STATE_VERSION = 1;
+/**
+ * The saved-state format. Bump it when the format changes, and either migrate
+ * older state in `fromState` or let it be dropped. Version 2 removed skipped
+ * answer tries; version-1 state is dropped, so the panel starts fresh.
+ */
+export const SESSION_STATE_VERSION = 2;
 
 /**
  * A session saved as plain data. It holds the hidden answer, so it must never
