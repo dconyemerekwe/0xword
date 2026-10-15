@@ -1,13 +1,26 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MEDIA_FOLDER, NONCE_BYTES, SCRIPT_PATH, buildCsp, buildHtml, createNonce } from "../../src/webview/html.ts";
+import {
+  MEDIA_FOLDER,
+  NONCE_BYTES,
+  SCRIPT_PATH,
+  STYLE_PATH,
+  buildCsp,
+  buildHtml,
+  createNonce,
+} from "../../src/webview/html.ts";
 
 // Realistic values, shaped like what VS Code passes in.
 const CSP_SOURCE = "https://*.vscode-cdn.net";
 const SCRIPT_URI = "https://file%2B.vscode-resource.vscode-cdn.net/ext/media/dist/main.js";
+const STYLE_URI = "https://file%2B.vscode-resource.vscode-cdn.net/ext/media/styles.css";
 
 function build(nonce = createNonce()): string {
-  return buildHtml({ cspSource: CSP_SOURCE, nonce, scriptUri: SCRIPT_URI });
+  return buildHtml({ cspSource: CSP_SOURCE, nonce, scriptUri: SCRIPT_URI, styleUri: STYLE_URI });
+}
+
+function linkTags(html: string): string[] {
+  return html.match(/<link\b[^>]*>/g) ?? [];
 }
 
 /** The CSP meta tag's content. */
@@ -96,8 +109,39 @@ describe("buildHtml", () => {
   });
 
   it("contains no http: or https: URLs apart from the webview's own sources", () => {
-    const html = build().replaceAll(CSP_SOURCE, "").replaceAll(SCRIPT_URI, "");
+    const html = build().replaceAll(CSP_SOURCE, "").replaceAll(SCRIPT_URI, "").replaceAll(STYLE_URI, "");
     assert.doesNotMatch(html, /https?:/i);
+  });
+
+  it("links exactly one stylesheet: the media/ stylesheet URI", () => {
+    assert.deepEqual(linkTags(build()), [`<link rel="stylesheet" href="${STYLE_URI}">`]);
+  });
+
+  it("loads its stylesheet from inside media/", () => {
+    assert.deepEqual(STYLE_PATH, [MEDIA_FOLDER, "styles.css"]);
+  });
+
+  it("has no inline <style> element and no style= attribute", () => {
+    const html = build();
+    assert.doesNotMatch(html, /<style\b/i);
+    assert.doesNotMatch(html, /\sstyle\s*=/i);
+  });
+
+  it("keeps the CSP unchanged: the stylesheet is allowed by style-src, with no 'unsafe-inline'", () => {
+    const csp = cspOf(build()) ?? "";
+    assert.match(csp, new RegExp(`style-src ${CSP_SOURCE.replaceAll("*", "\\*")};`));
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+  });
+
+  it("escapes the stylesheet URI so it can't break out of its attribute", () => {
+    const html = buildHtml({
+      cspSource: CSP_SOURCE,
+      nonce: createNonce(),
+      scriptUri: SCRIPT_URI,
+      styleUri: '"><style>*{}</style>',
+    });
+    assert.doesNotMatch(html, /<style\b/i);
+    assert.equal(linkTags(html).length, 1);
   });
 
   it("leaves the body empty for the script to fill in", () => {
@@ -111,7 +155,12 @@ describe("buildHtml", () => {
   });
 
   it("escapes the script URI so it can't break out of its attribute", () => {
-    const html = buildHtml({ cspSource: CSP_SOURCE, nonce: createNonce(), scriptUri: 'x"><script>alert(1)</script>' });
+    const html = buildHtml({
+      cspSource: CSP_SOURCE,
+      nonce: createNonce(),
+      scriptUri: 'x"><script>alert(1)</script>',
+      styleUri: STYLE_URI,
+    });
     assert.equal(scriptTags(html).length, 1);
     assert.match(html, /src="x&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;"/);
   });
