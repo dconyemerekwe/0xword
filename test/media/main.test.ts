@@ -47,6 +47,18 @@ describe("media/main.ts", () => {
     assert.match(source, /message\.setAttribute\("aria-live", "polite"\)/);
   });
 
+  it("gives DEL and ENTER accessible names that start with their visible labels (WCAG 2.5.3)", () => {
+    assert.match(source, /keypadButton\("[^"]*", "DEL",[\s\S]*?del\.setAttribute\("aria-label", "DEL, /);
+    assert.match(source, /keypadButton\("[^"]*", "ENTER",[\s\S]*?enter\.setAttribute\("aria-label", "ENTER, /);
+  });
+
+  it("focuses the decode box, without blocking the key, when shouldFocusDecodeBox says so", () => {
+    assert.match(
+      source,
+      /if \(shouldFocusDecodeBox\(event, focus, controller\.view\(\)\.wordAttemptDue\)\) \{\s*decodeInput\.focus\(\);\s*return;\s*\}/,
+    );
+  });
+
   it("sends every action through the controller's dispatch", () => {
     assert.match(source, /new GameController\(session, changed\)/);
     assert.doesNotMatch(source, /session\.(newRound|ensureRound|setDraft|submitDraft)\(/);

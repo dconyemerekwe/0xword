@@ -170,7 +170,11 @@ export class GameController {
         }
         const draft = session.draft;
         const outcome = session.submitDraft();
-        return outcome.ok ? NO_NOTICE : rejected(guessMessage(outcome.error, draft));
+        if (!outcome.ok) {
+          return rejected(guessMessage(outcome.error, draft));
+        }
+        // Read out by the live region, since focus moves to the decode box.
+        return { text: scoredMessage(session.round?.rows.length ?? 0, outcome.row.marks), error: false };
       }
       case "decode":
         return this.#decode(action.word);
@@ -218,6 +222,12 @@ export function guessMessage(error: GuessError, hex: string): string {
       return word ? `${word} isn't in the word list` : "That isn't in the word list";
     }
   }
+}
+
+/** A scored row in words, e.g. "Row 1: 1 right spot, 4 wrong spot, 3 not in word". */
+export function scoredMessage(rowNumber: number, marks: readonly Mark[]): string {
+  const counts = MARK_RANK.map((mark) => `${marks.filter((m) => m === mark).length} ${MARK_NAMES[mark]}`);
+  return `Row ${rowNumber}: ${counts.join(", ")}`;
 }
 
 /** The first byte (two hex digits) that isn't a capital letter 41–5A, or null. */
@@ -328,4 +338,22 @@ export function actionForKey(press: KeyPress, focus: KeyFocus): Action | null {
     return { type: "enter" };
   }
   return null;
+}
+
+/**
+ * True if a key typed while a word attempt is due should go to the decode
+ * box, which then needs focus first: a single printable character, with no
+ * Ctrl, Cmd or Alt, typed outside the box. A space on a focused button is
+ * left to press that button. The caller focuses the box and lets the key's
+ * default go ahead, so the character lands in the box instead of being lost.
+ */
+export function shouldFocusDecodeBox(press: KeyPress, focus: KeyFocus, wordAttemptDue: boolean): boolean {
+  if (!wordAttemptDue || focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {
+    return false;
+  }
+  // Named keys ("Enter", "Tab", "F1"…) are longer than one character.
+  if ([...press.key].length !== 1 || /\p{Cc}/u.test(press.key)) {
+    return false;
+  }
+  return !(press.key === " " && focus === "control");
 }

@@ -11,6 +11,8 @@ import {
   firstNonLetterByte,
   guessMessage,
   keypad,
+  scoredMessage,
+  shouldFocusDecodeBox,
   statusLine,
   type Action,
   type ActionType,
@@ -155,7 +157,17 @@ describe("GameController: scoring a row with ENTER", () => {
     const view = harness().play(...guess("TEAM"));
     assert.equal(rowDigits(view, 0), "5445414D");
     assert.deepEqual(rowStates(view, 0), [Wrong, Wrong, Wrong, Wrong, Absent, Absent, Right, Absent]);
-    assert.equal(view.message, "");
+  });
+
+  it("announces the scored row's marks in words, as a non-error message", () => {
+    const view = harness().play(...guess("TEAM"));
+    assert.equal(view.message, "Row 1: 1 right spot, 4 wrong spot, 3 not in word");
+    assert.equal(view.messageIsError, false);
+  });
+
+  it("numbers the announcement with the row just scored", () => {
+    const view = harness().play(...guess("TEAM"), decode("BEAT"), ...guess("BYTE"));
+    assert.equal(view.message, "Row 2: 8 right spot, 0 wrong spot, 0 not in word");
   });
 
   it("marks every tile right for the answer's own hex", () => {
@@ -513,12 +525,62 @@ describe("actionForKey", () => {
   });
 });
 
+describe("shouldFocusDecodeBox", () => {
+  const press = (key: string, modifiers: Partial<KeyPress> = {}): KeyPress => ({
+    key,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    ...modifiers,
+  });
+
+  it("sends letters typed outside the box to it while a word attempt is due, so `beat` isn't lost", () => {
+    // `t`, `o`, `m`, `s` aren't hex, so without this they would be dropped.
+    for (const key of [..."toms", ..."beat", "B", "4", "é", "-"]) {
+      assert.equal(shouldFocusDecodeBox(press(key), "page", true), true, key);
+      assert.equal(shouldFocusDecodeBox(press(key), "control", true), true, key);
+    }
+  });
+
+  it("does nothing when the box already has focus", () => {
+    assert.equal(shouldFocusDecodeBox(press("b"), "decodeBox", true), false);
+  });
+
+  it("does nothing while a hex row is being typed", () => {
+    for (const key of ["b", "t", "4"]) {
+      assert.equal(shouldFocusDecodeBox(press(key), "page", false), false, key);
+    }
+  });
+
+  it("leaves named keys and shortcuts alone", () => {
+    for (const key of ["Enter", "Tab", "Backspace", "Escape", "ArrowLeft", "F5", "Shift", "Dead"]) {
+      assert.equal(shouldFocusDecodeBox(press(key), "page", true), false, key);
+    }
+    for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const) {
+      assert.equal(shouldFocusDecodeBox(press("c", { [modifier]: true }), "page", true), false, modifier);
+    }
+  });
+
+  it("leaves a space to a focused button, but takes it from the page", () => {
+    assert.equal(shouldFocusDecodeBox(press(" "), "control", true), false);
+    assert.equal(shouldFocusDecodeBox(press(" "), "page", true), true);
+  });
+});
+
 describe("messages", () => {
   it("explains each kind of rejected hex row", () => {
     assert.equal(guessMessage("length", "42"), "Not enough digits");
     assert.equal(guessMessage("notHex", "4259544G"), "Use only the digits 0–9 and A–F");
     assert.equal(guessMessage("notLetter", "4259547B"), "7B isn't a letter");
     assert.equal(guessMessage("notWord", wordToHex("QXZJ")), "QXZJ isn't in the word list");
+  });
+
+  it("counts every mark in a scored row, zeros included", () => {
+    assert.equal(scoredMessage(1, new Array(8).fill(Absent)), "Row 1: 0 right spot, 0 wrong spot, 8 not in word");
+    assert.equal(
+      scoredMessage(6, [Right, Wrong, Absent, Right, Wrong, Absent, Right, Right]),
+      "Row 6: 4 right spot, 2 wrong spot, 2 not in word",
+    );
   });
 
   it("finds the first byte that isn't a capital letter", () => {

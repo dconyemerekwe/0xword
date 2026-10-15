@@ -14,6 +14,7 @@ import {
   HEX_DIGITS,
   MARK_NAMES,
   actionForKey,
+  shouldFocusDecodeBox,
   type Action,
   type KeyFocus,
   type ScreenView,
@@ -98,9 +99,15 @@ function element<K extends keyof HTMLElementTagNameMap>(
 function keypadButton(className: string, text: string, action: Action): HTMLButtonElement {
   const button = element("button", className, text);
   button.type = "button";
-  // A clicked key keeps no focus, so a physical Enter afterwards submits the
-  // row instead of pressing that key again. Tab still reaches every key.
-  button.addEventListener("mousedown", (event) => event.preventDefault());
+  // A clicked key takes no focus, and a key focused earlier with Tab lets go
+  // of it, so a physical Enter afterwards submits the row instead of pressing
+  // a key again. Tab still reaches every key.
+  button.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    if (document.activeElement instanceof HTMLButtonElement) {
+      document.activeElement.blur();
+    }
+  });
   button.addEventListener("click", () => controller.dispatch(action));
   return button;
 }
@@ -175,9 +182,10 @@ function buildScreen(app: HTMLElement): Screen {
   const keypad = element("div", "keypad");
   const keys = HEX_DIGITS.map((digit) => keypadButton("key", digit, { type: "digit", digit }));
   const del = keypadButton("key key-wide", "DEL", { type: "delete" });
-  del.setAttribute("aria-label", "Delete last digit");
+  // Accessible names start with the visible label (WCAG 2.5.3).
+  del.setAttribute("aria-label", "DEL, delete last digit");
   const enter = keypadButton("key key-wide", "ENTER", { type: "enter" });
-  enter.setAttribute("aria-label", "Enter row");
+  enter.setAttribute("aria-label", "ENTER, enter row");
   keypad.append(...keys, del, enter);
 
   app.replaceChildren(header, status, grid, legend, decode, message, keypad);
@@ -186,7 +194,13 @@ function buildScreen(app: HTMLElement): Screen {
     if (event.isComposing) {
       return;
     }
-    const action = actionForKey(event, focusOf(event.target, decodeInput));
+    const focus = focusOf(event.target, decodeInput);
+    if (shouldFocusDecodeBox(event, focus, controller.view().wordAttemptDue)) {
+      // No preventDefault: the character goes on to the newly focused box.
+      decodeInput.focus();
+      return;
+    }
+    const action = actionForKey(event, focus);
     if (action) {
       event.preventDefault();
       controller.dispatch(action);
@@ -254,8 +268,19 @@ function render(view: ScreenView): void {
     }),
   );
 
-  ui.message.textContent = view.message;
   ui.message.classList.toggle("message-error", view.messageIsError);
+  if (view.messageIsError && ui.message.textContent === view.message) {
+    // The same error again: clear it, then set it on the next frame, so the
+    // live region reads it out again.
+    ui.message.textContent = "";
+    requestAnimationFrame(() => {
+      if (ui.message.textContent === "") {
+        ui.message.textContent = view.message;
+      }
+    });
+  } else {
+    ui.message.textContent = view.message;
+  }
 
   // A scored row's word attempt is due: the decode box takes the keyboard.
   if (view.wordAttemptDue && document.activeElement !== ui.decodeInput) {
