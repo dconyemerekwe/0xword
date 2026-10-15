@@ -8,7 +8,7 @@ A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `
 
 ## No telemetry
 
-0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
+0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. Your stats (rounds played and solved, average rows, how often you used hints) stay on your machine in VS Code's own extension storage. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
 
 ## Development
 
