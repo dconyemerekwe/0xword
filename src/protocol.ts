@@ -31,7 +31,12 @@ export interface InitMessage {
   readonly type: "init";
 }
 
-export type HostMessage = InitMessage;
+/** Start a fresh round: sent once per run of the "0xWORD: New Round" command. */
+export interface NewRoundMessage {
+  readonly type: "newRound";
+}
+
+export type HostMessage = InitMessage | NewRoundMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -54,6 +59,9 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   const fields = plainFields(raw);
   if (fields?.get("type") === "init" && hasExactKeys(fields, ["type"])) {
     return { type: "init" };
+  }
+  if (fields?.get("type") === "newRound" && hasExactKeys(fields, ["type"])) {
+    return { type: "newRound" };
   }
   return null;
 }
