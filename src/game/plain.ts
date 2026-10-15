@@ -1,6 +1,8 @@
-// Reads untrusted, JSON-like data (such as saved webview state) without ever
-// running the sender's code or reaching the prototype chain. Same approach
-// as the message validators in src/protocol.ts.
+// Checks for untrusted, JSON-like data: webview messages (src/protocol.ts),
+// stored stats (src/stats.ts) and saved webview state (Round and Session).
+// Reading never runs the sender's code or reaches the prototype chain. Pure:
+// no `vscode` import, so it can be unit-tested and bundled into the webview.
+// The only copy of these helpers; import them from here.
 
 /**
  * The own fields of a plain object (`{...}` or `JSON.parse` output) as a map,

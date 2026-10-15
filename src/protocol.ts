@@ -5,7 +5,7 @@
 // Everything arriving through `postMessage` is untrusted (CLAUDE.md security
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
-import { hasExactKeys, isIntegerInRange, plainFields } from "./fields.ts";
+import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 

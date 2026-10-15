@@ -4,7 +4,7 @@
 //
 // Stats never leave the machine (CLAUDE.md security rule 9): they are stored
 // locally and only ever posted to the extension's own webview.
-import { hasExactKeys, isIntegerInRange, plainFields } from "./fields.ts";
+import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 
 /** The `globalState` key. Versioned, so a later shape can migrate from it. */
