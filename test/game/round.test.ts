@@ -252,6 +252,29 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
       return round;
     },
   ],
+  [
+    "solved, with hints on",
+    () => {
+      const round = newRound();
+      round.enableHints();
+      round.submitGuess(wordToHex("BITE"));
+      round.submitAnswer("BYTE");
+      return round;
+    },
+  ],
+  [
+    "failed, with hints on",
+    () => {
+      const round = newRound();
+      round.enableHints();
+      for (let row = 1; row < MAX_ROWS; row++) {
+        guessAndSkip(round, "BITE");
+      }
+      round.submitGuess(wordToHex("TEAM"));
+      round.submitAnswer("CODE");
+      return round;
+    },
+  ],
 ];
 
 /** Plays the round for the phase at `index` in PHASES. */
