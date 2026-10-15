@@ -48,7 +48,6 @@ describe("Round", () => {
       solved: true,
       answer: "BYTE",
       rowsUsed: 1,
-      answerTries: 1,
       hintsUsed: false,
     });
   });
@@ -67,7 +66,8 @@ describe("Round", () => {
     assert.deepEqual(round.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
     assert.equal(round.phase, "answer");
     assert.deepEqual(round.submitAnswer("BYTE"), { ok: true, correct: true });
-    assert.equal(round.result().answerTries, 1);
+    // Only the accepted answer is recorded as a try.
+    assert.deepEqual(round.toState().answers, ["BYTE"]);
   });
 
   it("counts a wrong answer try as an answer try", () => {
@@ -79,9 +79,9 @@ describe("Round", () => {
       solved: true,
       answer: "BYTE",
       rowsUsed: 2,
-      answerTries: 2,
       hintsUsed: false,
     });
+    assert.deepEqual(round.toState().answers, ["TEAM", "BYTE"]);
   });
 
   it("has no way to skip an answer try", () => {
@@ -103,7 +103,7 @@ describe("Round", () => {
 
   describe("uses one answer try per row", () => {
     for (let solvedOn = 1; solvedOn <= MAX_ROWS; solvedOn++) {
-      it(`gives ${solvedOn} tries when solved on row ${solvedOn}`, () => {
+      it(`records ${solvedOn} attempts when solved on row ${solvedOn}`, () => {
         const round = newRound();
         for (let row = 1; row < solvedOn; row++) {
           guessAndMiss(round, "TEAM");
@@ -113,11 +113,11 @@ describe("Round", () => {
         const result = round.result();
         assert.equal(result.solved, true);
         assert.equal(result.rowsUsed, solvedOn);
-        assert.equal(result.answerTries, solvedOn);
+        assert.deepEqual(round.toState().answers, [...Array<string>(solvedOn - 1).fill("TEAM"), "BYTE"]);
       });
     }
 
-    it(`gives ${MAX_ROWS} rows and ${MAX_ROWS} tries when failed`, () => {
+    it(`records ${MAX_ROWS} rows and ${MAX_ROWS} attempts when failed`, () => {
       const round = newRound();
       for (let row = 1; row <= MAX_ROWS; row++) {
         guessAndMiss(round, "TEAM");
@@ -125,7 +125,7 @@ describe("Round", () => {
       const result = round.result();
       assert.equal(result.solved, false);
       assert.equal(result.rowsUsed, MAX_ROWS);
-      assert.equal(result.answerTries, MAX_ROWS);
+      assert.deepEqual(round.toState().answers, Array<string>(MAX_ROWS).fill("TEAM"));
     });
   });
 
@@ -191,9 +191,9 @@ describe("Round", () => {
         solved: false,
         answer: "BYTE",
         rowsUsed: 6,
-        answerTries: MAX_ROWS,
         hintsUsed: false,
       });
+      assert.equal(round.toState().answers.length, MAX_ROWS);
     });
   });
 
@@ -378,7 +378,7 @@ describe("Round state", () => {
         assert.ok(state.answers.every((tried) => typeof tried === "string"));
         const pending = state.phase === "answer" || state.phase === "final" ? 1 : 0;
         assert.equal(state.answers.length, state.rows.length - pending);
-        assert.equal(state.answerTries, state.answers.length);
+        assert.equal("answerTries" in state, false);
       });
     }
 
@@ -391,8 +391,9 @@ describe("Round state", () => {
       );
       assert.deepEqual(state.answers, ["TEAM", "DATA"]);
       assert.equal(state.phase, "guess");
-      assert.equal(state.answerTries, 2);
       assert.equal(state.hintsUsed, false);
+      // No separate try count: it is the length of answers.
+      assert.deepEqual(Object.keys(state).sort(), ["answer", "answers", "hintsUsed", "phase", "rows"]);
     });
 
     it("restores a round that plays on like the original", () => {
@@ -403,9 +404,9 @@ describe("Round state", () => {
         solved: true,
         answer: "BYTE",
         rowsUsed: MAX_ROWS,
-        answerTries: MAX_ROWS,
         hintsUsed: false,
       });
+      assert.equal(restored.toState().answers.length, MAX_ROWS);
     });
 
     it("gives a copy that later play doesn't change", () => {
@@ -425,7 +426,7 @@ describe("Round state", () => {
       ["a number", () => 1],
       ["an array", () => [stored(newRound())]],
       ["an extra key", () => tampered((s) => (s.extra = 1))],
-      ["a missing key", () => tampered((s) => delete s.answerTries)],
+      ["a missing key", () => tampered((s) => delete s.phase)],
       [
         "a JSON-parsed __proto__ key",
         () => JSON.parse(`{${JSON.stringify(tampered(() => {})).slice(1, -1)},"__proto__":{"x":1}}`),
@@ -455,8 +456,9 @@ describe("Round state", () => {
       ["more than MAX_ROWS rows", () => tampered((s) => (s.rows = Array(MAX_ROWS + 1).fill(firstRow(s))))],
       ["an impossible phase", () => tampered((s) => (s.phase = "solved"))],
       ["an unknown phase", () => tampered((s) => (s.phase = "won"))],
-      ["wrong answer tries", () => tampered((s) => (s.answerTries = 0))],
-      ["answer tries as a string", () => tampered((s) => (s.answerTries = "0"))],
+      ["an answerTries field matching the answers", () => tampered((s) => (s.answerTries = 1))],
+      ["an answerTries field that doesn't match", () => tampered((s) => (s.answerTries = 0))],
+      ["an answerTries field as a string", () => tampered((s) => (s.answerTries = "1"))],
       ["hintsUsed as a string", () => tampered((s) => (s.hintsUsed = "false"))],
       ["more answer tries than rows", () => tampered((s) => (s.answers = ["TEAM", "TEAM", "TEAM"]))],
       ["a row before the last without its answer try", () => tampered((s) => (s.answers = []))],
@@ -465,7 +467,7 @@ describe("Round state", () => {
       ["a saved answer try that isn't a string", () => tampered((s) => (s.answers = [1]))],
       ["a skipped (null) answer try", () => tampered((s) => (s.answers = [null]))],
       [
-        "a skipped (null) answer try with tries counted as in version 1",
+        "a version-1 round: a skipped (null) try and an answerTries field",
         () =>
           tampered((s) => {
             s.answers = [null];
@@ -475,8 +477,9 @@ describe("Round state", () => {
       [
         "a skipped forced final answer",
         () => {
+          // Five real tries, so replay reaches row 6; only the final slot is null.
           const state = stored(playTo(3));
-          state.answers = Array(MAX_ROWS).fill(null);
+          state.answers = [...(state.answers as string[]), null];
           state.phase = "guess";
           return state;
         },

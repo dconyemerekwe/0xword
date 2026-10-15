@@ -5,7 +5,8 @@ import { pickAnswer } from "./words.ts";
 /**
  * The saved-state format. Bump it when the format changes, and either migrate
  * older state in `fromState` or let it be dropped. Version 2 removed skipped
- * answer tries; version-1 state is dropped, so the panel starts fresh.
+ * answer tries and the round's `answerTries` count; version-1 state is
+ * dropped, so the panel starts fresh.
  */
 export const SESSION_STATE_VERSION = 2;
 

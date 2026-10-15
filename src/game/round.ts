@@ -34,7 +34,6 @@ export interface RoundResult {
   readonly solved: boolean;
   readonly answer: string;
   readonly rowsUsed: number;
-  readonly answerTries: number;
   readonly hintsUsed: boolean;
 }
 
@@ -47,15 +46,15 @@ export interface RoundState {
   readonly rows: readonly Row[];
   /**
    * The word tried for each row whose answer try is done. As long as `rows`,
-   * or one shorter while the last row's try is still to come.
+   * or one shorter while the last row's try is still to come. Its length is
+   * the number of answer tries; there is no separate count.
    */
   readonly answers: readonly string[];
   readonly phase: Phase;
-  readonly answerTries: number;
   readonly hintsUsed: boolean;
 }
 
-const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "answerTries", "hintsUsed"] as const;
+const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed"] as const;
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
 /**
@@ -67,7 +66,7 @@ export class Round {
   readonly #answerHex: string;
   readonly #words: ReadonlySet<string>;
   readonly #rows: Row[] = [];
-  /** The accepted answer tries, one per row; their count is the answer tries. */
+  /** The accepted answer tries, one per finished row. */
   readonly #answers: string[] = [];
   #phase: Phase = "guess";
   #hintsUsed = false;
@@ -174,7 +173,6 @@ export class Round {
       solved: this.#phase === "solved",
       answer: this.#answer,
       rowsUsed: this.#rows.length,
-      answerTries: this.#answers.length,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -186,7 +184,6 @@ export class Round {
       rows: this.#rows.map((row) => ({ hex: row.hex, word: row.word, marks: [...row.marks] })),
       answers: [...this.#answers],
       phase: this.#phase,
-      answerTries: this.#answers.length,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -195,7 +192,7 @@ export class Round {
    * Rebuilds a round from untrusted saved state, or returns null if the state
    * isn't exactly what `toState` gives for a real round. It replays the saved
    * guesses and answers through the public methods, so every rule is checked
-   * again, then compares the result with the saved rows, phase and tries.
+   * again, then compares the result with the saved rows and phase.
    * Never throws.
    */
   static fromState(raw: unknown, words: ReadonlySet<string>): Round | null {
@@ -260,8 +257,7 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
       }
     }
   }
-  const saved = round.toState();
-  if (saved.phase !== fields.get("phase") || saved.answerTries !== fields.get("answerTries")) {
+  if (round.phase !== fields.get("phase")) {
     return null;
   }
   return round;

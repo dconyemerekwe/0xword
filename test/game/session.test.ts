@@ -139,7 +139,7 @@ describe("Session state", () => {
     assert.ok(state);
     assert.equal(state.round.rows.length, 2);
     assert.deepEqual(state.round.answers, [WORDS[1]]);
-    assert.equal(state.round.answerTries, 1);
+    assert.equal("answerTries" in state.round, false);
   });
 
   it("round-trips the round number and the round in progress", () => {
@@ -220,19 +220,17 @@ describe("restoreSession (webview start-up)", () => {
   });
 
   describe("starts fresh, without throwing, for state from before the no-skip rule", () => {
+    // Version 1 saved an answerTries count with each round.
     const other = WORDS[1];
     assert.ok(other);
     const cases: readonly (readonly [string, () => unknown])[] = [
-      ["version-1 state", () => ({ ...stored(sessionAt(5)), version: 1 })],
+      ["version-1 state", () => withRound({ ...stored(sessionAt(5)), version: 1 }, { answerTries: 1 })],
       [
         "version-1 state with a skipped try",
         () => withRound({ ...stored(sessionAt(5)), version: 1 }, { answers: [null], answerTries: 0 }),
       ],
       ["a null answer try", () => withRound(stored(sessionAt(5)), { answers: [null] })],
-      [
-        "a null answer try with tries counted as skipped",
-        () => withRound(stored(sessionAt(5)), { answers: [null], answerTries: 0 }),
-      ],
+      ["a version-2 round carrying answerTries", () => withRound(stored(sessionAt(5)), { answerTries: 1 })],
       // sessionAt's round has 2 rows, so a valid answers list has 1 or 2 entries.
       ["answers 2 shorter than the rows", () => withRound(stored(sessionAt(5)), { answers: [] })],
       ["answers longer than the rows", () => withRound(stored(sessionAt(5)), { answers: [other, other, other] })],
