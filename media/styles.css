@@ -1,0 +1,350 @@
+/*
+ * 0xWORD game screen. Loaded with <link> under the CSP's `style-src`; there is
+ * no inline style anywhere. Colours come only from the custom properties in
+ * :root, which match DARK_PALETTE in src/ui/palette.ts (a test checks this and
+ * their contrast). Light theme and bundled fonts arrive in later stories.
+ */
+
+:root {
+  --ox-background: #14161B;
+  --ox-panel: #1D2027;
+  --ox-text: #E8EAF0;
+  --ox-muted: #A3A9B6;
+  --ox-accent: #6B98F0;
+  --ox-right: #2F6FE4;
+  --ox-on-right: #FFFFFF;
+  --ox-wrong: #F0A04B;
+  --ox-on-wrong: #1A1206;
+  --ox-absent: #343944;
+  --ox-on-absent: #B4B9C5;
+  --ox-key: #2A2E37;
+  --ox-key-absent: #111318;
+
+  --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --ox-touch: 44px;
+  --ox-radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Keeps `hidden` working on elements whose class sets `display`. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--ox-background);
+  color: var(--ox-text);
+  font-family: var(--ox-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Text for screen readers only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ox-accent);
+  outline-offset: 2px;
+}
+
+/* Header */
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.title-hex {
+  color: var(--ox-accent);
+  font-family: var(--ox-mono);
+  font-weight: 700;
+}
+
+.title-word {
+  font-family: var(--ox-sans);
+  font-weight: 1000;
+}
+
+.status {
+  margin: 0;
+  color: var(--ox-muted);
+}
+
+/* Grid: 6 rows of 4 byte pairs, with a wider gap between pairs than within one. */
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grid-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border: 2px solid var(--ox-absent);
+  border-radius: 4px;
+  color: var(--ox-text);
+  font-family: var(--ox-mono);
+  font-size: 18px;
+  font-weight: 700;
+  transition: background-color 150ms ease-out;
+}
+
+.tile-typed {
+  border-color: var(--ox-muted);
+  background: var(--ox-background);
+}
+
+.tile-right {
+  border-color: var(--ox-right);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.tile-wrong {
+  border-color: var(--ox-wrong);
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.tile-absent {
+  border-color: var(--ox-absent);
+  background: var(--ox-absent);
+  color: var(--ox-on-absent);
+}
+
+/* Legend */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ox-muted);
+  font-size: 12px;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.swatch-right {
+  background: var(--ox-right);
+}
+
+.swatch-wrong {
+  background: var(--ox-wrong);
+}
+
+.swatch-absent {
+  background: var(--ox-absent);
+}
+
+/* Decode panel */
+
+.decode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+}
+
+.decode-label {
+  font-weight: 700;
+}
+
+.decode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.decode-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ox-touch);
+  padding: 0 10px;
+  border: 1px solid var(--ox-muted);
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+  color: var(--ox-text);
+  font: inherit;
+  text-transform: uppercase;
+}
+
+.decode-input::placeholder {
+  color: var(--ox-muted);
+  text-transform: none;
+}
+
+.decode-input:disabled {
+  border-style: dashed;
+  color: var(--ox-muted);
+}
+
+.decode-button {
+  min-height: var(--ox-touch);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.decode-button:disabled {
+  background: var(--ox-key-absent);
+  color: var(--ox-muted);
+  cursor: default;
+}
+
+.decode-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ox-muted);
+  font-size: 12px;
+}
+
+.tried {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.tried-list {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tried-word {
+  font-family: var(--ox-mono);
+  text-decoration: line-through;
+}
+
+/* Message */
+
+.message {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--ox-text);
+  font-weight: 700;
+}
+
+.message-error {
+  color: var(--ox-wrong);
+}
+
+/* Keypad: 4 rows of 4 keys, then DEL and ENTER. */
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.key {
+  min-height: var(--ox-touch);
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-key);
+  color: var(--ox-text);
+  font-family: var(--ox-mono);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.key-wide {
+  grid-column: span 2;
+  font-family: var(--ox-sans);
+  font-size: 14px;
+}
+
+.key-right {
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.key-wrong {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+/* Darker and struck through, so colour isn't the only cue. */
+.key-absent {
+  background: var(--ox-key-absent);
+  color: var(--ox-muted);
+  text-decoration: line-through;
+}
+
+/* Disabled while a word attempt is due or the round is over. Marked keys keep their colours. */
+.key:disabled {
+  cursor: default;
+}
+
+.key:disabled:not(.key-right, .key-wrong, .key-absent) {
+  color: var(--ox-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

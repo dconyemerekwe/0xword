@@ -102,6 +102,8 @@ Rules carried over from Phase 2:
 
 - **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Done in #20: `skipAnswer()` is removed from the engine. Because answer tries always equal rows used, the redundant `answerTries` field is removed from the engine result, the `roundFinished` message and the saved round (owner's decision on PR #28); a message or saved round that still carries it is rejected. Saved state is now version 2, and version-1 state (which could hold skipped tries) is dropped, so the panel starts a fresh session.
 
+- **Grid and decode (#21):** the game screen's logic lives in a pure UI controller, `src/ui/game.ts` (no DOM, no `vscode`): the actions (`init`, `newRound`, `digit`, `delete`, `enter`, `decode`), the messages, the key states and a render model. Its `dispatch` is the one action function, and it always ends with `changed()`; a unit test checks every action type saves. `media/main.ts` is a thin DOM layer that draws the model with `createElement` and `textContent`. All styling is in `media/styles.css`, loaded with a `<link>` under the unchanged CSP. The dark palette and its contrast check are in `src/ui/palette.ts`. Saved state is now version 3: it adds the half-typed hex row (`draft`: up to 8 uppercase hex digits, empty whenever a word attempt is due or the round is over). Version-2 state is dropped, so the panel starts fresh.
+
 Build each screen from the owner's draft design, [docs/design/0xword-draft-design.pdf](design/0xword-draft-design.pdf), described page by page in [docs/design/README.md](design/README.md), in this order:
 
 1. Grid of 6 rows × 4 byte pairs, plus the hex keypad (0–F, DEL, ENTER) with key states and physical keyboard input

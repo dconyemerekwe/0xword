@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
-import { MEDIA_FOLDER, SCRIPT_PATH } from "../src/webview/html.ts";
+import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
 
 const root = new URL("../", import.meta.url);
 
@@ -185,6 +185,13 @@ describe(".vscodeignore", () => {
       assert.ok(!pattern.includes("dist") && !pattern.endsWith(".js"), pattern);
     }
     assert.equal(SCRIPT_PATH.at(-1), "main.js");
+  });
+
+  it("doesn't exclude the webview's stylesheet, so it ships", () => {
+    assert.ok(existsSync(new URL(STYLE_PATH.join("/"), root)));
+    for (const pattern of ignored) {
+      assert.ok(!pattern.includes("css"), pattern);
+    }
   });
 
   it("leaves the webview's TypeScript source out", () => {

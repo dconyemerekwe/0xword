@@ -1,0 +1,331 @@
+// The game screen's logic: the actions a player can take, what each one does
+// to the session, the messages it shows, and a render model for the DOM layer
+// (media/main.ts) to draw. Pure: no DOM and no `vscode`, so it can be
+// unit-tested with `node --test`. The model never contains the answer.
+import type { GuessError } from "../game/guess.ts";
+import { HEX_LENGTH, WORD_LENGTH, hexToWord } from "../game/hex.ts";
+import { MAX_ROWS, type Phase, type Row } from "../game/round.ts";
+import { Mark } from "../game/score.ts";
+import type { Session, SessionState } from "../game/session.ts";
+
+/** Everything a player (or the host) can do to the game screen. */
+export type Action =
+  | { readonly type: "init" } // the host answered `ready`: start round 1 unless one was restored
+  | { readonly type: "newRound" } // the host's `newRound`
+  | { readonly type: "digit"; readonly digit: string } // one hex digit, from the keypad or keyboard
+  | { readonly type: "delete" } // DEL or Backspace
+  | { readonly type: "enter" } // ENTER: submit the typed hex row
+  | { readonly type: "decode"; readonly word: string }; // the word typed in the decode box
+
+export type ActionType = Action["type"];
+
+/** The keypad's digits, in order: `0 1 2 3` / `4 5 6 7` / `8 9 A B` / `C D E F`. */
+export const HEX_DIGITS = [..."0123456789ABCDEF"];
+
+/** How each mark is named in text, so colour is never the only cue. */
+export const MARK_NAMES: Readonly<Record<Mark, string>> = {
+  [Mark.Right]: "right spot",
+  [Mark.Wrong]: "wrong spot",
+  [Mark.Absent]: "not in word",
+};
+
+/** A grid tile: empty, typed but not yet scored, or scored with a mark. */
+export type TileState = "empty" | "typed" | Mark;
+
+export interface Tile {
+  /** The hex digit, or "" for an empty tile. */
+  readonly digit: string;
+  readonly state: TileState;
+}
+
+export interface Key {
+  readonly digit: string;
+  /** The best mark this digit has had in any row, or null if not played yet. */
+  readonly mark: Mark | null;
+  /** The key's accessible name, e.g. "7, not in word". */
+  readonly label: string;
+}
+
+export interface TriedWord {
+  readonly word: string;
+  /** Read out instead of the struck-through word, e.g. "BEAT, wrong". */
+  readonly label: string;
+}
+
+/** Everything the DOM layer needs to draw the screen. */
+export interface ScreenView {
+  /** E.g. "4-letter word · row 2 of 6". */
+  readonly status: string;
+  /** `MAX_ROWS` rows of `HEX_LENGTH` tiles. */
+  readonly rows: readonly (readonly Tile[])[];
+  /** The 16 keypad keys in `HEX_DIGITS` order. */
+  readonly keys: readonly Key[];
+  /** The keypad, DEL and ENTER take input: only while a hex row is being typed. */
+  readonly keypadEnabled: boolean;
+  /** A row was scored and its one word attempt is due: the decode box is open. */
+  readonly wordAttemptDue: boolean;
+  /** Under the decode box: "1 try per row", or "Last try" after row 6. */
+  readonly tryNote: string;
+  /** The wrong words tried so far, one per finished row. */
+  readonly tried: readonly TriedWord[];
+  /** Plain text: why the last action was rejected, what happened, or how the round ended. */
+  readonly message: string;
+  /** True if `message` says why an action was rejected. */
+  readonly messageIsError: boolean;
+}
+
+/** A message for the player, and whether it reports a rejected action. */
+interface Notice {
+  readonly text: string;
+  readonly error: boolean;
+}
+
+const NO_NOTICE: Notice = { text: "", error: false };
+
+function rejected(text: string): Notice {
+  return { text, error: true };
+}
+
+/**
+ * Runs the game screen for one session. Every action goes through `dispatch`,
+ * which ends by calling `changed` (save and redraw), so no move is lost when
+ * the panel is hidden.
+ */
+export class GameController {
+  readonly #session: Session;
+  readonly #changed: () => void;
+  /** The last action's message. Not saved: it's gone after a reload. */
+  #notice = NO_NOTICE;
+
+  /** `changed` saves `savedState()` and draws `view()`: `changed()` in media/main.ts. */
+  constructor(session: Session, changed: () => void) {
+    this.#session = session;
+    this.#changed = changed;
+  }
+
+  /** The one way to change the game. Always ends with `changed`, even if the action was ignored. */
+  dispatch(action: Action): void {
+    this.#notice = this.#apply(action);
+    this.#changed();
+  }
+
+  /** What to save: the session with its round and draft, or null before the first round. */
+  savedState(): SessionState | null {
+    return this.#session.toState();
+  }
+
+  /** The screen as it is now. */
+  view(): ScreenView {
+    const round = this.#session.round;
+    const phase: Phase | null = round?.phase ?? null;
+    const rows = round?.rows ?? [];
+    const answers = round?.answers ?? [];
+    // The last answer of a solved round is the right one, not a tried word.
+    const wrong = phase === "solved" ? answers.slice(0, -1) : answers;
+    // Solved and out of rows come from the phase, so they survive a reload.
+    const notice: Notice =
+      phase === "solved"
+        ? { text: "Solved", error: false }
+        : phase === "failed"
+          ? { text: "Out of rows", error: false }
+          : this.#notice;
+    return {
+      status: statusLine(phase, rows.length),
+      rows: gridTiles(rows, phase === "guess" ? this.#session.draft : ""),
+      keys: keypad(rows),
+      keypadEnabled: phase === "guess",
+      wordAttemptDue: phase === "answer" || phase === "final",
+      tryNote: phase === "final" ? "Last try" : "1 try per row",
+      tried: wrong.map((word) => ({ word, label: `${word}, wrong` })),
+      message: notice.text,
+      messageIsError: notice.error,
+    };
+  }
+
+  /** Does the action and returns the message to show. */
+  #apply(action: Action): Notice {
+    const session = this.#session;
+    switch (action.type) {
+      case "init":
+        session.ensureRound();
+        return NO_NOTICE;
+      case "newRound":
+        session.newRound();
+        return NO_NOTICE;
+      case "digit": {
+        const digit = action.digit.toUpperCase();
+        if (this.#typing() && /^[0-9A-F]$/.test(digit) && session.draft.length < HEX_LENGTH) {
+          session.setDraft(session.draft + digit);
+        }
+        return NO_NOTICE;
+      }
+      case "delete":
+        if (this.#typing()) {
+          session.setDraft(session.draft.slice(0, -1));
+        }
+        return NO_NOTICE;
+      case "enter": {
+        if (!this.#typing()) {
+          return NO_NOTICE;
+        }
+        const draft = session.draft;
+        const outcome = session.submitDraft();
+        return outcome.ok ? NO_NOTICE : rejected(guessMessage(outcome.error, draft));
+      }
+      case "decode":
+        return this.#decode(action.word);
+    }
+  }
+
+  /** True while the round is waiting for a hex row. */
+  #typing(): boolean {
+    return this.#session.round?.phase === "guess";
+  }
+
+  #decode(input: string): Notice {
+    const round = this.#session.round;
+    if (!round || (round.phase !== "answer" && round.phase !== "final")) {
+      return NO_NOTICE;
+    }
+    const outcome = round.submitAnswer(input);
+    const word = input.trim().toUpperCase();
+    if (!outcome.ok) {
+      return rejected(
+        outcome.error === "format" ? `Type a ${WORD_LENGTH}-letter word, A to Z` : `${word} isn't in the word list`,
+      );
+    }
+    // Solved and out of rows are shown by `view` from the phase.
+    if (round.isOver) {
+      return NO_NOTICE;
+    }
+    return { text: `${word} isn't the word. On to row ${round.rows.length + 1}.`, error: false };
+  }
+}
+
+/** Why a full hex row was rejected, in plain text. */
+export function guessMessage(error: GuessError, hex: string): string {
+  switch (error) {
+    case "length":
+      return "Not enough digits";
+    case "notHex":
+      return "Use only the digits 0–9 and A–F";
+    case "notLetter": {
+      const byte = firstNonLetterByte(hex);
+      return byte ? `${byte} isn't a letter` : "Every byte must be a letter, 41 to 5A";
+    }
+    case "notWord": {
+      const word = hexToWord(hex);
+      return word ? `${word} isn't in the word list` : "That isn't in the word list";
+    }
+  }
+}
+
+/** The first byte (two hex digits) that isn't a capital letter 41–5A, or null. */
+export function firstNonLetterByte(hex: string): string | null {
+  for (let i = 0; i + 2 <= hex.length; i += 2) {
+    const byte = hex.slice(i, i + 2).toUpperCase();
+    const code = Number.parseInt(byte, 16);
+    if (!/^[0-9A-F]{2}$/.test(byte) || code < 0x41 || code > 0x5a) {
+      return byte;
+    }
+  }
+  return null;
+}
+
+/** The status line under the title. */
+export function statusLine(phase: Phase | null, rowsUsed: number): string {
+  switch (phase) {
+    case null:
+      return `${WORD_LENGTH}-letter word`;
+    case "solved":
+      return `${WORD_LENGTH}-letter word · solved`;
+    case "failed":
+      return `${WORD_LENGTH}-letter word · out of rows`;
+    case "guess":
+      return `${WORD_LENGTH}-letter word · row ${rowsUsed + 1} of ${MAX_ROWS}`;
+    case "answer":
+    case "final":
+      // The row just scored, whose word attempt is due.
+      return `${WORD_LENGTH}-letter word · row ${rowsUsed} of ${MAX_ROWS}`;
+  }
+}
+
+/** All `MAX_ROWS` grid rows: the scored rows, then the draft, then empty rows. */
+export function gridTiles(rows: readonly Row[], draft: string): Tile[][] {
+  const grid: Tile[][] = [];
+  for (let r = 0; r < MAX_ROWS; r++) {
+    const row = rows[r];
+    const tiles: Tile[] = [];
+    for (let i = 0; i < HEX_LENGTH; i++) {
+      const mark = row?.marks[i];
+      const typed = r === rows.length ? draft[i] : undefined;
+      if (row && mark) {
+        tiles.push({ digit: row.hex[i] ?? "", state: mark });
+      } else if (typed) {
+        tiles.push({ digit: typed, state: "typed" });
+      } else {
+        tiles.push({ digit: "", state: "empty" });
+      }
+    }
+    grid.push(tiles);
+  }
+  return grid;
+}
+
+/** Marks from best to worst: a key shows the best one its digit has had. */
+const MARK_RANK: readonly Mark[] = [Mark.Right, Mark.Wrong, Mark.Absent];
+
+/** The 16 keypad keys, each with the best mark its digit has had in `rows`. */
+export function keypad(rows: readonly Row[]): Key[] {
+  const best = new Map<string, Mark>();
+  for (const row of rows) {
+    row.marks.forEach((mark, i) => {
+      const digit = row.hex[i];
+      const current = digit === undefined ? undefined : best.get(digit);
+      if (digit !== undefined && (current === undefined || MARK_RANK.indexOf(mark) < MARK_RANK.indexOf(current))) {
+        best.set(digit, mark);
+      }
+    });
+  }
+  return HEX_DIGITS.map((digit) => {
+    const mark = best.get(digit) ?? null;
+    return { digit, mark, label: mark ? `${digit}, ${MARK_NAMES[mark]}` : digit };
+  });
+}
+
+/** Where keyboard focus is when a key is pressed. */
+export type KeyFocus =
+  | "decodeBox" // the decode text box: it gets every key
+  | "control" // a button: Enter and Space press it
+  | "page"; // anywhere else
+
+/** The parts of a `KeyboardEvent` that decide what a key does. */
+export interface KeyPress {
+  readonly key: string;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly altKey: boolean;
+}
+
+/**
+ * The action for a physical key, or null to leave the key alone. Hex digits
+ * (either case), Backspace and Enter drive the grid, but never while the
+ * decode box has focus, and Enter is left to a focused button. Shortcuts with
+ * Ctrl, Cmd or Alt are never taken. While a word attempt is due the
+ * controller ignores grid actions, so typed hex never reaches the grid.
+ */
+export function actionForKey(press: KeyPress, focus: KeyFocus): Action | null {
+  if (focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {
+    return null;
+  }
+  if (/^[0-9a-fA-F]$/.test(press.key)) {
+    return { type: "digit", digit: press.key.toUpperCase() };
+  }
+  if (press.key === "Backspace") {
+    return { type: "delete" };
+  }
+  if (press.key === "Enter" && focus === "page") {
+    return { type: "enter" };
+  }
+  return null;
+}
