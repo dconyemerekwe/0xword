@@ -5,7 +5,9 @@
 // Everything arriving through `postMessage` is untrusted (CLAUDE.md security
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
+import { hasExactKeys, isIntegerInRange, plainFields } from "./fields.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
+import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 
 // Webview -> host
 
@@ -26,9 +28,10 @@ export type WebviewMessage = ReadyMessage | RoundFinishedMessage;
 
 // Host -> webview
 
-/** The host's reply to `ready`. Story #8 extends it with stats. */
+/** The host's reply to `ready`, carrying the player's current stats. */
 export interface InitMessage {
   readonly type: "init";
+  readonly stats: StatsView;
 }
 
 export type HostMessage = InitMessage;
@@ -52,16 +55,19 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
 /** Checks a message from the host, on the webview side. Null if unknown. */
 export function parseHostMessage(raw: unknown): HostMessage | null {
   const fields = plainFields(raw);
-  if (fields?.get("type") === "init" && hasExactKeys(fields, ["type"])) {
-    return { type: "init" };
+  if (fields?.get("type") === "init" && hasExactKeys(fields, ["type", "stats"])) {
+    const stats = parseStatsView(fields.get("stats"));
+    return stats ? { type: "init", stats } : null;
   }
   return null;
 }
 
 /** What the host does with a valid message. Kept outside so it can be faked in tests. */
 export interface HostHandlers {
-  /** Called with a validated `roundFinished`. Stats arrive in story #8. */
+  /** Called with a validated `roundFinished`. Must not throw. */
   roundFinished(message: RoundFinishedMessage): void;
+  /** The current stats, sent with `init`. Must not throw. */
+  stats(): Stats;
 }
 
 /**
@@ -73,7 +79,7 @@ export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): Host
   const message = parseWebviewMessage(raw);
   switch (message?.type) {
     case "ready":
-      return { type: "init" };
+      return { type: "init", stats: toStatsView(handlers.stats()) };
     case "roundFinished":
       handlers.roundFinished(message);
       return null;
@@ -87,8 +93,8 @@ const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hints
 /**
  * Checks the fields against what a real round can produce (see `Round`):
  * - `rowsUsed` is 1 to `MAX_ROWS`
- * - `answerTries` is 0 to `rowsUsed`, since there is at most one try per row
- * - a solved round used at least one answer try
+ * - `answerTries` is 1 to `rowsUsed`: at most one try per row, and every
+ *   round ends on an answer try (the solving one or the forced final answer)
  * - a failed round used every row and the forced final answer
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
@@ -109,39 +115,4 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
     return null;
   }
   return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };
-}
-
-/**
- * The own fields of a plain object (`{...}` or `JSON.parse` output) as a map,
- * or null for anything else: null, primitives, arrays, class instances,
- * symbol keys or getters. Reading from the map never runs the sender's code
- * or reaches the prototype chain, so `__proto__` and `constructor` are just
- * keys like any other (and so rejected as extra fields).
- */
-function plainFields(raw: unknown): Map<string, unknown> | null {
-  if (typeof raw !== "object" || raw === null) {
-    return null;
-  }
-  const proto: unknown = Object.getPrototypeOf(raw);
-  if (proto !== Object.prototype && proto !== null) {
-    return null;
-  }
-  const fields = new Map<string, unknown>();
-  for (const key of Reflect.ownKeys(raw)) {
-    const descriptor = Object.getOwnPropertyDescriptor(raw, key);
-    if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor)) {
-      return null;
-    }
-    fields.set(key, descriptor.value);
-  }
-  return fields;
-}
-
-/** True if `fields` has exactly these keys, no more and no fewer. */
-function hasExactKeys(fields: ReadonlyMap<string, unknown>, keys: readonly string[]): boolean {
-  return fields.size === keys.length && keys.every((key) => fields.has(key));
-}
-
-function isIntegerInRange(value: unknown, min: number, max: number): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }

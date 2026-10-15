@@ -86,7 +86,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
   - sets `enableScripts: true` and limits `localResourceRoots` to `media/`
   - generates a fresh nonce on every load for the strict CSP: `default-src 'none'; script-src 'nonce-…'; style-src ${cspSource}; font-src ${cspSource}; img-src ${cspSource}`
 - **Message protocol** (`src/protocol.ts`): typed messages between the game and the extension host. The host accepts only an allowlist (`ready`, `roundFinished`; `setTheme` arrives in Phase 3) and validates every field against the engine's limits. It replies `init` to `ready`.
-- **Stats** saved in `context.globalState`: played, solved, average rows, and the hints-used rate.
+- **Stats** (`src/stats.ts`) saved in `context.globalState` under the one key `0xword.stats.v1`: played, solved, the solved-rows total and the hints-used count. Average rows and the hints-used rate are derived (null before there's anything to divide by). Each valid `roundFinished` adds to them; corrupted stored stats reset to zeros, and a failed write never throws. `init` carries the counts and derived values for Phase 3 to show.
 - **Check:** pressing F5 opens the panel.
 
 ## Phase 3: Game UI
