@@ -1,6 +1,7 @@
 // Checks the package.json contributions and what the .vsix ships.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { matchesGlob } from "node:path/posix";
 import { describe, it } from "node:test";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
 
@@ -188,9 +189,22 @@ describe(".vscodeignore", () => {
   });
 
   it("doesn't exclude the webview's stylesheet, so it ships", () => {
-    assert.ok(existsSync(new URL(STYLE_PATH.join("/"), root)));
-    for (const pattern of ignored) {
-      assert.ok(!pattern.includes("css"), pattern);
+    const stylesheet = STYLE_PATH.join("/");
+    assert.ok(existsSync(new URL(stylesheet, root)));
+    // A pattern without a slash may match at any depth, so try the file name too.
+    for (const path of [stylesheet, STYLE_PATH.at(-1) ?? ""]) {
+      for (const pattern of ignored) {
+        assert.ok(!matchesGlob(path, pattern), `${pattern} excludes ${path}`);
+      }
+    }
+  });
+
+  it("would catch a pattern that excludes the stylesheet", () => {
+    for (const pattern of ["media/**", "**/*.css", "media/styles.css", "*.css"]) {
+      assert.ok(
+        matchesGlob(STYLE_PATH.join("/"), pattern) || matchesGlob(STYLE_PATH.at(-1) ?? "", pattern),
+        pattern,
+      );
     }
   });
 

@@ -299,6 +299,7 @@ body {
 }
 
 .key {
+  min-width: var(--ox-touch);
   min-height: var(--ox-touch);
   border: 0;
   border-radius: var(--ox-radius);

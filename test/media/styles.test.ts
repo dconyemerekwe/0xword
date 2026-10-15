@@ -86,6 +86,10 @@ describe("media/styles.css layout and accessibility", () => {
     }
   });
 
+  it("makes keypad keys at least 44px wide too", () => {
+    assert.match(block(".key"), /min-width: var\(--ox-touch\);/);
+  });
+
   it("puts a wider gap between byte pairs than within a pair", () => {
     const between = Number(/gap: (\d+)px;/.exec(block(".grid-row"))?.[1]);
     const within = Number(/gap: (\d+)px;/.exec(block(".pair"))?.[1]);
