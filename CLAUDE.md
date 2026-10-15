@@ -31,8 +31,11 @@ These protect the developers who install the extension. Check every change again
 ## Design
 
 - The owner's draft design is [docs/design/0xword-draft-design.pdf](docs/design/0xword-draft-design.pdf), described screen by screen in [docs/design/README.md](docs/design/README.md). Where the draft disagrees with the game rules above, the rules win.
+- **Styling follows the mock-ups.** Colours, sizes, spacing and layout come from the mock-ups. Don't substitute a colour or style that differs from them. If an accessibility rule seems to conflict, raise it with the owner instead of changing the design.
+  - **Look at the screens:** each page is also a JPEG in [docs/design/pages/](docs/design/pages/) (`page-1.jpg` to `page-5.jpg`), which agents can view with the Read tool. The PDF itself can't be rendered here.
+  - **Exact colours:** take them from the colour tables in [docs/design/README.md](docs/design/README.md#colours), which were measured from those images. Don't pick new values.
 - Side-panel layout about 400px wide. Screens: mid-game, mid-game with hints on, forced final answer, solved, and How to play.
-- Title: `0x` in blue JetBrains Mono followed by `WORD` in DM Sans at weight 1000.
+- Title: `0x` in light blue (`#7EA8FF` dark theme, `#2463EA` light theme) JetBrains Mono, followed by `WORD` in DM Sans at weight 1000.
 - Fonts: DM Sans for the interface, JetBrains Mono for hex.
 - Colours, our own and not Wordle's (dark theme values):
   - right spot: blue `#2F6FE4` with white text
