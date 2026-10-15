@@ -60,6 +60,8 @@ const vscode = acquireVsCodeApi();
 // in progress. Invalid saved state is dropped and a fresh session starts.
 const session = restoreSession(vscode.getState(), parseWordList(wordList));
 const controller = new GameController(session, changed);
+/** How many times `render` has written the message line: see the re-announce in `render`. */
+let messageWrites = 0;
 const app = document.getElementById("app");
 const ui = app ? buildScreen(app) : null;
 render(controller.view());
@@ -269,12 +271,15 @@ function render(view: ScreenView): void {
   );
 
   ui.message.classList.toggle("message-error", view.messageIsError);
+  // Every message write takes a new number, so a delayed write only lands if
+  // nothing was written after it.
+  const token = ++messageWrites;
   if (view.messageIsError && ui.message.textContent === view.message) {
     // The same error again: clear it, then set it on the next frame, so the
     // live region reads it out again.
     ui.message.textContent = "";
     requestAnimationFrame(() => {
-      if (ui.message.textContent === "") {
+      if (token === messageWrites) {
         ui.message.textContent = view.message;
       }
     });
