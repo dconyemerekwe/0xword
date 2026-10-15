@@ -18,9 +18,17 @@ interface View {
   name: string;
 }
 
+interface Command {
+  command: string;
+  title: string;
+  category?: string;
+}
+
 interface Manifest {
+  activationEvents?: string[];
   capabilities?: { untrustedWorkspaces?: { supported?: unknown } };
   contributes?: {
+    commands?: Command[];
     viewsContainers?: { activitybar?: ViewContainer[] };
     views?: Record<string, View[]>;
   };
@@ -28,6 +36,12 @@ interface Manifest {
 
 const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as Manifest;
 const container = manifest.contributes?.viewsContainers?.activitybar?.[0];
+const extensionSource = readFileSync(new URL("src/extension.ts", root), "utf8");
+
+/** How the Command Palette shows a command: "Category: Title". */
+function paletteLabel(command: Command): string {
+  return command.category ? `${command.category}: ${command.title}` : command.title;
+}
 
 describe("package.json", () => {
   it("contributes an activity-bar view container titled 0xWORD", () => {
@@ -61,6 +75,36 @@ describe("package.json", () => {
 
   it("supports untrusted workspaces", () => {
     assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, true);
+  });
+});
+
+describe("package.json commands", () => {
+  const commands = manifest.contributes?.commands ?? [];
+
+  it('contributes 0xword.newRound, shown in the palette as "0xWORD: New Round"', () => {
+    const newRound = commands.find((c) => c.command === "0xword.newRound");
+    assert.ok(newRound);
+    assert.equal(paletteLabel(newRound), "0xWORD: New Round");
+  });
+
+  it("registers the newRound command under the id it contributes", () => {
+    assert.ok(extensionSource.includes('const NEW_ROUND_COMMAND = "0xword.newRound";'));
+    assert.ok(extensionSource.includes("registerCommand(NEW_ROUND_COMMAND,"));
+  });
+
+  it("registers exactly as many commands as it contributes", () => {
+    const registered = extensionSource.match(/registerCommand\(/g) ?? [];
+    assert.equal(registered.length, commands.length);
+  });
+
+  it("relies on the implicit onCommand activation, with no extra activation events", () => {
+    assert.deepEqual(manifest.activationEvents ?? [], []);
+  });
+
+  it("doesn't touch the workspace, so the command works in untrusted workspaces", () => {
+    assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, true);
+    assert.ok(!extensionSource.includes("vscode.workspace"));
+    assert.ok(!/from "node:fs"|require\(/.test(extensionSource));
   });
 });
 

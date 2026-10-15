@@ -25,6 +25,13 @@
     }
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "0xword.newRound",
+        "title": "New Round",
+        "category": "0xWORD"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

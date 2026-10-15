@@ -86,6 +86,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
   - sets `enableScripts: true` and limits `localResourceRoots` to `media/`
   - generates a fresh nonce on every load for the strict CSP: `default-src 'none'; script-src 'nonce-…'; style-src ${cspSource}; font-src ${cspSource}; img-src ${cspSource}`
 - **Message protocol** (`src/protocol.ts`): typed messages between the game and the extension host. The host accepts only an allowlist (`ready`, `roundFinished`; `setTheme` arrives in Phase 3) and validates every field against the engine's limits. It replies `init` to `ready`.
+- **New Round command** (`0xword.newRound`, "0xWORD: New Round"): opens the panel and posts `newRound` (host → webview, no fields). If the webview isn't listening yet (closed, hidden or loading), each run is counted (`src/newRoundRequests.ts`) and sent after `ready` → `init`, so every run starts exactly one new round. The round lives in the webview: a `Session` (`src/game/session.ts`) starts a fresh engine `Round` for the first `init` and for every `newRound`, and the placeholder shows "Round N".
 - **Stats** saved in `context.globalState`: played, solved, average rows, and the hints-used rate.
 - **Check:** pressing F5 opens the panel.
 
