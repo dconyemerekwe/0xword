@@ -19,6 +19,10 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     // Set from the script after the host replied, so seeing this text proves
     // the bundle ran and the message round trip works.
     app.textContent = "0xWORD is ready. The game is on its way.";
+    // A plain-text preview of the stats `init` carries; Phase 3 shows them properly.
+    const stats = document.createElement("p");
+    stats.textContent = `Played ${message.stats.played}, solved ${message.stats.solved}.`;
+    app.append(stats);
   }
 });
 
