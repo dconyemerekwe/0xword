@@ -15,7 +15,7 @@ These protect the developers who install the extension. Check every change again
 5. **Strict webview Content Security Policy.** No outside network access (`default-src 'none'`). Scripts only from the extension's own bundle, loaded with a per-load nonce. No inline scripts and no inline event handlers (`onclick=` etc.); use `addEventListener`.
 6. **Webview loads only from `media/`.** `localResourceRoots` is limited to the extension's `media/` folder.
 7. **Webview messages are untrusted.** The extension host accepts only an allowlist of message types, validates every field, and never acts on paths, commands or code sent from the webview.
-8. **Never touch the user's files.** No workspace or file-system access. The extension reads only its own bundled assets and stores stats in VS Code `globalState`. Declare support for untrusted workspaces.
+8. **Never touch the user's files.** No workspace or file-system access. The extension reads only its own bundled assets and stores stats in VS Code `globalState`. The webview saves the round in progress in its own VS Code state (`setState`) and treats that saved state as untrusted when it reads it back. Declare support for untrusted workspaces.
 9. **No telemetry.** Collect nothing and send nothing, and say so in the README.
 
 ## Game rules
@@ -49,6 +49,7 @@ These protect the developers who install the extension. Check every change again
 
 - **Extension host:** TypeScript (`src/extension.ts`). It registers an activity-bar view container, a webview view and commands, and stores stats in `globalState`.
 - **Webview:** plain HTML, CSS and TypeScript in `media/`, with no framework, bundled by esbuild. It talks to the extension host with `postMessage`.
+- **Round state lives in the webview** and is saved with `vscode.setState` and restored with `vscode.getState()`. **Every game action** (new round, guess, answer, skip, hints) **must go through the `changed()` save helper** in `media/main.ts`, or the move is lost when the panel is hidden.
 - **Game engine:** pure TypeScript with no VS Code dependency, including the hard-coded word list, so it can be unit-tested with `node --test` (Node 24 runs `.ts` files directly).
 - **Distribution:** VS Code Marketplace (`vsce`) and Open VSX (`ovsx`) for Cursor, Windsurf and VSCodium.
 - **Later:** Claude Code hooks that open a `vscode://` link to start a round when a prompt is sent.

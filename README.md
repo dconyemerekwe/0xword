@@ -8,7 +8,7 @@ A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `
 
 ## No telemetry
 
-0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. Your stats (rounds played and solved, average rows, how often you used hints) stay on your machine in VS Code's own extension storage. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
+0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. Your stats (rounds played and solved, average rows, how often you used hints) and the round in progress stay on your machine in VS Code's own storage. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
 
 ## Development
 
@@ -22,7 +22,7 @@ npm test          # run unit tests with node:test
 npm run package   # build a .vsix with vsce
 ```
 
-To try it, open this folder in VS Code and press **F5**. That builds the extension and opens an Extension Development Host window with it loaded. Click the 0xWORD icon in the activity bar to open the panel.
+To try it, open this folder in VS Code and press **F5**. That builds the extension and opens an Extension Development Host window with it loaded. Click the 0xWORD icon in the activity bar to open the panel, or run **0xWORD: New Round** from the Command Palette to start a round.
 
 ## Licence
 

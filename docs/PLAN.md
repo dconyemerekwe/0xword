@@ -6,8 +6,8 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 |---|---|---|
 | 0 | Repo setup and packages | Done |
 | 1 | Game engine (pure TypeScript and tests) | Done |
-| 2 | Extension shell | **In progress** |
-| 3 | Game UI, screen by screen | Not started |
+| 2 | Extension shell | Done (#5; stories #6–#9) |
+| 3 | Game UI, screen by screen | **Next** |
 | 4 | Hardening and accessibility | Not started |
 | 5 | Packaging | Not started |
 | 6 | Publish | Not started |
@@ -85,13 +85,20 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
   - registers a `WebviewViewProvider`
   - sets `enableScripts: true` and limits `localResourceRoots` to `media/`
   - generates a fresh nonce on every load for the strict CSP: `default-src 'none'; script-src 'nonce-…'; style-src ${cspSource}; font-src ${cspSource}; img-src ${cspSource}`
-- **Message protocol** (`src/protocol.ts`): typed messages between the game and the extension host. The host accepts only an allowlist (`ready`, `roundFinished`; `setTheme` arrives in Phase 3) and validates every field against the engine's limits. It replies `init` to `ready`.
+- **Message protocol** (`src/protocol.ts`): typed messages between the game and the extension host. The host accepts only an allowlist (`ready`, `roundFinished`; `setTheme` arrives in Phase 3) and validates every field against the engine's limits. Host → webview messages are `init` (carrying the stats), sent in reply to `ready`, and `newRound`; the webview checks them just as strictly. Both sides use the same untrusted-data readers in `src/game/plain.ts`.
 - **New Round command** (`0xword.newRound`, "0xWORD: New Round"): opens the panel and posts `newRound` (host → webview, no fields). If the webview isn't listening yet (closed, hidden or loading), each run is counted (`src/newRoundRequests.ts`) and sent after `ready` → `init`, so every run starts exactly one new round. The round lives in the webview: a `Session` (`src/game/session.ts`) starts a fresh engine `Round` for every `newRound`, and for `init` only if no round was restored. The placeholder shows "Round N".
 - **Round persistence (owner's decision on PR #16):** the webview saves the session (version, round number and the whole round, answer included) with `vscode.setState` after every change, and restores it with `vscode.getState()` before it sends `ready`. So hiding, collapsing or reloading the panel keeps the round. No `retainContextWhenHidden` and no host-side store: VS Code keeps a webview view's state while it's hidden and across restarts. Saved state is untrusted: `Session.fromState` / `Round.fromState` check it strictly (exact keys, known version, the answer in the word list) and replay every saved guess and answer through the engine. Anything that doesn't match is dropped and a fresh session starts. The answer stays in that webview-only storage; it's never put in the DOM or in a message to the host.
 - **Stats** (`src/stats.ts`) saved in `context.globalState` under the one key `0xword.stats.v1`: played, solved, the solved-rows total and the hints-used count. Average rows and the hints-used rate are derived (null before there's anything to divide by). Each valid `roundFinished` adds to them; corrupted stored stats reset to zeros, and a failed write never throws. `init` carries the counts and derived values for Phase 3 to show.
 - **Check:** pressing F5 opens the panel.
 
 ## Phase 3: Game UI
+
+Rules carried over from Phase 2:
+
+- **Every game action goes through `changed()`** (owner's decision). New round, guess, answer, skip and turning hints on must each end with the `changed()` helper in `media/main.ts`, which saves the session with `setState` and redraws. A move that skips it is lost when the panel is hidden. Route all actions through one function, with a test that every action saves.
+- **Send `roundFinished` once, when a round ends** (solved or failed). Never send it when New round replaces an unfinished round, or the stats would count rounds nobody finished.
+- **Show the stats** that `init` carries (played, solved, average rows, hints-used rate).
+- **Manual check:** hide the panel and run New Round straight away. The round must still start; VS Code's behaviour for a message sent to a hidden webview couldn't be tested automatically.
 
 Build each screen from the design mock, in this order:
 
@@ -105,7 +112,8 @@ Build each screen from the design mock, in this order:
 
 ## Phase 4: Hardening and accessibility
 
-- Unit tests that the extension host rejects unknown or malformed messages.
+- Message validation: Phase 2 already tests that both sides reject unknown or malformed messages and saved state. Re-audit it once Phase 3 adds `setTheme` and any other messages.
+- Error handling found by QA in Phase 2: catch a rejected `postMessage` for `init` (it's sent with `void` today), and decide what to do if `postMessage` returns false for a webview that's actually listening (later New Round runs would queue until the next reload).
 - Audit the CSP: no inline script, no inline event handlers, nothing loaded from outside.
 - Keyboard-only play and focus order, screen-reader labels (`aria-pressed`, `aria-live` status messages), `prefers-reduced-motion`, and contrast checks in both themes.
 
@@ -125,5 +133,5 @@ The owner handles accounts and access tokens.
 
 ## Phase 7: Agent integration (later)
 
-- A Claude Code `UserPromptSubmit` hook opens `vscode://<publisher>.<id>/start` to start a round. A `Stop` hook shows an "agent finished" notice in the panel.
+- A Claude Code `UserPromptSubmit` hook opens `vscode://<publisher>.<id>/start` to start a round, reusing the `0xword.newRound` command and its queue. A `Stop` hook shows an "agent finished" notice in the panel.
 - The URI handler accepts only fixed paths with no arguments, following the untrusted-input rule.
