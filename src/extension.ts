@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { NewRoundRequests, messagesAfter } from "./newRoundRequests.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
+import { StatsStore } from "./stats.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, buildHtml, createNonce } from "./webview/html.ts";
 
 /** The webview view's id, as contributed in package.json. */
@@ -10,7 +11,7 @@ const VIEW_ID = "0xword.game";
 const NEW_ROUND_COMMAND = "0xword.newRound";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new GameViewProvider(context.extensionUri);
+  const provider = new GameViewProvider(context.extensionUri, statsHandlers(new StatsStore(context.globalState)));
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider),
     vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),
@@ -19,19 +20,25 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-/** What the host does with valid messages. Nothing yet: stats arrive in story #8. */
-const handlers: HostHandlers = {
-  roundFinished: () => {},
-};
+/** What the host does with valid messages: count finished rounds and report stats. */
+function statsHandlers(store: StatsStore): HostHandlers {
+  return {
+    // `record` never rejects, so nothing escapes the message listener.
+    roundFinished: (message) => void store.record(message),
+    stats: () => store.current(),
+  };
+}
 
 /** Fills the 0xWORD side panel with the bundled webview. */
 class GameViewProvider implements vscode.WebviewViewProvider {
   readonly #extensionUri: vscode.Uri;
+  readonly #handlers: HostHandlers;
   readonly #requests = new NewRoundRequests();
   #view: vscode.WebviewView | undefined;
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, handlers: HostHandlers) {
     this.#extensionUri = extensionUri;
+    this.#handlers = handlers;
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -49,7 +56,7 @@ class GameViewProvider implements vscode.WebviewViewProvider {
     // `messagesAfter` decides what to post back, in order: `init`, then the
     // rounds requested while the panel was closed.
     const listener = webview.onDidReceiveMessage((raw: unknown) => {
-      for (const message of messagesAfter(raw, handlers, this.#requests, id)) {
+      for (const message of messagesAfter(raw, this.#handlers, this.#requests, id)) {
         if (message.type === "newRound") {
           this.#postNewRound(webview, this.#requests.generation);
         } else {

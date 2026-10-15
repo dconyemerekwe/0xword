@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { NewRoundRequests, messagesAfter } from "../src/newRoundRequests.ts";
 import type { HostHandlers, RoundFinishedMessage } from "../src/protocol.ts";
+import { EMPTY_STATS, toStatsView, type Stats } from "../src/stats.ts";
 
 /** A tracker with one resolved view whose webview has said `ready`. */
 function readyRequests(): { requests: NewRoundRequests; view: number } {
@@ -11,10 +12,15 @@ function readyRequests(): { requests: NewRoundRequests; view: number } {
   return { requests, view };
 }
 
-/** Handlers that record every call. */
-function recordingHandlers(): HostHandlers & { calls: RoundFinishedMessage[] } {
+/** Handlers that record every call and report `stats`. */
+function recordingHandlers(stats: Stats = EMPTY_STATS): HostHandlers & { calls: RoundFinishedMessage[] } {
   const calls: RoundFinishedMessage[] = [];
-  return { calls, roundFinished: (message) => calls.push(message) };
+  return { calls, roundFinished: (message) => calls.push(message), stats: () => stats };
+}
+
+/** The `init` reply for `stats`. */
+function init(stats: Stats = EMPTY_STATS) {
+  return { type: "init", stats: toStatsView(stats) };
 }
 
 describe("NewRoundRequests", () => {
@@ -199,7 +205,7 @@ describe("messagesAfter", () => {
     requests.request();
     const view = requests.attach();
     assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
-      { type: "init" },
+      init(),
       { type: "newRound" },
       { type: "newRound" },
     ]);
@@ -208,7 +214,18 @@ describe("messagesAfter", () => {
   it("replies only init when nothing is queued", () => {
     const requests = new NewRoundRequests();
     const view = requests.attach();
-    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [{ type: "init" }]);
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [init()]);
+  });
+
+  it("puts the handlers' current stats in init, ahead of the queued newRound", () => {
+    const stats: Stats = { played: 4, solved: 3, solvedRowsTotal: 9, hintsUsedCount: 1 };
+    const requests = new NewRoundRequests();
+    requests.request();
+    const view = requests.attach();
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(stats), requests, view), [
+      init(stats),
+      { type: "newRound" },
+    ]);
   });
 
   it("marks the view ready, so later runs are sent straight away", () => {
@@ -223,7 +240,7 @@ describe("messagesAfter", () => {
     const oldView = requests.attach();
     requests.request();
     requests.attach();
-    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, oldView), [{ type: "init" }]);
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, oldView), [init()]);
     assert.equal(requests.pending, 1);
   });
 

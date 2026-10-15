@@ -8,6 +8,7 @@ import {
   type HostHandlers,
   type RoundFinishedMessage,
 } from "../src/protocol.ts";
+import { EMPTY_STATS, type Stats } from "../src/stats.ts";
 import { WORDS, WORD_SET } from "./game/fixtures.ts";
 
 /** A valid `roundFinished`; each case below changes one thing about it. */
@@ -22,9 +23,30 @@ function without(key: string): Record<string, unknown> {
 }
 
 /** Handlers that record every call, to prove an ignored message changed nothing. */
-function recordingHandlers(): HostHandlers & { calls: RoundFinishedMessage[] } {
+function recordingHandlers(stats: Stats = EMPTY_STATS): HostHandlers & { calls: RoundFinishedMessage[] } {
   const calls: RoundFinishedMessage[] = [];
-  return { calls, roundFinished: (message) => calls.push(message) };
+  return { calls, roundFinished: (message) => calls.push(message), stats: () => stats };
+}
+
+/** Some played rounds, and their counts with the derived values. */
+const SOME_STATS: Stats = { played: 4, solved: 3, solvedRowsTotal: 9, hintsUsedCount: 1 };
+const SOME_STATS_VIEW = { ...SOME_STATS, averageRows: 3, hintsUsedRate: 0.25 };
+
+/** The `init` a new player gets: zero counts, nothing to derive yet. */
+const EMPTY_INIT = {
+  type: "init",
+  stats: { played: 0, solved: 0, solvedRowsTotal: 0, hintsUsedCount: 0, averageRows: null, hintsUsedRate: null },
+};
+
+/** A valid `init` with `SOME_STATS`, with the stats fields overridden. */
+function init(statsOverrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "init", stats: { ...SOME_STATS_VIEW, ...statsOverrides } };
+}
+
+function initWithout(key: string): Record<string, unknown> {
+  const stats: Record<string, unknown> = { ...SOME_STATS_VIEW };
+  delete stats[key];
+  return { type: "init", stats };
 }
 
 class Lookalike {
@@ -173,8 +195,17 @@ describe("parseWebviewMessage", () => {
 });
 
 describe("handleWebviewMessage", () => {
-  it("replies init to ready", () => {
-    assert.deepEqual(handleWebviewMessage({ type: "ready" }, recordingHandlers()), { type: "init" });
+  it("replies init to ready, with zero stats for a new player", () => {
+    assert.deepEqual(handleWebviewMessage({ type: "ready" }, recordingHandlers()), EMPTY_INIT);
+  });
+
+  it("replies init carrying the current stats and their derived values", () => {
+    assert.deepEqual(handleWebviewMessage({ type: "ready" }, recordingHandlers(SOME_STATS)), init());
+  });
+
+  it("sends an init that the webview's parseHostMessage accepts", () => {
+    const reply = handleWebviewMessage({ type: "ready" }, recordingHandlers(SOME_STATS));
+    assert.deepEqual(parseHostMessage(reply), reply);
   });
 
   it("passes a valid roundFinished to its handler, without a reply", () => {
@@ -229,14 +260,25 @@ describe("handleWebviewMessage", () => {
 
     it("replies with a fixed init that copies nothing from the message", () => {
       const reply = handleWebviewMessage({ type: "ready" }, recordingHandlers());
-      assert.deepEqual(reply, { type: "init" });
+      assert.deepEqual(reply, EMPTY_INIT);
     });
   });
 });
 
 describe("parseHostMessage", () => {
-  it("accepts init", () => {
-    assert.deepEqual(parseHostMessage({ type: "init" }), { type: "init" });
+  it("accepts init with stats", () => {
+    assert.deepEqual(parseHostMessage(init()), init());
+  });
+
+  it("accepts init with zero stats and null derived values", () => {
+    assert.deepEqual(parseHostMessage(EMPTY_INIT), EMPTY_INIT);
+  });
+
+  it("returns a new stats object, not the one it was given", () => {
+    const raw = init();
+    const message = parseHostMessage(raw);
+    assert.ok(message?.type === "init");
+    assert.notEqual(message.stats, raw.stats);
   });
 
   it("accepts newRound", () => {
@@ -251,16 +293,33 @@ describe("parseHostMessage", () => {
   const invalid: readonly (readonly [string, unknown])[] = [
     ["an unknown type", { type: "setTheme" }],
     ["a webview message", { type: "ready" }],
-    ["init with an extra field", { type: "init", html: "<img src=x onerror=alert(1)>" }],
     ["newRound with an extra field", { type: "newRound", answer: "BYTE" }],
     ["newRound with an undefined extra field", { type: "newRound", round: undefined }],
     ["newRound in the wrong case", { type: "NewRound" }],
     ["newRound with a JSON-parsed __proto__ key", JSON.parse('{"type":"newRound","__proto__":{"polluted":true}}')],
     ["newRound inherited from a prototype", Object.create({ type: "newRound" })],
     ["a string newRound", "newRound"],
+    ["init without stats", { type: "init" }],
+    ["init with an extra field", { ...init(), html: "<img src=x onerror=alert(1)>" }],
+    ["init with stats as a string", { type: "init", stats: "Played 3" }],
+    ["init with stats as null", { type: "init", stats: null }],
+    ["stats with an extra field", init({ streak: 2 })],
+    ["stats with HTML in an extra field", init({ html: "<img src=x onerror=alert(1)>" })],
+    ["stats without played", initWithout("played")],
+    ["stats without averageRows", initWithout("averageRows")],
+    ["stats without hintsUsedRate", initWithout("hintsUsedRate")],
+    ["a negative count", init({ played: -1 })],
+    ["a fractional count", init({ solved: 2.5 })],
+    ["a count as a string", init({ played: "4" })],
+    ["more solved than played", init({ solved: 5 })],
+    ["an averageRows that doesn't match the counts", init({ averageRows: 2 })],
+    ["an averageRows as a string", init({ averageRows: "3" })],
+    ["a null averageRows with solved rounds", init({ averageRows: null })],
+    ["a hintsUsedRate that doesn't match the counts", init({ hintsUsedRate: 0.5 })],
+    ["a null hintsUsedRate with played rounds", init({ hintsUsedRate: null })],
     ["null", null],
     ["a string", "init"],
-    ["an array", [{ type: "init" }]],
+    ["an array", [init()]],
   ];
   for (const [name, raw] of invalid) {
     it(`returns null for ${name}`, () => {
