@@ -65,7 +65,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
 - **Scoring:** `score(guessHex, answerHex)` gives a right spot / wrong spot / not in word result for each of the 8 digits, handling repeated digits correctly. Port the logic from the old `wordle/web/wordle.js`.
 - **Guess checking:** exactly 8 hex digits, every pair a letter, and the decoded word must be in the word list.
 - **Answer pick:** a random word from the word list at the start of each round.
-- **The round:** 6 rows, one answer try per row, a forced final answer after row 6, the hints letters (a byte shows its letter once both of its digits are in the right spot), and the result (rows used, answer tries, hints used).
+- **The round:** 6 rows, one answer try per row, a forced final answer after row 6, the hints letters (a byte shows its letter once both of its digits are in the right spot), and the result (solved, rows used, hints used). Answer tries always equal rows used, so the result has no separate count (owner's decision on PR #28).
 - **Round rules (agreed):**
   1. After each scored row the player must make one answer try before the next row. **Changed in Phase 3 (owner's decision):** the engine first allowed skipping a try with `skipAnswer()`; skipping is removed, so answer tries always equal rows used.
   2. An all-right hex row doesn't win on its own; the player still types the word.
@@ -100,7 +100,7 @@ Rules carried over from Phase 2:
 - **Show the stats** that `init` carries (played, solved, average rows, hints-used rate).
 - **Manual check:** hide the panel and run New Round straight away. The round must still start; VS Code's behaviour for a message sent to a hidden webview couldn't be tested automatically.
 
-- **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Remove `skipAnswer()` from the engine, and tighten `roundFinished` and saved-state validation to answer tries = rows used. Done in #20: saved state is now version 2, and version-1 state (which could hold skipped tries) is dropped, so the panel starts a fresh session.
+- **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Done in #20: `skipAnswer()` is removed from the engine. Because answer tries always equal rows used, the redundant `answerTries` field is removed from the engine result, the `roundFinished` message and the saved round (owner's decision on PR #28); a message or saved round that still carries it is rejected. Saved state is now version 2, and version-1 state (which could hold skipped tries) is dropped, so the panel starts a fresh session.
 
 Build each screen from the owner's draft design, [docs/design/0xword-draft-design.pdf](design/0xword-draft-design.pdf), described page by page in [docs/design/README.md](design/README.md), in this order:
 
