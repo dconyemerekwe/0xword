@@ -21,8 +21,9 @@ Built on its own `feature/ci` branch and merged into `develop` before the Phase 
 - **Runner:** `ubuntu-latest` with Node 24 (`actions/setup-node`, `cache: npm`).
 - **Locked down:** only GitHub's own actions (`actions/checkout`, `actions/setup-node`, `actions/upload-artifact`), each pinned to a full commit SHA rather than a tag. `permissions: contents: read`. No secrets in the workflow.
 - **Secret scanning:** the repo is private for now, so rely on the local gitleaks pre-commit hook plus vsce's own secret check when packaging. Before publishing, make the repo public (SECURITY.md's private vulnerability reporting needs that) and turn on GitHub secret scanning with push protection, which is free for public repos. A gitleaks step in CI would add a new tool and needs the owner's approval first.
+- **Dependabot (security updates only):** `.github/dependabot.yml` watches npm and the pinned GitHub Actions. When a known vulnerability affects one, Dependabot opens a PR into `develop` that bumps it to the lowest fixed version. Routine version-bump PRs are off (`open-pull-requests-limit: 0`). Dependabot never merges: CI runs on its PR and the owner reviews and merges. Alerts are under Security → Dependabot. `develop` is the default branch, so these PRs target it.
 - **No publishing from CI.** The owner publishes by hand (Phase 6), so no Marketplace or Open VSX tokens are stored in GitHub.
-- **Branch protection** isn't available while the repo is private on GitHub's free plan. Until then: agents never push to `develop` or `main`, and the owner merges only PRs with green CI. When the repo goes public, require the CI check on `develop` and `main` before a PR can merge.
+- **Branch protection** on `develop` and `main`: changes go in only through a PR, the CI check *Typecheck, test, build and package* must pass, and one approving review is required. Nobody pushes directly to either branch, agents included. GitHub doesn't let the owner approve their own PRs (including those agents open under the owner's account), so the owner reviews them and merges with the admin bypass. Dependabot's PRs can be approved normally.
 
 ## Agent workflow
 
@@ -37,7 +38,7 @@ Claude Code agents in `.claude/agents/` and skills in `.claude/skills/` do the b
 
 ## Phase 0: Repo setup and packages
 
-Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE`, the Node `.gitignore`, and `main` as its default branch. Local `develop` and `feature/repo-setup` branches exist but aren't pushed yet.
+Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE`, the Node `.gitignore`, and `main` as its default branch. (Later changed: `develop` is now the default branch, so Dependabot PRs target it.) Local `develop` and `feature/repo-setup` branches exist but aren't pushed yet.
 
 1. **Branches.** Push `develop` and make it the base for work. Replace the loose `feature` branch with properly named `feature/<name>` branches, starting with `feature/repo-setup`.
 2. **`.gitignore`.** Add `*.vsix` and `.vscode-test/`, and make sure `dist/` is ignored.
