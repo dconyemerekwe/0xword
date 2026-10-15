@@ -100,7 +100,7 @@ Rules carried over from Phase 2:
 - **Show the stats** that `init` carries (played, solved, average rows, hints-used rate).
 - **Manual check:** hide the panel and run New Round straight away. The round must still start; VS Code's behaviour for a message sent to a hidden webview couldn't be tested automatically.
 
-- **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Remove `skipAnswer()` from the engine, and tighten `roundFinished` and saved-state validation to answer tries = rows used.
+- **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Remove `skipAnswer()` from the engine, and tighten `roundFinished` and saved-state validation to answer tries = rows used. Done in #20: saved state is now version 2, and version-1 state (which could hold skipped tries) is dropped, so the panel starts a fresh session.
 
 Build each screen from the owner's draft design, [docs/design/0xword-draft-design.pdf](design/0xword-draft-design.pdf), described page by page in [docs/design/README.md](design/README.md), in this order:
 
