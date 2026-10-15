@@ -12,3 +12,4 @@ export {
   type RoundResult,
   type Row,
 } from "./round.ts";
+export { Session } from "./session.ts";
