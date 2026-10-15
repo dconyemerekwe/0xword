@@ -26,6 +26,8 @@ const builds: esbuild.BuildOptions[] = [
     platform: "browser",
     target: "es2022",
     format: "iife",
+    // Inlines the word list, so the webview never fetches it.
+    loader: { ".txt": "text" },
   },
 ];
 

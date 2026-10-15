@@ -58,7 +58,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   // Unknown types
   ["an unknown type", { type: "deleteFiles" }],
   ["setTheme (Phase 3)", { type: "setTheme", theme: "dark" }],
-  ["newRound (story #9)", { type: "newRound" }],
+  ["newRound, which only the host sends", { type: "newRound" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
   ["a non-string type", { type: 1 }],
@@ -277,12 +277,28 @@ describe("parseHostMessage", () => {
   it("returns a new stats object, not the one it was given", () => {
     const raw = init();
     const message = parseHostMessage(raw);
-    assert.notEqual(message?.stats, raw.stats);
+    assert.ok(message?.type === "init");
+    assert.notEqual(message.stats, raw.stats);
+  });
+
+  it("accepts newRound", () => {
+    assert.deepEqual(parseHostMessage({ type: "newRound" }), { type: "newRound" });
+  });
+
+  it("returns a new newRound object, not the one it was given", () => {
+    const raw = { type: "newRound" };
+    assert.notEqual(parseHostMessage(raw), raw);
   });
 
   const invalid: readonly (readonly [string, unknown])[] = [
     ["an unknown type", { type: "setTheme" }],
     ["a webview message", { type: "ready" }],
+    ["newRound with an extra field", { type: "newRound", answer: "BYTE" }],
+    ["newRound with an undefined extra field", { type: "newRound", round: undefined }],
+    ["newRound in the wrong case", { type: "NewRound" }],
+    ["newRound with a JSON-parsed __proto__ key", JSON.parse('{"type":"newRound","__proto__":{"polluted":true}}')],
+    ["newRound inherited from a prototype", Object.create({ type: "newRound" })],
+    ["a string newRound", "newRound"],
     ["init without stats", { type: "init" }],
     ["init with an extra field", { ...init(), html: "<img src=x onerror=alert(1)>" }],
     ["init with stats as a string", { type: "init", stats: "Played 3" }],

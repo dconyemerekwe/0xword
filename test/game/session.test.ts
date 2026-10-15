@@ -1,0 +1,216 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { SESSION_STATE_VERSION, Session, restoreSession } from "../../src/game/session.ts";
+import { wordToHex } from "../../src/game/hex.ts";
+import { WORDS } from "./fixtures.ts";
+
+/** A random source that returns these values in turn. */
+function sequence(...values: number[]): () => number {
+  let i = 0;
+  return () => values[i++ % values.length] ?? 0;
+}
+
+describe("Session", () => {
+  it("has no round before the first newRound", () => {
+    const session = new Session(WORDS);
+    assert.equal(session.round, null);
+    assert.equal(session.roundNumber, 0);
+  });
+
+  it("starts round 1, ready for its first hex row", () => {
+    const session = new Session(WORDS);
+    const round = session.newRound();
+    assert.equal(session.round, round);
+    assert.equal(session.roundNumber, 1);
+    assert.equal(round.phase, "guess");
+    assert.deepEqual(round.rows, []);
+  });
+
+  it("starts exactly one fresh round per call", () => {
+    const session = new Session(WORDS);
+    const first = session.newRound();
+    const second = session.newRound();
+    assert.notEqual(second, first);
+    assert.equal(session.round, second);
+    assert.equal(session.roundNumber, 2);
+  });
+
+  it("replaces a round in progress with an untouched one", () => {
+    const [answer, other] = WORDS;
+    assert.ok(answer && other);
+    const session = new Session(WORDS, () => 0);
+    session.newRound().submitGuess(wordToHex(other));
+    const fresh = session.newRound();
+    assert.equal(fresh.phase, "guess");
+    assert.deepEqual(fresh.rows, []);
+  });
+
+  it("picks each answer at random from the word list", () => {
+    const first = WORDS[0];
+    const last = WORDS.at(-1);
+    assert.ok(first && last);
+    const session = new Session(WORDS, sequence(0, 0.999999));
+    for (const expected of [first, last]) {
+      const round = session.newRound();
+      round.submitGuess(wordToHex(expected));
+      assert.deepEqual(round.submitAnswer(expected), { ok: true, correct: true });
+    }
+  });
+
+  it("works with a one-word list", () => {
+    const session = new Session(["BYTE"]);
+    session.newRound().submitGuess(wordToHex("BYTE"));
+    assert.deepEqual(session.round?.submitAnswer("BYTE"), { ok: true, correct: true });
+  });
+
+  it("rejects an empty word list", () => {
+    assert.throws(() => new Session([]), /without words/);
+  });
+
+  describe("ensureRound (on init)", () => {
+    it("starts round 1 in a fresh session", () => {
+      const session = new Session(WORDS);
+      assert.equal(session.ensureRound(), true);
+      assert.equal(session.roundNumber, 1);
+      assert.ok(session.round);
+    });
+
+    it("leaves a round already there alone", () => {
+      const session = new Session(WORDS);
+      const round = session.newRound();
+      assert.equal(session.ensureRound(), false);
+      assert.equal(session.round, round);
+      assert.equal(session.roundNumber, 1);
+    });
+  });
+});
+
+/** A session at round `n`, its round with one row guessed and skipped. */
+function sessionAt(n: number): Session {
+  const session = new Session(WORDS, () => 0);
+  for (let i = 0; i < n; i++) {
+    session.newRound();
+  }
+  const round = session.round;
+  assert.ok(round);
+  const other = WORDS[1];
+  assert.ok(other);
+  round.submitGuess(wordToHex(other));
+  round.skipAnswer();
+  round.submitGuess(wordToHex(other));
+  return session;
+}
+
+/** Saved state as it comes back from storage: plain JSON data. */
+function stored(session: Session): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(session.toState())) as Record<string, unknown>;
+}
+
+describe("Session state", () => {
+  it("has nothing to save before the first round", () => {
+    assert.equal(new Session(WORDS).toState(), null);
+  });
+
+  it("saves the version, the round number and the round", () => {
+    const session = sessionAt(3);
+    const state = session.toState();
+    assert.ok(state);
+    assert.equal(state.version, SESSION_STATE_VERSION);
+    assert.equal(state.roundNumber, 3);
+    assert.deepEqual(state.round, session.round?.toState());
+  });
+
+  it("round-trips the round number and the round in progress", () => {
+    const session = sessionAt(4);
+    const restored = Session.fromState(stored(session), WORDS);
+    assert.ok(restored);
+    assert.equal(restored.roundNumber, 4);
+    assert.deepEqual(restored.toState(), session.toState());
+    assert.equal(restored.round?.phase, "answer");
+  });
+
+  it("round-trips a finished round", () => {
+    const session = new Session(WORDS, () => 0);
+    const round = session.newRound();
+    const answer = WORDS[0];
+    assert.ok(answer);
+    round.submitGuess(wordToHex(answer));
+    round.submitAnswer(answer);
+    assert.equal(Session.fromState(stored(session), WORDS)?.round?.phase, "solved");
+  });
+
+  describe("rejects corrupt or tampered state", () => {
+    const valid = (): Record<string, unknown> => stored(sessionAt(2));
+    const invalid: readonly (readonly [string, () => unknown])[] = [
+      ["undefined, as in a panel never opened", () => undefined],
+      ["null", () => null],
+      ["a string", () => "state"],
+      ["an array", () => [valid()]],
+      ["a newer version", () => ({ ...valid(), version: SESSION_STATE_VERSION + 1 })],
+      ["a version as a string", () => ({ ...valid(), version: String(SESSION_STATE_VERSION) })],
+      ["no version", () => ({ roundNumber: 2, round: valid().round })],
+      ["an extra key", () => ({ ...valid(), extra: true })],
+      ["no round", () => ({ version: SESSION_STATE_VERSION, roundNumber: 2 })],
+      ["round number 0", () => ({ ...valid(), roundNumber: 0 })],
+      ["a negative round number", () => ({ ...valid(), roundNumber: -1 })],
+      ["a fractional round number", () => ({ ...valid(), roundNumber: 1.5 })],
+      ["a round number as a string", () => ({ ...valid(), roundNumber: "2" })],
+      ["an infinite round number", () => ({ ...valid(), roundNumber: Number.POSITIVE_INFINITY })],
+      ["a tampered round", () => ({ ...valid(), round: { ...(valid().round as object), answer: "ZZZZ" } })],
+      ["a null round", () => ({ ...valid(), round: null })],
+      [
+        "a JSON-parsed __proto__ key",
+        () => JSON.parse(`{${JSON.stringify(valid()).slice(1, -1)},"__proto__":{"roundNumber":9}}`),
+      ],
+    ];
+    for (const [name, make] of invalid) {
+      it(`returns null for ${name}, without throwing`, () => {
+        assert.equal(Session.fromState(make(), WORDS), null);
+      });
+    }
+
+    it("returns null for an empty word list, without throwing", () => {
+      assert.equal(Session.fromState(stored(sessionAt(1)), []), null);
+    });
+  });
+});
+
+describe("restoreSession (webview start-up)", () => {
+  it("starts fresh with no round when nothing was saved, so init starts round 1", () => {
+    const session = restoreSession(undefined, WORDS);
+    assert.equal(session.round, null);
+    assert.equal(session.ensureRound(), true);
+    assert.equal(session.roundNumber, 1);
+  });
+
+  it("restores a valid saved session, so init keeps its round", () => {
+    const saved = sessionAt(5);
+    const session = restoreSession(stored(saved), WORDS);
+    assert.equal(session.roundNumber, 5);
+    assert.equal(session.ensureRound(), false);
+    assert.deepEqual(session.toState(), saved.toState());
+  });
+
+  it("starts fresh when the saved state is invalid", () => {
+    const session = restoreSession({ ...stored(sessionAt(5)), version: 0 }, WORDS);
+    assert.equal(session.round, null);
+    assert.equal(session.roundNumber, 0);
+  });
+
+  it("gives round N+1 for a queued newRound after init on a restored round N", () => {
+    const session = restoreSession(stored(sessionAt(5)), WORDS);
+    session.ensureRound();
+    const fresh = session.newRound();
+    assert.equal(session.roundNumber, 6);
+    assert.equal(fresh.phase, "guess");
+    assert.deepEqual(fresh.rows, []);
+  });
+
+  it("gives one new round per queued newRound on top of the restored number", () => {
+    const session = restoreSession(stored(sessionAt(5)), WORDS);
+    session.ensureRound();
+    session.newRound();
+    session.newRound();
+    assert.equal(session.roundNumber, 7);
+  });
+});

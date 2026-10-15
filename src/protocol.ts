@@ -5,7 +5,7 @@
 // Everything arriving through `postMessage` is untrusted (CLAUDE.md security
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
-import { hasExactKeys, isIntegerInRange, plainFields } from "./fields.ts";
+import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 
@@ -34,7 +34,12 @@ export interface InitMessage {
   readonly stats: StatsView;
 }
 
-export type HostMessage = InitMessage;
+/** Start a fresh round: sent once per run of the "0xWORD: New Round" command. */
+export interface NewRoundMessage {
+  readonly type: "newRound";
+}
+
+export type HostMessage = InitMessage | NewRoundMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -58,6 +63,9 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   if (fields?.get("type") === "init" && hasExactKeys(fields, ["type", "stats"])) {
     const stats = parseStatsView(fields.get("stats"));
     return stats ? { type: "init", stats } : null;
+  }
+  if (fields?.get("type") === "newRound" && hasExactKeys(fields, ["type"])) {
+    return { type: "newRound" };
   }
   return null;
 }
