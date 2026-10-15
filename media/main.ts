@@ -28,10 +28,11 @@ let stats: StatsView | null = null;
 render();
 
 /**
- * Saves the session and redraws. Call after every change to the session or
- * its round. The saved state holds the answer: that's fine, because it stays
- * in VS Code's own storage for this webview. It is never put in the DOM or
- * in a message to the host.
+ * Saves the session and redraws. Every game action (new round, guess, answer,
+ * skip, hints) must end with this call, or the move is lost the next time the
+ * panel is hidden and the webview reloads. The saved state holds the answer:
+ * that's fine, because it stays in VS Code's own storage for this webview.
+ * It is never put in the DOM or in a message to the host.
  */
 function changed(): void {
   const state = session.toState();
