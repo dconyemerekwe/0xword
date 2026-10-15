@@ -84,6 +84,16 @@ describe("Round", () => {
     assert.deepEqual(round.toState().answers, ["TEAM", "BYTE"]);
   });
 
+  it("lists the accepted answer tries, uppercased, without the rejected ones", () => {
+    const round = newRound();
+    assert.deepEqual(round.answers, []);
+    round.submitGuess(wordToHex("TEAM"));
+    assert.deepEqual(round.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
+    assert.deepEqual(round.answers, []);
+    round.submitAnswer(" team ");
+    assert.deepEqual(round.answers, ["TEAM"]);
+  });
+
   it("has no way to skip an answer try", () => {
     const round = newRound();
     assert.equal("skipAnswer" in round, false);

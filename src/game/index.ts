@@ -13,4 +13,4 @@ export {
   type RoundState,
   type Row,
 } from "./round.ts";
-export { SESSION_STATE_VERSION, Session, restoreSession, type SessionState } from "./session.ts";
+export { SESSION_STATE_VERSION, Session, isDraft, restoreSession, type SessionState } from "./session.ts";

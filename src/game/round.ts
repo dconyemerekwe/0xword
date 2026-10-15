@@ -88,6 +88,11 @@ export class Round {
     return this.#rows;
   }
 
+  /** The accepted answer tries so far, uppercased, one per finished row. */
+  get answers(): readonly string[] {
+    return this.#answers;
+  }
+
   get hintsUsed(): boolean {
     return this.#hintsUsed;
   }
