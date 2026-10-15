@@ -80,7 +80,7 @@ body {
 }
 
 .title-hex {
-  color: var(--ox-accent);
+  color: var(--ox-right);
   font-family: var(--ox-mono);
   font-weight: 700;
 }

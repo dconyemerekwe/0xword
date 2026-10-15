@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import {
   DARK_PALETTE,
   MIN_TEXT_CONTRAST,
+  LARGE_TEXT_PAIRS,
+  MIN_LARGE_TEXT_CONTRAST,
   TEXT_PAIRS,
+  isLargeText,
   contrastRatio,
   relativeLuminance,
 } from "../../src/ui/palette.ts";
@@ -63,5 +66,35 @@ describe("DARK_PALETTE", () => {
 
   it("needs at least WCAG AA for normal text", () => {
     assert.equal(MIN_TEXT_CONTRAST, 4.5);
+  });
+
+  for (const [text, background] of LARGE_TEXT_PAIRS) {
+    it(`${text} on ${background}, as large text only, has a contrast of at least ${MIN_LARGE_TEXT_CONTRAST}:1`, () => {
+      const ratio = contrastRatio(DARK_PALETTE[text], DARK_PALETTE[background]);
+      assert.ok(ratio >= MIN_LARGE_TEXT_CONTRAST, `${ratio.toFixed(2)}:1`);
+    });
+  }
+
+  it("needs at least WCAG AA for large text, and only puts the design's blue title there", () => {
+    assert.equal(MIN_LARGE_TEXT_CONTRAST, 3);
+    assert.deepEqual(LARGE_TEXT_PAIRS, [["right", "background"]]);
+    // About 3.9:1: fine for large text, too low for normal text.
+    const ratio = contrastRatio(DARK_PALETTE.right, DARK_PALETTE.background);
+    assert.ok(ratio >= 3 && ratio < 4.5, ratio.toFixed(2));
+  });
+});
+
+describe("isLargeText", () => {
+  it("is 24px and up at any weight", () => {
+    assert.equal(isLargeText(24, 400), true);
+    assert.equal(isLargeText(26, 400), true);
+    assert.equal(isLargeText(23.9, 400), false);
+  });
+
+  it("is 18.66px and up when bold (700 or more)", () => {
+    assert.equal(isLargeText(18.66, 700), true);
+    assert.equal(isLargeText(20, 1000), true);
+    assert.equal(isLargeText(18.6, 700), false);
+    assert.equal(isLargeText(20, 600), false);
   });
 });

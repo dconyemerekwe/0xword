@@ -10,10 +10,7 @@ export const DARK_PALETTE = {
   text: "#E8EAF0",
   /** Secondary text (status line, legend, placeholders), and outlines of typed tiles and the decode box. */
   muted: "#A3A9B6",
-  /**
-   * Blue text on the background, such as the `0x` title. Lighter than the
-   * right-spot blue, which is too dark for text on the background.
-   */
+  /** The keyboard focus ring. Not from the design: awaiting the owner's decision. */
   accent: "#6B98F0",
   right: "#2F6FE4",
   onRight: "#FFFFFF",
@@ -42,7 +39,6 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["muted", "panel"], // "1 try per row", Tried words, placeholder, disabled decode box
   ["muted", "key"], // disabled unmarked keys
   ["muted", "keyAbsent"], // absent keypad keys, the disabled Decode button
-  ["accent", "background"], // the `0x` title
   ["onRight", "right"], // right-spot tiles and keys, the Decode button
   ["onWrong", "wrong"], // wrong-spot tiles and keys
   ["onAbsent", "absent"], // not-in-word tiles
@@ -51,6 +47,24 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
 
 /** WCAG AA for normal-size text. */
 export const MIN_TEXT_CONTRAST = 4.5;
+
+/**
+ * Text colours drawn only as WCAG large text (at least 24px, or at least
+ * 18.66px bold), with their background. Each must have a contrast ratio of
+ * at least `MIN_LARGE_TEXT_CONTRAST`. A test checks the stylesheet really
+ * draws them that large.
+ */
+export const LARGE_TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: PaletteToken])[] = [
+  ["right", "background"], // the `0x` title, in the design's blue
+];
+
+/** WCAG AA for large text. */
+export const MIN_LARGE_TEXT_CONTRAST = 3;
+
+/** WCAG's large text: at least 24px, or at least 18.66px (14pt) when bold (700 or more). */
+export function isLargeText(sizePx: number, weight: number): boolean {
+  return sizePx >= 24 || (sizePx >= 18.66 && weight >= 700);
+}
 
 /**
  * The WCAG 2 contrast ratio of two `#RRGGBB` colours, from 1 (the same) to

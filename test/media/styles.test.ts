@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { DARK_PALETTE } from "../../src/ui/palette.ts";
+import { DARK_PALETTE, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
 
 const css = readFileSync(new URL(`../../${STYLE_PATH.join("/")}`, import.meta.url), "utf8");
@@ -65,6 +65,20 @@ describe("media/styles.css colours", () => {
     assert.match(block(".tile-right"), /background: var\(--ox-right\);[\s\S]*color: var\(--ox-on-right\);/);
     assert.match(block(".tile-wrong"), /background: var\(--ox-wrong\);[\s\S]*color: var\(--ox-on-wrong\);/);
     assert.match(block(".tile-absent"), /background: var\(--ox-absent\);[\s\S]*color: var\(--ox-on-absent\);/);
+  });
+
+  it("draws the `0x` title in the design's blue, as WCAG large text", () => {
+    assert.match(block(".title-hex"), /color: var\(--ox-right\);/);
+    const size = Number(/font-size: ([\d.]+)px;/.exec(block(".title"))?.[1]);
+    const weight = Number(/font-weight: (\d+);/.exec(block(".title-hex"))?.[1]);
+    assert.ok(isLargeText(size, weight), `${size}px at weight ${weight}`);
+  });
+
+  it("uses the large-text-only blue for text nowhere but the title", () => {
+    const uses = [...outsideRoot.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => /(^|[\s;])color: var\(--ox-right\);/.test(body ?? ""))
+      .map(([, selector]) => selector?.trim());
+    assert.deepEqual(uses, [".title-hex"]);
   });
 
   it("makes right keys blue and absent keys darker and struck through", () => {
