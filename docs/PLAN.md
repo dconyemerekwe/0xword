@@ -67,7 +67,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
 - **Answer pick:** a random word from the word list at the start of each round.
 - **The round:** 6 rows, one answer try per row, a forced final answer after row 6, the hints letters (a byte shows its letter once both of its digits are in the right spot), and the result (rows used, answer tries, hints used).
 - **Round rules (agreed):**
-  1. After each scored row the player gets one answer try, which they may skip, except for the forced final answer.
+  1. After each scored row the player must make one answer try before the next row. **Changed in Phase 3 (owner's decision):** the engine first allowed skipping a try with `skipAnswer()`; skipping is removed, so answer tries always equal rows used.
   2. An all-right hex row doesn't win on its own; the player still types the word.
   3. A malformed or unlisted answer is rejected without using up the try.
   4. A byte's hint letter shows once each of its two digits has been in the right spot, in any rows.
@@ -95,12 +95,14 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
 
 Rules carried over from Phase 2:
 
-- **Every game action goes through `changed()`** (owner's decision). New round, guess, answer, skip and turning hints on must each end with the `changed()` helper in `media/main.ts`, which saves the session with `setState` and redraws. A move that skips it is lost when the panel is hidden. Route all actions through one function, with a test that every action saves.
+- **Every game action goes through `changed()`** (owner's decision). New round, guess, answer and turning hints on must each end with the `changed()` helper in `media/main.ts`, which saves the session with `setState` and redraws. A move that skips it is lost when the panel is hidden. Route all actions through one function, with a test that every action saves.
 - **Send `roundFinished` once, when a round ends** (solved or failed). Never send it when New round replaces an unfinished round, or the stats would count rounds nobody finished.
 - **Show the stats** that `init` carries (played, solved, average rows, hints-used rate).
 - **Manual check:** hide the panel and run New Round straight away. The round must still start; VS Code's behaviour for a message sent to a hidden webview couldn't be tested automatically.
 
-Build each screen from the design mock, in this order:
+- **No skipping (owner's decision):** every scored hex row is followed by exactly one word attempt before the next row opens. Remove `skipAnswer()` from the engine, and tighten `roundFinished` and saved-state validation to answer tries = rows used.
+
+Build each screen from the owner's draft design, [docs/design/0xword-draft-design.pdf](design/0xword-draft-design.pdf), described page by page in [docs/design/README.md](design/README.md), in this order:
 
 1. Grid of 6 rows × 4 byte pairs, plus the hex keypad (0–F, DEL, ENTER) with key states and physical keyboard input
 2. The answer box (one try per row) and the forced final answer state (grid and keypad locked)
