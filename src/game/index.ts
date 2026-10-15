@@ -10,6 +10,7 @@ export {
   type GuessOutcome,
   type Phase,
   type RoundResult,
+  type RoundState,
   type Row,
 } from "./round.ts";
-export { Session } from "./session.ts";
+export { SESSION_STATE_VERSION, Session, restoreSession, type SessionState } from "./session.ts";
