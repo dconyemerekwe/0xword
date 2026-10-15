@@ -21,7 +21,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Element | Background | Text / foreground | Border |
 |---|---|---|---|
 | Page | `#14161B` | `#E8EAF0` | |
-| Title `0x` | | `#7EA8FF` | |
+| Title `0x` | | `#2F6FE4` (owner's choice; the mock-up draws `#7EA8FF`) | |
 | Title `WORD`, headings | | `#E8EAF0` | |
 | Muted text: status line, legend, "1 try per row", "Tried:" | | `#9C9FA8` | |
 | Icon buttons (`?`, theme) | | `#CCCFD8` | |

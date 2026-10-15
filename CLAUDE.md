@@ -35,7 +35,7 @@ These protect the developers who install the extension. Check every change again
   - **Look at the screens:** each page is also a JPEG in [docs/design/pages/](docs/design/pages/) (`page-1.jpg` to `page-5.jpg`), which agents can view with the Read tool. The PDF itself can't be rendered here.
   - **Exact colours:** take them from the colour tables in [docs/design/README.md](docs/design/README.md#colours), which were measured from those images. Don't pick new values.
 - Side-panel layout about 400px wide. Screens: mid-game, mid-game with hints on, forced final answer, solved, and How to play.
-- Title: `0x` in light blue (`#7EA8FF` dark theme, `#2463EA` light theme) JetBrains Mono, followed by `WORD` in DM Sans at weight 1000.
+- Title: `0x` in blue (`#2F6FE4` dark theme, `#2463EA` light theme) JetBrains Mono, followed by `WORD` in DM Sans at weight 1000.
 - Fonts: DM Sans for the interface, JetBrains Mono for hex.
 - Colours, our own and not Wordle's (dark theme values):
   - right spot: blue `#2F6FE4` with white text
