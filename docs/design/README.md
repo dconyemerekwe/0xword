@@ -2,13 +2,66 @@
 
 [`0xword-draft-design.pdf`](0xword-draft-design.pdf) is the owner's draft design: five screens of the side panel at about 400px wide. Phase 3 stories link to the page they build. This file describes each page in words, so the design can be followed without opening the PDF. Where this file and the PDF disagree with [CLAUDE.md](../../CLAUDE.md) game rules, **the rules win**. See [Differences from the rules](#differences-from-the-rules).
 
-| Page | Screen | Theme shown |
-|---|---|---|
-| 1 | Mid-game | dark |
-| 2 | Mid-game with hints on | dark |
-| 3 | Forced final answer (hex locked) | dark |
-| 4 | Solved | light |
-| 5 | How to play | dark |
+Each page is also saved as an image in [`pages/`](pages/) (1200 × 2700 px, a 3× scale of a 400 px wide panel). Agents can view these with the Read tool; the PDF itself can't be rendered here. **Build the styling from these images and the [colour tables](#colours) below. Don't invent values.**
+
+| Page | Screen | Theme shown | Image |
+|---|---|---|---|
+| 1 | Mid-game | dark | [page-1.jpg](pages/page-1.jpg) |
+| 2 | Mid-game with hints on | dark | [page-2.jpg](pages/page-2.jpg) |
+| 3 | Forced final answer (hex locked) | dark | [page-3.jpg](pages/page-3.jpg) |
+| 4 | Solved | light | [page-4.jpg](pages/page-4.jpg) |
+| 5 | How to play | dark | [page-5.jpg](pages/page-5.jpg) |
+
+## Colours
+
+These values were measured from the page images, which are JPEGs, so they're accurate to within a few units. Where CLAUDE.md names a value, that value is used. Treat them as the design tokens. Values marked * were matched by eye, not measured: check them against the page image.
+
+### Dark theme (pages 1–3 and 5)
+
+| Element | Background | Text / foreground | Border |
+|---|---|---|---|
+| Page | `#14161B` | `#E8EAF0` | |
+| Title `0x` | | `#2F6FE4` (owner's choice; the mock-up draws `#7EA8FF`) | |
+| Title `WORD`, headings | | `#E8EAF0` | |
+| Muted text: status line, legend, "1 try per row", "Tried:" | | `#9C9FA8` | |
+| Icon buttons (`?`, theme) | | `#CCCFD8` | |
+| Hints button, off | page background | `#CCCFD8` | `#3C3F48` |
+| Hints button, on (page 2) | `#1E2A45` | `#7EA8FF`* | `#2F6FE4`* |
+| Tile: right spot | `#2F6FE4` | `#FFFFFF` | |
+| Tile: wrong spot | `#F0A04B` | `#1A1206` | |
+| Tile: not in word | `#343944` | `#C9CFD8` | |
+| Tile: typed, not yet scored | page background | `#E8EAF0` | `#7B8190` |
+| Tile: empty | page background | | `#36393F` |
+| Decode panel | `#1D2027` | heading `#E8EAF0` | `#2A2D36`* |
+| Decode text box | `#14161B` | placeholder `#757578` | `#3C3F48`* |
+| Decode button | `#2F6FE4` | `#FFFFFF` | |
+| Key: neutral, DEL, ENTER | `#2A2D36` | `#E8EAF0` | |
+| Key: right spot | `#2F6FE4` | `#FFFFFF` | |
+| Key: not in word (struck through) | `#1B1E27` | `#8A909C` | |
+| Final-answer card (page 3) | `#241B12` | heading `#E8EAF0`, "Last try" `#F0A04B` | `#F0A04B` |
+| Final-answer Submit button (page 3) | `#F0A04B` | `#1A1206` | |
+| Locked keypad (page 3): neutral, right | `#1B1E24`, `#1E3660` | dimmed | |
+| How to play cheatsheet card (page 5) | `#1D2027` | letter `#E8EAF0`, hex `#7EA8FF` | |
+
+On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wrong spot about `#AE783F`) while the hex is locked.
+
+### Light theme (page 4)
+
+| Element | Background | Text / foreground | Border |
+|---|---|---|---|
+| Page | `#F6F6F9` | `#15181B` | |
+| Title `0x` | | `#2463EA` | |
+| Muted text | | `#5D636C` | |
+| Tile: right spot | `#2463EA` | `#FFFFFF` | |
+| Tile: wrong spot | `#F3A524` | `#1A1206` | |
+| Tile: not in word | `#6C7281` | `#FFFFFF` | |
+| Tile: empty | page background | | `#CFD2D8` |
+| Result card | `#FFFFFF` | `#15181B` | `#2463EA` |
+| Byte tiles on the card | `#EDF3FC` | hex `#2463EA`, letter `#15181B`* | |
+| New round button | `#2463EA` | `#FFFFFF` | |
+| Copy result button | `#FFFFFF` | `#15181B` | `#CFD2D8`* |
+
+**Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (about 4.1:1). Placeholder text is a hint, not content; raise it with the owner before changing it.
 
 ## Shared layout (pages 1–4)
 

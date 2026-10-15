@@ -7,6 +7,9 @@ export const MEDIA_FOLDER = "media";
 /** The bundled webview script, as path segments from the extension root. */
 export const SCRIPT_PATH = [MEDIA_FOLDER, "dist", "main.js"] as const;
 
+/** The webview's stylesheet, as path segments from the extension root. */
+export const STYLE_PATH = [MEDIA_FOLDER, "styles.css"] as const;
+
 /** Random bytes per nonce: 16 bytes = 128 bits. */
 export const NONCE_BYTES = 16;
 
@@ -34,6 +37,8 @@ export interface HtmlParts {
   readonly nonce: string;
   /** `webview.asWebviewUri` of `SCRIPT_PATH`. */
   readonly scriptUri: string;
+  /** `webview.asWebviewUri` of `STYLE_PATH`. */
+  readonly styleUri: string;
 }
 
 /** The strict CSP: nothing from outside, and only the nonce-tagged script runs. */
@@ -49,9 +54,10 @@ export function buildCsp(cspSource: string, nonce: string): string {
 
 /**
  * The webview's HTML. The body is empty on purpose: the bundled script fills
- * it in with `textContent`, which also proves the script ran.
+ * it in with `textContent`, which also proves the script ran. All styling
+ * comes from the linked stylesheet (allowed by `style-src`): no inline styles.
  */
-export function buildHtml({ cspSource, nonce, scriptUri }: HtmlParts): string {
+export function buildHtml({ cspSource, nonce, scriptUri, styleUri }: HtmlParts): string {
   if (!NONCE_PATTERN.test(nonce)) {
     throw new RangeError("The nonce must come from createNonce");
   }
@@ -63,6 +69,7 @@ export function buildHtml({ cspSource, nonce, scriptUri }: HtmlParts): string {
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>0xWORD</title>
+  <link rel="stylesheet" href="${escapeAttribute(styleUri)}">
 </head>
 <body>
   <main id="app"></main>

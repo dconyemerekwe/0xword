@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SESSION_STATE_VERSION, Session, restoreSession } from "../../src/game/session.ts";
+import { SESSION_STATE_VERSION, Session, isDraft, restoreSession } from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
 import { WORDS } from "./fixtures.ts";
 
@@ -67,6 +67,99 @@ describe("Session", () => {
     assert.throws(() => new Session([]), /without words/);
   });
 
+  describe("the half-typed hex row (draft)", () => {
+    /** A fresh session whose answer is WORDS[0], waiting for its first row. */
+    function guessing(): Session {
+      const session = new Session(WORDS, () => 0);
+      session.newRound();
+      return session;
+    }
+
+    it("starts empty", () => {
+      assert.equal(guessing().draft, "");
+    });
+
+    it("takes up to 8 uppercase hex digits", () => {
+      const session = guessing();
+      session.setDraft("0123ABCF");
+      assert.equal(session.draft, "0123ABCF");
+    });
+
+    it("rejects a draft that isn't up to 8 uppercase hex digits, keeping the old one", () => {
+      const session = guessing();
+      session.setDraft("42");
+      for (const bad of ["4a", "425954451", "4G", " "]) {
+        assert.throws(() => session.setDraft(bad), RangeError, bad);
+      }
+      assert.equal(session.draft, "42");
+    });
+
+    it("rejects a draft before the first round", () => {
+      assert.throws(() => new Session(WORDS).setDraft(""), RangeError);
+    });
+
+    it("rejects digits while a word attempt is due", () => {
+      const session = sessionAt(1);
+      assert.equal(session.round?.phase, "answer");
+      assert.throws(() => session.setDraft("4"), RangeError);
+      session.setDraft("");
+      assert.equal(session.draft, "");
+    });
+
+    it("clears the draft once the row is scored", () => {
+      const session = guessing();
+      const other = WORDS[1];
+      assert.ok(other);
+      session.setDraft(wordToHex(other));
+      const outcome = session.submitDraft();
+      assert.equal(outcome.ok, true);
+      assert.equal(session.draft, "");
+      assert.equal(session.round?.phase, "answer");
+    });
+
+    it("keeps the digits of a rejected row, without using a row", () => {
+      const session = guessing();
+      session.setDraft("7B");
+      assert.deepEqual(session.submitDraft(), { ok: false, error: "length" });
+      session.setDraft("7B595445");
+      assert.deepEqual(session.submitDraft(), { ok: false, error: "notLetter" });
+      assert.equal(session.draft, "7B595445");
+      assert.deepEqual(session.round?.rows, []);
+    });
+
+    it("can't submit before the first round", () => {
+      assert.throws(() => new Session(WORDS).submitDraft(), /No round/);
+    });
+
+    it("is cleared by a new round", () => {
+      const session = guessing();
+      session.setDraft("4259");
+      session.newRound();
+      assert.equal(session.draft, "");
+    });
+  });
+
+  describe("isDraft", () => {
+    it("accepts 0 to 8 uppercase hex digits while waiting for a hex row", () => {
+      for (const draft of ["", "0", "9AF", "42595445"]) {
+        assert.equal(isDraft(draft, "guess"), true, draft);
+      }
+    });
+
+    it("accepts only an empty draft in every other phase", () => {
+      for (const phase of ["answer", "final", "solved", "failed"] as const) {
+        assert.equal(isDraft("", phase), true, phase);
+        assert.equal(isDraft("4", phase), false, phase);
+      }
+    });
+
+    it("rejects lowercase, other characters, 9 digits and non-strings", () => {
+      for (const draft of ["4a", "4G", "-1", "425954451", null, undefined, 42, ["4"]]) {
+        assert.equal(isDraft(draft, "guess"), false, String(draft));
+      }
+    });
+  });
+
   describe("ensureRound (on init)", () => {
     it("starts round 1 in a fresh session", () => {
       const session = new Session(WORDS);
@@ -129,9 +222,34 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 2", () => {
-    assert.equal(SESSION_STATE_VERSION, 2);
-    assert.equal(sessionAt(1).toState()?.version, 2);
+  it("saves in format version 3", () => {
+    assert.equal(SESSION_STATE_VERSION, 3);
+    assert.equal(sessionAt(1).toState()?.version, 3);
+  });
+
+  it("saves the half-typed hex row", () => {
+    const session = new Session(WORDS, () => 0);
+    session.newRound();
+    assert.equal(session.toState()?.draft, "");
+    session.setDraft("4259");
+    assert.equal(session.toState()?.draft, "4259");
+  });
+
+  it("round-trips a half-typed hex row, from empty to all 8 digits", () => {
+    for (const draft of ["", "4", "4259", "42595445"]) {
+      const session = new Session(WORDS, () => 0);
+      session.newRound();
+      session.setDraft(draft);
+      const restored = Session.fromState(stored(session), WORDS);
+      assert.equal(restored?.draft, draft);
+      assert.equal(restored?.round?.phase, "guess");
+    }
+  });
+
+  it("round-trips a row that is waiting for its word attempt, with no draft", () => {
+    const restored = Session.fromState(stored(sessionAt(1)), WORDS);
+    assert.equal(restored?.round?.phase, "answer");
+    assert.equal(restored?.draft, "");
   });
 
   it("saves the round's answer tries as words, with no skipped (null) entries", () => {
@@ -180,6 +298,12 @@ describe("Session state", () => {
       ["an infinite round number", () => ({ ...valid(), roundNumber: Number.POSITIVE_INFINITY })],
       ["a tampered round", () => ({ ...valid(), round: { ...(valid().round as object), answer: "ZZZZ" } })],
       ["a null round", () => ({ ...valid(), round: null })],
+      ["version-2 state, which had no draft", () => ({ version: 2, roundNumber: 2, round: valid().round })],
+      ["version 2 with a draft", () => ({ ...valid(), version: 2 })],
+      ["a missing draft", () => ({ version: SESSION_STATE_VERSION, roundNumber: 2, round: valid().round })],
+      ["a null draft", () => ({ ...valid(), draft: null })],
+      ["a draft as a number", () => ({ ...valid(), draft: 42 })],
+      ["a draft while a word attempt is due", () => ({ ...valid(), draft: "42" })],
       [
         "a JSON-parsed __proto__ key",
         () => JSON.parse(`{${JSON.stringify(valid()).slice(1, -1)},"__proto__":{"roundNumber":9}}`),
@@ -190,6 +314,28 @@ describe("Session state", () => {
         assert.equal(Session.fromState(make(), WORDS), null);
       });
     }
+
+    describe("an invalid draft in a round waiting for a hex row", () => {
+      const guessing = (): Record<string, unknown> => {
+        const session = new Session(WORDS, () => 0);
+        session.newRound();
+        return stored(session);
+      };
+      for (const draft of ["4a", "425954451", "4G", " 42", "42 ", "４２"]) {
+        it(`returns null for ${JSON.stringify(draft)}`, () => {
+          assert.equal(Session.fromState({ ...guessing(), draft }, WORDS), null);
+        });
+      }
+    });
+
+    it("returns null for a draft in a finished round", () => {
+      const session = new Session(WORDS, () => 0);
+      const answer = WORDS[0];
+      assert.ok(answer);
+      session.newRound().submitGuess(wordToHex(answer));
+      session.round?.submitAnswer(answer);
+      assert.equal(Session.fromState({ ...stored(session), draft: "4" }, WORDS), null);
+    });
 
     it("returns null for an empty word list, without throwing", () => {
       assert.equal(Session.fromState(stored(sessionAt(1)), []), null);

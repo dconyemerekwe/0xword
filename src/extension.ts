@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { NewRoundRequests, messagesAfter } from "./newRoundRequests.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { StatsStore } from "./stats.ts";
-import { MEDIA_FOLDER, SCRIPT_PATH, buildHtml, createNonce } from "./webview/html.ts";
+import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH, buildHtml, createNonce } from "./webview/html.ts";
 
 /** The webview view's id, as contributed in package.json. */
 const VIEW_ID = "0xword.game";
@@ -84,6 +84,7 @@ class GameViewProvider implements vscode.WebviewViewProvider {
       cspSource: webview.cspSource,
       nonce: createNonce(),
       scriptUri: webview.asWebviewUri(vscode.Uri.joinPath(this.#extensionUri, ...SCRIPT_PATH)).toString(),
+      styleUri: webview.asWebviewUri(vscode.Uri.joinPath(this.#extensionUri, ...STYLE_PATH)).toString(),
     });
   }
 
