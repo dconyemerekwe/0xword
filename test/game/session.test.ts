@@ -85,7 +85,10 @@ describe("Session", () => {
   });
 });
 
-/** A session at round `n`, its round with one row guessed and skipped. */
+/**
+ * A session at round `n`, its round with one row guessed and answered wrongly,
+ * then a second row guessed and waiting for its answer try.
+ */
 function sessionAt(n: number): Session {
   const session = new Session(WORDS, () => 0);
   for (let i = 0; i < n; i++) {
@@ -93,12 +96,18 @@ function sessionAt(n: number): Session {
   }
   const round = session.round;
   assert.ok(round);
+  // The answer is WORDS[0], because random() is always 0.
   const other = WORDS[1];
   assert.ok(other);
   round.submitGuess(wordToHex(other));
-  round.skipAnswer();
+  assert.deepEqual(round.submitAnswer(other), { ok: true, correct: false });
   round.submitGuess(wordToHex(other));
   return session;
+}
+
+/** `state` with its round's fields changed. */
+function withRound(state: Record<string, unknown>, changes: Record<string, unknown>): Record<string, unknown> {
+  return { ...state, round: { ...(state.round as object), ...changes } };
 }
 
 /** Saved state as it comes back from storage: plain JSON data. */
@@ -118,6 +127,19 @@ describe("Session state", () => {
     assert.equal(state.version, SESSION_STATE_VERSION);
     assert.equal(state.roundNumber, 3);
     assert.deepEqual(state.round, session.round?.toState());
+  });
+
+  it("saves in format version 2", () => {
+    assert.equal(SESSION_STATE_VERSION, 2);
+    assert.equal(sessionAt(1).toState()?.version, 2);
+  });
+
+  it("saves the round's answer tries as words, with no skipped (null) entries", () => {
+    const state = sessionAt(1).toState();
+    assert.ok(state);
+    assert.equal(state.round.rows.length, 2);
+    assert.deepEqual(state.round.answers, [WORDS[1]]);
+    assert.equal("answerTries" in state.round, false);
   });
 
   it("round-trips the round number and the round in progress", () => {
@@ -195,6 +217,34 @@ describe("restoreSession (webview start-up)", () => {
     const session = restoreSession({ ...stored(sessionAt(5)), version: 0 }, WORDS);
     assert.equal(session.round, null);
     assert.equal(session.roundNumber, 0);
+  });
+
+  describe("starts fresh, without throwing, for state from before the no-skip rule", () => {
+    // Version 1 saved an answerTries count with each round.
+    const other = WORDS[1];
+    assert.ok(other);
+    const cases: readonly (readonly [string, () => unknown])[] = [
+      ["version-1 state", () => withRound({ ...stored(sessionAt(5)), version: 1 }, { answerTries: 1 })],
+      [
+        "version-1 state with a skipped try",
+        () => withRound({ ...stored(sessionAt(5)), version: 1 }, { answers: [null], answerTries: 0 }),
+      ],
+      ["a null answer try", () => withRound(stored(sessionAt(5)), { answers: [null] })],
+      ["a version-2 round carrying answerTries", () => withRound(stored(sessionAt(5)), { answerTries: 1 })],
+      // sessionAt's round has 2 rows, so a valid answers list has 1 or 2 entries.
+      ["answers 2 shorter than the rows", () => withRound(stored(sessionAt(5)), { answers: [] })],
+      ["answers longer than the rows", () => withRound(stored(sessionAt(5)), { answers: [other, other, other] })],
+    ];
+    for (const [name, make] of cases) {
+      it(`for ${name}`, () => {
+        // Throwing here would fail the test.
+        const session = restoreSession(make(), WORDS);
+        assert.equal(session.round, null);
+        assert.equal(session.roundNumber, 0);
+        assert.equal(session.ensureRound(), true);
+        assert.equal(session.roundNumber, 1);
+      });
+    }
   });
 
   it("gives round N+1 for a queued newRound after init on a restored round N", () => {

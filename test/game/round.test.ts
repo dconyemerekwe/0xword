@@ -9,10 +9,13 @@ function newRound(): Round {
   return new Round("BYTE", WORD_SET);
 }
 
-/** Submits a word's hex and skips the answer try, leaving the round ready for the next row. */
-function guessAndSkip(round: Round, word: string): void {
+/**
+ * Submits a word's hex, then uses the answer try on that same (wrong) word,
+ * leaving the round ready for the next row. `word` must not be BYTE.
+ */
+function guessAndMiss(round: Round, word: string): void {
   assert.equal(round.submitGuess(wordToHex(word)).ok, true);
-  round.skipAnswer();
+  assert.deepEqual(round.submitAnswer(word), { ok: true, correct: false });
 }
 
 describe("Round", () => {
@@ -45,7 +48,6 @@ describe("Round", () => {
       solved: true,
       answer: "BYTE",
       rowsUsed: 1,
-      answerTries: 1,
       hintsUsed: false,
     });
   });
@@ -64,20 +66,66 @@ describe("Round", () => {
     assert.deepEqual(round.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
     assert.equal(round.phase, "answer");
     assert.deepEqual(round.submitAnswer("BYTE"), { ok: true, correct: true });
-    assert.equal(round.result().answerTries, 1);
+    // Only the accepted answer is recorded as a try.
+    assert.deepEqual(round.toState().answers, ["BYTE"]);
   });
 
-  it("doesn't count a skipped try as an answer try", () => {
+  it("counts a wrong answer try as an answer try", () => {
     const round = newRound();
-    guessAndSkip(round, "TEAM");
+    guessAndMiss(round, "TEAM");
     round.submitGuess(wordToHex("BAKE"));
     round.submitAnswer("BYTE");
     assert.deepEqual(round.result(), {
       solved: true,
       answer: "BYTE",
       rowsUsed: 2,
-      answerTries: 1,
       hintsUsed: false,
+    });
+    assert.deepEqual(round.toState().answers, ["TEAM", "BYTE"]);
+  });
+
+  it("has no way to skip an answer try", () => {
+    const round = newRound();
+    assert.equal("skipAnswer" in round, false);
+  });
+
+  it("only moves past a scored row with an accepted answer try", () => {
+    const round = newRound();
+    round.submitGuess(wordToHex("TEAM"));
+    assert.throws(() => round.submitGuess(wordToHex("BAKE")), /phase "answer"/);
+    round.enableHints();
+    assert.equal(round.phase, "answer");
+    assert.equal(round.submitAnswer("ZZZZ").ok, false);
+    assert.equal(round.phase, "answer");
+    round.submitAnswer("TEAM");
+    assert.equal(round.phase, "guess");
+  });
+
+  describe("uses one answer try per row", () => {
+    for (let solvedOn = 1; solvedOn <= MAX_ROWS; solvedOn++) {
+      it(`records ${solvedOn} attempts when solved on row ${solvedOn}`, () => {
+        const round = newRound();
+        for (let row = 1; row < solvedOn; row++) {
+          guessAndMiss(round, "TEAM");
+        }
+        round.submitGuess(wordToHex("CODE"));
+        round.submitAnswer("BYTE");
+        const result = round.result();
+        assert.equal(result.solved, true);
+        assert.equal(result.rowsUsed, solvedOn);
+        assert.deepEqual(round.toState().answers, [...Array<string>(solvedOn - 1).fill("TEAM"), "BYTE"]);
+      });
+    }
+
+    it(`records ${MAX_ROWS} rows and ${MAX_ROWS} attempts when failed`, () => {
+      const round = newRound();
+      for (let row = 1; row <= MAX_ROWS; row++) {
+        guessAndMiss(round, "TEAM");
+      }
+      const result = round.result();
+      assert.equal(result.solved, false);
+      assert.equal(result.rowsUsed, MAX_ROWS);
+      assert.deepEqual(round.toState().answers, Array<string>(MAX_ROWS).fill("TEAM"));
     });
   });
 
@@ -107,7 +155,7 @@ describe("Round", () => {
     function roundAtFinal(): Round {
       const round = newRound();
       for (const word of ["TEAM", "BAKE", "BUSY", "LIME", "QUIZ"]) {
-        guessAndSkip(round, word);
+        guessAndMiss(round, word);
       }
       round.submitGuess(wordToHex("ZONE"));
       return round;
@@ -120,8 +168,12 @@ describe("Round", () => {
       assert.throws(() => round.submitGuess(wordToHex("BYTE")), /phase "final"/);
     });
 
-    it("can't be skipped", () => {
-      assert.throws(() => roundAtFinal().skipAnswer(), /phase "final"/);
+    it("keeps waiting for the final answer after a rejected one", () => {
+      const round = roundAtFinal();
+      assert.deepEqual(round.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
+      assert.deepEqual(round.submitAnswer("BYTES"), { ok: false, error: "format" });
+      assert.equal(round.phase, "final");
+      assert.equal(round.isOver, false);
     });
 
     it("solves when correct", () => {
@@ -139,9 +191,9 @@ describe("Round", () => {
         solved: false,
         answer: "BYTE",
         rowsUsed: 6,
-        answerTries: 1,
         hintsUsed: false,
       });
+      assert.equal(round.toState().answers.length, MAX_ROWS);
     });
   });
 
@@ -155,7 +207,7 @@ describe("Round", () => {
       round.enableHints();
       assert.deepEqual(round.hintLetters(), [null, null, null, null]);
       // BAKE = 42 41 4B 45: bytes 1 and 4 match BYTE exactly.
-      guessAndSkip(round, "BAKE");
+      guessAndMiss(round, "BAKE");
       assert.deepEqual(round.hintLetters(), ["B", null, null, "E"]);
     });
 
@@ -163,9 +215,9 @@ describe("Round", () => {
       const round = newRound();
       round.enableHints();
       // BYTE's 2nd byte is 59. BUSY (55) finds the 5; LIME (49) finds the 9.
-      guessAndSkip(round, "BUSY");
+      guessAndMiss(round, "BUSY");
       assert.equal(round.hintLetters()[1], null);
-      guessAndSkip(round, "LIME");
+      guessAndMiss(round, "LIME");
       assert.equal(round.hintLetters()[1], "Y");
     });
 
@@ -194,10 +246,10 @@ describe("Round", () => {
 const PHASES: readonly (readonly [string, () => Round])[] = [
   ["guess, before the first row", () => newRound()],
   [
-    "guess, after a skip and a wrong answer",
+    "guess, after two wrong answers",
     () => {
       const round = newRound();
-      guessAndSkip(round, "TEAM");
+      guessAndMiss(round, "TEAM");
       round.submitGuess(wordToHex("CODE"));
       round.submitAnswer("data");
       return round;
@@ -207,7 +259,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     "answer",
     () => {
       const round = newRound();
-      guessAndSkip(round, "TEAM");
+      guessAndMiss(round, "TEAM");
       round.submitGuess(wordToHex("CODE"));
       return round;
     },
@@ -217,7 +269,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     () => {
       const round = newRound();
       for (let row = 1; row < MAX_ROWS; row++) {
-        guessAndSkip(round, "TEAM");
+        guessAndMiss(round, "TEAM");
       }
       round.submitGuess(wordToHex("BITE"));
       return round;
@@ -268,7 +320,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
       const round = newRound();
       round.enableHints();
       for (let row = 1; row < MAX_ROWS; row++) {
-        guessAndSkip(round, "BITE");
+        guessAndMiss(round, "BITE");
       }
       round.submitGuess(wordToHex("TEAM"));
       round.submitAnswer("CODE");
@@ -320,6 +372,16 @@ describe("Round state", () => {
       });
     }
 
+    for (const [name, play] of PHASES) {
+      it(`saves one word per finished row, with no skipped entries, in phase ${name}`, () => {
+        const state = play().toState();
+        assert.ok(state.answers.every((tried) => typeof tried === "string"));
+        const pending = state.phase === "answer" || state.phase === "final" ? 1 : 0;
+        assert.equal(state.answers.length, state.rows.length - pending);
+        assert.equal("answerTries" in state, false);
+      });
+    }
+
     it("saves the answer, every row, each answer try and the phase", () => {
       const state = playTo(1).toState();
       assert.equal(state.answer, "BYTE");
@@ -327,10 +389,11 @@ describe("Round state", () => {
         state.rows.map((row) => row.word),
         ["TEAM", "CODE"],
       );
-      assert.deepEqual(state.answers, [null, "DATA"]);
+      assert.deepEqual(state.answers, ["TEAM", "DATA"]);
       assert.equal(state.phase, "guess");
-      assert.equal(state.answerTries, 1);
       assert.equal(state.hintsUsed, false);
+      // No separate try count: it is the length of answers.
+      assert.deepEqual(Object.keys(state).sort(), ["answer", "answers", "hintsUsed", "phase", "rows"]);
     });
 
     it("restores a round that plays on like the original", () => {
@@ -341,9 +404,9 @@ describe("Round state", () => {
         solved: true,
         answer: "BYTE",
         rowsUsed: MAX_ROWS,
-        answerTries: 1,
         hintsUsed: false,
       });
+      assert.equal(restored.toState().answers.length, MAX_ROWS);
     });
 
     it("gives a copy that later play doesn't change", () => {
@@ -363,7 +426,7 @@ describe("Round state", () => {
       ["a number", () => 1],
       ["an array", () => [stored(newRound())]],
       ["an extra key", () => tampered((s) => (s.extra = 1))],
-      ["a missing key", () => tampered((s) => delete s.answerTries)],
+      ["a missing key", () => tampered((s) => delete s.phase)],
       [
         "a JSON-parsed __proto__ key",
         () => JSON.parse(`{${JSON.stringify(tampered(() => {})).slice(1, -1)},"__proto__":{"x":1}}`),
@@ -393,19 +456,30 @@ describe("Round state", () => {
       ["more than MAX_ROWS rows", () => tampered((s) => (s.rows = Array(MAX_ROWS + 1).fill(firstRow(s))))],
       ["an impossible phase", () => tampered((s) => (s.phase = "solved"))],
       ["an unknown phase", () => tampered((s) => (s.phase = "won"))],
-      ["wrong answer tries", () => tampered((s) => (s.answerTries = 1))],
-      ["answer tries as a string", () => tampered((s) => (s.answerTries = "0"))],
+      ["an answerTries field matching the answers", () => tampered((s) => (s.answerTries = 1))],
+      ["an answerTries field that doesn't match", () => tampered((s) => (s.answerTries = 0))],
+      ["an answerTries field as a string", () => tampered((s) => (s.answerTries = "1"))],
       ["hintsUsed as a string", () => tampered((s) => (s.hintsUsed = "false"))],
-      ["more answer tries than rows", () => tampered((s) => (s.answers = [null, null, null]))],
+      ["more answer tries than rows", () => tampered((s) => (s.answers = ["TEAM", "TEAM", "TEAM"]))],
       ["a row before the last without its answer try", () => tampered((s) => (s.answers = []))],
       ["a lowercase saved answer try", () => tampered((s) => (s.answers = ["data"]))],
       ["a saved answer try that isn't a word", () => tampered((s) => (s.answers = ["ZZZZ"]))],
       ["a saved answer try that isn't a string", () => tampered((s) => (s.answers = [1]))],
+      ["a skipped (null) answer try", () => tampered((s) => (s.answers = [null]))],
+      [
+        "a version-1 round: a skipped (null) try and an answerTries field",
+        () =>
+          tampered((s) => {
+            s.answers = [null];
+            s.answerTries = 0;
+          }),
+      ],
       [
         "a skipped forced final answer",
         () => {
+          // Five real tries, so replay reaches row 6; only the final slot is null.
           const state = stored(playTo(3));
-          state.answers = Array(MAX_ROWS).fill(null);
+          state.answers = [...(state.answers as string[]), null];
           state.phase = "guess";
           return state;
         },

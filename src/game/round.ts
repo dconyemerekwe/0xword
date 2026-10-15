@@ -9,7 +9,8 @@ export const MAX_ROWS = 6;
 /**
  * Where the round is:
  * - `guess`: waiting for a hex row
- * - `answer`: a row was scored; the player may try the word once or skip
+ * - `answer`: a row was scored; the player must try the word once before the
+ *   next row (a rejected answer doesn't use the try)
  * - `final`: all rows used; the player must give one last answer
  * - `solved` / `failed`: the round is over
  */
@@ -33,7 +34,6 @@ export interface RoundResult {
   readonly solved: boolean;
   readonly answer: string;
   readonly rowsUsed: number;
-  readonly answerTries: number;
   readonly hintsUsed: boolean;
 }
 
@@ -44,25 +44,31 @@ export interface RoundResult {
 export interface RoundState {
   readonly answer: string;
   readonly rows: readonly Row[];
-  /** One entry per row whose answer try is done: the word tried, or null if skipped. */
-  readonly answers: readonly (string | null)[];
+  /**
+   * The word tried for each row whose answer try is done. As long as `rows`,
+   * or one shorter while the last row's try is still to come. Its length is
+   * the number of answer tries; there is no separate count.
+   */
+  readonly answers: readonly string[];
   readonly phase: Phase;
-  readonly answerTries: number;
   readonly hintsUsed: boolean;
 }
 
-const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "answerTries", "hintsUsed"] as const;
+const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed"] as const;
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
-/** One game: a hidden answer, up to 6 hex rows, and the answer tries between them. */
+/**
+ * One game: a hidden answer, up to 6 hex rows, and one answer try after each
+ * row. There is no skipping, so a finished round has as many tries as rows.
+ */
 export class Round {
   readonly #answer: string;
   readonly #answerHex: string;
   readonly #words: ReadonlySet<string>;
   readonly #rows: Row[] = [];
-  readonly #answers: (string | null)[] = [];
+  /** The accepted answer tries, one per finished row. */
+  readonly #answers: string[] = [];
   #phase: Phase = "guess";
-  #answerTries = 0;
   #hintsUsed = false;
 
   constructor(answer: string, words: ReadonlySet<string>) {
@@ -104,8 +110,9 @@ export class Round {
   }
 
   /**
-   * Uses the answer try for this row. A wrong answer moves on to the next row,
-   * or ends the round if it was the forced final answer.
+   * Uses the answer try for this row: the only way past a scored row. A wrong
+   * answer moves on to the next row, or ends the round if it was the forced
+   * final answer.
    */
   submitAnswer(input: string): AnswerOutcome {
     this.#requirePhase("answer", "final");
@@ -116,7 +123,6 @@ export class Round {
     if (!this.#words.has(guess)) {
       return { ok: false, error: "notWord" };
     }
-    this.#answerTries++;
     this.#answers.push(guess);
     const correct = guess === this.#answer;
     if (correct) {
@@ -125,13 +131,6 @@ export class Round {
       this.#phase = this.#phase === "final" ? "failed" : "guess";
     }
     return { ok: true, correct };
-  }
-
-  /** Skips this row's answer try. Not allowed for the forced final answer. */
-  skipAnswer(): void {
-    this.#requirePhase("answer");
-    this.#answers.push(null);
-    this.#phase = "guess";
   }
 
   /** Turns hints on. The result then records that hints were used. */
@@ -174,7 +173,6 @@ export class Round {
       solved: this.#phase === "solved",
       answer: this.#answer,
       rowsUsed: this.#rows.length,
-      answerTries: this.#answerTries,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -186,7 +184,6 @@ export class Round {
       rows: this.#rows.map((row) => ({ hex: row.hex, word: row.word, marks: [...row.marks] })),
       answers: [...this.#answers],
       phase: this.#phase,
-      answerTries: this.#answerTries,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -195,7 +192,7 @@ export class Round {
    * Rebuilds a round from untrusted saved state, or returns null if the state
    * isn't exactly what `toState` gives for a real round. It replays the saved
    * guesses and answers through the public methods, so every rule is checked
-   * again, then compares the result with the saved rows, phase and tries.
+   * again, then compares the result with the saved rows and phase.
    * Never throws.
    */
   static fromState(raw: unknown, words: ReadonlySet<string>): Round | null {
@@ -226,7 +223,7 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   if (typeof answer !== "string" || !words.has(answer) || !rows || !answers || typeof hintsUsed !== "boolean") {
     return null;
   }
-  // Every row but the last must have had its answer try.
+  // Every row but the last must have had its answer try: there are no skips.
   if (answers.length !== rows.length && answers.length !== rows.length - 1) {
     return null;
   }
@@ -253,16 +250,14 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
     }
     if (i < answers.length) {
       const tried = answers[i];
-      if (tried === null) {
-        round.skipAnswer();
-      } else if (typeof tried !== "string" || !isWord(tried) || !round.submitAnswer(tried).ok) {
-        // Only accepted answers are saved, and already uppercased.
+      // Only accepted answers are saved, already uppercased. Anything else,
+      // such as a skipped (null) try from saved-state version 1, is rejected.
+      if (typeof tried !== "string" || !isWord(tried) || !round.submitAnswer(tried).ok) {
         return null;
       }
     }
   }
-  const saved = round.toState();
-  if (saved.phase !== fields.get("phase") || saved.answerTries !== fields.get("answerTries")) {
+  if (round.phase !== fields.get("phase")) {
     return null;
   }
   return round;
