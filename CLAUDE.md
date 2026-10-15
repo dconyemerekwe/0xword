@@ -23,13 +23,14 @@ These protect the developers who install the extension. Check every change again
 - The hidden answer is a 4-letter English word shown as ASCII hex: 2 uppercase digits per letter, 8 digits in total (A–Z = `41`–`5A`).
 - Six hex rows. Each digit is scored Wordle-style, with repeated digits handled correctly: right spot, wrong spot, or not in the word.
 - **Every hex guess must decode to a real 4-letter word.**
-- After each row the player gets one try to type the plain-English word. Fewer rows used means a better score.
+- After each row the player **must** make one try to type the plain-English word before the next hex row opens. There is no skip. Only listed words are accepted: a rejected word doesn't use the try. Fewer rows used means a better score.
 - After 6 rows the hex grid locks and the player gets one forced final answer.
 - **No modes or difficulty levels.** An optional **Hints** button, off by default, shows the letter of each fully solved byte under the grid (e.g. `B ? T E`). The result records "no hints" or "hints used".
 - **How to play** (the `?` icon) shows the rules plus an A–Z ASCII cheatsheet, available to everyone.
 
 ## Design
 
+- The owner's draft design is [docs/design/0xword-draft-design.pdf](docs/design/0xword-draft-design.pdf), described screen by screen in [docs/design/README.md](docs/design/README.md). Where the draft disagrees with the game rules above, the rules win.
 - Side-panel layout about 400px wide. Screens: mid-game, mid-game with hints on, forced final answer, solved, and How to play.
 - Title: `0x` in blue JetBrains Mono followed by `WORD` in DM Sans at weight 1000.
 - Fonts: DM Sans for the interface, JetBrains Mono for hex.
@@ -49,7 +50,7 @@ These protect the developers who install the extension. Check every change again
 
 - **Extension host:** TypeScript (`src/extension.ts`). It registers an activity-bar view container, a webview view and commands, and stores stats in `globalState`.
 - **Webview:** plain HTML, CSS and TypeScript in `media/`, with no framework, bundled by esbuild. It talks to the extension host with `postMessage`.
-- **Round state lives in the webview** and is saved with `vscode.setState` and restored with `vscode.getState()`. **Every game action** (new round, guess, answer, skip, hints) **must go through the `changed()` save helper** in `media/main.ts`, or the move is lost when the panel is hidden.
+- **Round state lives in the webview** and is saved with `vscode.setState` and restored with `vscode.getState()`. **Every game action** (new round, guess, answer, hints) **must go through the `changed()` save helper** in `media/main.ts`, or the move is lost when the panel is hidden.
 - **Game engine:** pure TypeScript with no VS Code dependency, including the hard-coded word list, so it can be unit-tested with `node --test` (Node 24 runs `.ts` files directly).
 - **Distribution:** VS Code Marketplace (`vsce`) and Open VSX (`ovsx`) for Cursor, Windsurf and VSCodium.
 - **Later:** Claude Code hooks that open a `vscode://` link to start a round when a prompt is sent.
