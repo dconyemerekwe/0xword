@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { NewRoundRequests } from "./newRoundRequests.ts";
-import { handleWebviewMessage, type HostHandlers, type HostMessage } from "./protocol.ts";
+import { NewRoundRequests, messagesAfter } from "./newRoundRequests.ts";
+import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, buildHtml, createNonce } from "./webview/html.ts";
 
 /** The webview view's id, as contributed in package.json. */
@@ -36,8 +36,9 @@ class GameViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.#view = view;
-    // A new or reloaded webview isn't listening until it sends `ready`.
-    this.#requests.reset();
+    // A new webview isn't listening until it sends `ready`. Late events from
+    // earlier views carry their old id and are ignored.
+    const id = this.#requests.attach();
     const webview = view.webview;
     webview.options = {
       enableScripts: true,
@@ -45,28 +46,28 @@ class GameViewProvider implements vscode.WebviewViewProvider {
     };
     // Listen before setting the HTML, so the webview's `ready` can't be missed.
     // Every message goes through the protocol's validator; invalid ones are ignored.
+    // `messagesAfter` decides what to post back, in order: `init`, then the
+    // rounds requested while the panel was closed.
     const listener = webview.onDidReceiveMessage((raw: unknown) => {
-      const reply = handleWebviewMessage(raw, handlers);
-      if (reply) {
-        void post(webview, reply);
-      }
-      // `init` answers `ready`: send the rounds requested while the panel was closed.
-      if (reply?.type === "init") {
-        for (let i = this.#requests.ready(); i > 0; i--) {
-          this.#postNewRound(webview);
+      for (const message of messagesAfter(raw, handlers, this.#requests, id)) {
+        if (message.type === "newRound") {
+          this.#postNewRound(webview, this.#requests.generation);
+        } else {
+          void post(webview, message);
         }
       }
     });
     // A hidden view's webview is unloaded, and sends `ready` again when shown.
     const visibility = view.onDidChangeVisibility(() => {
       if (!view.visible) {
-        this.#requests.reset();
+        this.#requests.reset(id);
       }
     });
     view.onDidDispose(() => {
       listener.dispose();
       visibility.dispose();
-      this.#requests.reset();
+      // Only this view's id: a newer view that is already listening stays ready.
+      this.#requests.reset(id);
       if (this.#view === view) {
         this.#view = undefined;
       }
@@ -84,23 +85,32 @@ class GameViewProvider implements vscode.WebviewViewProvider {
    * listening, or once it is ready, and opens the panel.
    */
   async newRound(): Promise<void> {
-    if (this.#requests.request() && this.#view) {
-      this.#postNewRound(this.#view.webview);
-    }
+    this.#sendNewRound(this.#requests.request());
     // Opens the panel, resolving the view first if it was never opened.
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
   }
 
-  /** Posts `newRound`, and queues it again if the webview didn't get it. */
-  #postNewRound(webview: vscode.Webview): void {
-    post(webview, { type: "newRound" }).then(
-      (delivered) => {
-        if (!delivered) {
-          this.#requests.undelivered();
-        }
-      },
-      () => this.#requests.undelivered(),
-    );
+  /** Posts `newRound` to the current view under `generation`; null means it was queued. */
+  #sendNewRound(generation: number | null): void {
+    if (generation === null) {
+      return;
+    }
+    if (this.#view) {
+      this.#postNewRound(this.#view.webview, generation);
+    } else {
+      // No view to post to: queue it for the next `ready`.
+      this.#sendNewRound(this.#requests.undelivered(generation));
+    }
+  }
+
+  /** Posts `newRound`, and sends or queues it again if the webview didn't get it. */
+  #postNewRound(webview: vscode.Webview, generation: number): void {
+    const retry = (): void => this.#sendNewRound(this.#requests.undelivered(generation));
+    post(webview, { type: "newRound" }).then((delivered) => {
+      if (!delivered) {
+        retry();
+      }
+    }, retry);
   }
 }
 
