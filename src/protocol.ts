@@ -1,0 +1,147 @@
+// The messages the webview and the extension host exchange, and their
+// validators. Pure: no `vscode` import, so it can be unit-tested with
+// `node --test` and bundled into the webview too.
+//
+// Everything arriving through `postMessage` is untrusted (CLAUDE.md security
+// rule 7): it is checked against a fixed allowlist, field by field, and only a
+// freshly built copy of the allowed fields is ever used.
+import { MAX_ROWS, type RoundResult } from "./game/round.ts";
+
+// Webview -> host
+
+/** The webview has loaded and is listening for messages. */
+export interface ReadyMessage {
+  readonly type: "ready";
+}
+
+/**
+ * A round has ended. The engine's result without `answer`, so the hidden
+ * word is never part of the protocol.
+ */
+export interface RoundFinishedMessage extends Omit<RoundResult, "answer"> {
+  readonly type: "roundFinished";
+}
+
+export type WebviewMessage = ReadyMessage | RoundFinishedMessage;
+
+// Host -> webview
+
+/** The host's reply to `ready`. Story #8 extends it with stats. */
+export interface InitMessage {
+  readonly type: "init";
+}
+
+export type HostMessage = InitMessage;
+
+/**
+ * Checks a message from the webview. Returns a new object holding exactly the
+ * allowed fields, or null if the message isn't one the host accepts.
+ */
+export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
+  const fields = plainFields(raw);
+  switch (fields?.get("type")) {
+    case "ready":
+      return hasExactKeys(fields, ["type"]) ? { type: "ready" } : null;
+    case "roundFinished":
+      return parseRoundFinished(fields);
+    default:
+      return null;
+  }
+}
+
+/** Checks a message from the host, on the webview side. Null if unknown. */
+export function parseHostMessage(raw: unknown): HostMessage | null {
+  const fields = plainFields(raw);
+  if (fields?.get("type") === "init" && hasExactKeys(fields, ["type"])) {
+    return { type: "init" };
+  }
+  return null;
+}
+
+/** What the host does with a valid message. Kept outside so it can be faked in tests. */
+export interface HostHandlers {
+  /** Called with a validated `roundFinished`. Stats arrive in story #8. */
+  roundFinished(message: RoundFinishedMessage): void;
+}
+
+/**
+ * The host's dispatch: validates `raw`, acts on it, and returns the reply to
+ * post back, or null for no reply. Invalid messages are ignored: no handler
+ * runs, nothing is thrown and null is returned.
+ */
+export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): HostMessage | null {
+  const message = parseWebviewMessage(raw);
+  switch (message?.type) {
+    case "ready":
+      return { type: "init" };
+    case "roundFinished":
+      handlers.roundFinished(message);
+      return null;
+    default:
+      return null;
+  }
+}
+
+const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hintsUsed"] as const;
+
+/**
+ * Checks the fields against what a real round can produce (see `Round`):
+ * - `rowsUsed` is 1 to `MAX_ROWS`
+ * - `answerTries` is 0 to `rowsUsed`, since there is at most one try per row
+ * - a solved round used at least one answer try
+ * - a failed round used every row and the forced final answer
+ */
+function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
+  if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
+    return null;
+  }
+  const solved = fields.get("solved");
+  const rowsUsed = fields.get("rowsUsed");
+  const answerTries = fields.get("answerTries");
+  const hintsUsed = fields.get("hintsUsed");
+  if (typeof solved !== "boolean" || typeof hintsUsed !== "boolean") {
+    return null;
+  }
+  if (!isIntegerInRange(rowsUsed, 1, MAX_ROWS) || !isIntegerInRange(answerTries, 0, rowsUsed)) {
+    return null;
+  }
+  if (answerTries < 1 || (!solved && rowsUsed !== MAX_ROWS)) {
+    return null;
+  }
+  return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };
+}
+
+/**
+ * The own fields of a plain object (`{...}` or `JSON.parse` output) as a map,
+ * or null for anything else: null, primitives, arrays, class instances,
+ * symbol keys or getters. Reading from the map never runs the sender's code
+ * or reaches the prototype chain, so `__proto__` and `constructor` are just
+ * keys like any other (and so rejected as extra fields).
+ */
+function plainFields(raw: unknown): Map<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const proto: unknown = Object.getPrototypeOf(raw);
+  if (proto !== Object.prototype && proto !== null) {
+    return null;
+  }
+  const fields = new Map<string, unknown>();
+  for (const key of Reflect.ownKeys(raw)) {
+    const descriptor = Object.getOwnPropertyDescriptor(raw, key);
+    if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor)) {
+      return null;
+    }
+    fields.set(key, descriptor.value);
+  }
+  return fields;
+}
+
+/** True if `fields` has exactly these keys, no more and no fewer. */
+function hasExactKeys(fields: ReadonlyMap<string, unknown>, keys: readonly string[]): boolean {
+  return fields.size === keys.length && keys.every((key) => fields.has(key));
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+}

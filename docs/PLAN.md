@@ -85,7 +85,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
   - registers a `WebviewViewProvider`
   - sets `enableScripts: true` and limits `localResourceRoots` to `media/`
   - generates a fresh nonce on every load for the strict CSP: `default-src 'none'; script-src 'nonce-…'; style-src ${cspSource}; font-src ${cspSource}; img-src ${cspSource}`
-- **Message protocol:** typed messages between the game and the extension host. The host accepts only an allowlist (e.g. `ready`, `roundFinished`, `setTheme`) and validates every field.
+- **Message protocol** (`src/protocol.ts`): typed messages between the game and the extension host. The host accepts only an allowlist (`ready`, `roundFinished`; `setTheme` arrives in Phase 3) and validates every field against the engine's limits. It replies `init` to `ready`.
 - **Stats** saved in `context.globalState`: played, solved, average rows, and the hints-used rate.
 - **Check:** pressing F5 opens the panel.
 

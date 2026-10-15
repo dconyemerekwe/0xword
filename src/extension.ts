@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { handleWebviewMessage, type HostHandlers, type HostMessage } from "./protocol.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, buildHtml, createNonce } from "./webview/html.ts";
 
 /** The webview view's id, as contributed in package.json. */
@@ -10,6 +11,11 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+/** What the host does with valid messages. Nothing yet: stats arrive in story #8. */
+const handlers: HostHandlers = {
+  roundFinished: () => {},
+};
 
 /** Fills the 0xWORD side panel with the bundled webview. */
 class GameViewProvider implements vscode.WebviewViewProvider {
@@ -25,6 +31,15 @@ class GameViewProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.#extensionUri, MEDIA_FOLDER)],
     };
+    // Listen before setting the HTML, so the webview's `ready` can't be missed.
+    // Every message goes through the protocol's validator; invalid ones are ignored.
+    const listener = webview.onDidReceiveMessage((raw: unknown) => {
+      const reply = handleWebviewMessage(raw, handlers);
+      if (reply) {
+        void post(webview, reply);
+      }
+    });
+    view.onDidDispose(() => listener.dispose());
     // A fresh nonce on every load.
     webview.html = buildHtml({
       cspSource: webview.cspSource,
@@ -32,4 +47,9 @@ class GameViewProvider implements vscode.WebviewViewProvider {
       scriptUri: webview.asWebviewUri(vscode.Uri.joinPath(this.#extensionUri, ...SCRIPT_PATH)).toString(),
     });
   }
+}
+
+/** Posts a message to the webview. Typed, so only protocol messages can be sent. */
+function post(webview: vscode.Webview, message: HostMessage): Thenable<boolean> {
+  return webview.postMessage(message);
 }
