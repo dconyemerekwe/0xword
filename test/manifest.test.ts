@@ -1,6 +1,6 @@
 // Checks the package.json contributions and what the .vsix ships.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 import { MEDIA_FOLDER, SCRIPT_PATH } from "../src/webview/html.ts";
 
@@ -101,10 +101,75 @@ describe("package.json commands", () => {
     assert.deepEqual(manifest.activationEvents ?? [], []);
   });
 
-  it("doesn't touch the workspace, so the command works in untrusted workspaces", () => {
+  it("supports untrusted workspaces for the command", () => {
     assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, true);
-    assert.ok(!extensionSource.includes("vscode.workspace"));
-    assert.ok(!/from "node:fs"|require\(/.test(extensionSource));
+  });
+});
+
+/**
+ * Code that would reach the user's workspace or files (CLAUDE.md security
+ * rule 8): the `workspace` API however it's imported, `fs` in any form, and
+ * any `require` or dynamic `import`, which could load either.
+ */
+const FILE_ACCESS: readonly RegExp[] = [
+  /\.\s*workspace\b/, // vscode.workspace
+  /\{[^}]*\bworkspace\b[^}]*\}\s*from\s*["']vscode["']/, // import { workspace } from "vscode"
+  /from\s*["'](node:)?fs(\/promises)?["']/,
+  /\brequire\s*\(/,
+  /\bimport\s*\(/,
+];
+
+/** The source without comments, so docs may mention the workspace. */
+function code(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+/** Every TypeScript file in src/ and the webview's media/, without the built bundle. */
+function sourceFiles(): string[] {
+  return ["src", MEDIA_FOLDER].flatMap((folder) =>
+    readdirSync(new URL(`${folder}/`, root), { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".ts"))
+      .map((file) => `${folder}/${file.replaceAll("\\", "/")}`),
+  );
+}
+
+describe("no workspace or file access (untrusted workspaces)", () => {
+  it("finds the source files to scan, including the extension and the command's queue", () => {
+    const files = sourceFiles();
+    assert.ok(files.includes("src/extension.ts"), files.join());
+    assert.ok(files.includes("src/newRoundRequests.ts"), files.join());
+    assert.ok(files.includes("media/main.ts"), files.join());
+  });
+
+  for (const file of sourceFiles()) {
+    it(`${file} doesn't touch the workspace or the file system`, () => {
+      const source = code(readFileSync(new URL(file, root), "utf8"));
+      for (const pattern of FILE_ACCESS) {
+        assert.doesNotMatch(source, pattern);
+      }
+    });
+  }
+
+  describe("the scan catches", () => {
+    const caught: readonly (readonly [string, string])[] = [
+      ["vscode.workspace", "vscode.workspace.fs.readFile(uri);"],
+      ["a named workspace import", 'import { window, workspace } from "vscode";'],
+      ["node:fs", 'import { readFileSync } from "node:fs";'],
+      ["fs", 'import * as fs from "fs";'],
+      ["node:fs/promises", 'import { readFile } from "node:fs/promises";'],
+      ["require", 'const fs = require("fs");'],
+      ["a dynamic import", 'const fs = await import("node:fs");'],
+    ];
+    for (const [name, line] of caught) {
+      it(name, () => {
+        assert.ok(FILE_ACCESS.some((pattern) => pattern.test(code(line))));
+      });
+    }
+
+    it("but not the word workspace in a comment", () => {
+      const source = "// Works in untrusted workspaces.\n/** Never reads the workspace. */\nconst a = 1;";
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(code(source))));
+    });
   });
 });
 
