@@ -333,9 +333,53 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 4", () => {
-    assert.equal(SESSION_STATE_VERSION, 4);
-    assert.equal(sessionAt(1).toState()?.version, 4);
+  it("saves in format version 5", () => {
+    assert.equal(SESSION_STATE_VERSION, 5);
+    assert.equal(sessionAt(1).toState()?.version, 5);
+  });
+
+  describe("hints on/off and hints used (version 5)", () => {
+    /** A session at round 1 with hints turned on, and then off again if `off`. */
+    function withHints(off: boolean): Session {
+      const session = sessionAt(1);
+      session.round?.enableHints();
+      if (off) {
+        session.round?.disableHints();
+      }
+      return session;
+    }
+
+    it("saves a new round with hints off and unused", () => {
+      const state = sessionAt(1).toState();
+      assert.equal(state?.round.hintsShown, false);
+      assert.equal(state?.round.hintsUsed, false);
+    });
+
+    it("round-trips hints on", () => {
+      const restored = Session.fromState(stored(withHints(false)), WORDS);
+      assert.equal(restored?.round?.hintsShown, true);
+      assert.equal(restored?.round?.hintsUsed, true);
+    });
+
+    it("round-trips hints turned on and off again as off, but used", () => {
+      const restored = Session.fromState(stored(withHints(true)), WORDS);
+      assert.equal(restored?.round?.hintsShown, false);
+      assert.equal(restored?.round?.hintsUsed, true);
+    });
+
+    it("starts a new round with hints off and unused, after a round with hints on", () => {
+      const session = withHints(false);
+      const round = session.newRound();
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, false);
+    });
+
+    it("drops version-4 state, which had no hints on/off flag", () => {
+      const state = stored(sessionAt(1));
+      const { hintsShown: _hintsShown, ...round } = state.round as Record<string, unknown>;
+      assert.equal(Session.fromState({ ...state, version: 4, round }, WORDS), null);
+      assert.equal(Session.fromState({ ...state, version: 4 }, WORDS), null);
+    });
   });
 
   it("saves the already-reported flag", () => {
