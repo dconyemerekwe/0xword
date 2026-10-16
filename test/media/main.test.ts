@@ -33,10 +33,34 @@ describe("media/main.ts", () => {
     assert.match(source, /addEventListener\("submit"/);
   });
 
-  it("makes every clickable key a real <button>", () => {
-    // The only click handler is on keypad buttons, which `keypadButton` makes as <button>.
+  it("makes every clickable key, and the Hints button, a real <button>", () => {
+    // The only click handler is in `actionButton`, which makes keypad keys and Hints as <button>.
     assert.equal(source.match(/addEventListener\("click"/g)?.length, 1);
-    assert.match(source, /function keypadButton[\s\S]*?element\("button"/);
+    assert.match(source, /function actionButton[\s\S]*?element\("button"/);
+    assert.match(source, /const hintsButton = actionButton\("hints-button", "", \{ type: "toggleHints" \}\)/);
+  });
+
+  it("draws the Hints button from the view: aria-pressed, and hidden once the round is over", () => {
+    assert.match(source, /ui\.hintsButton\.setAttribute\("aria-pressed", String\(view\.hints\.on\)\)/);
+    assert.match(source, /ui\.hintsButton\.hidden = !view\.hints\.available/);
+    assert.match(source, /hintsButton\.append\(bulbIcon\(\), element\("span", "", HINTS_BUTTON\)\)/);
+  });
+
+  it("draws the hint strip from the view with textContent, with one line of text for screen readers", () => {
+    assert.match(source, /ui\.hintStrip\.hidden = !view\.hints\.on/);
+    assert.match(source, /cell\.textContent = model\?\.text \?\? ""/);
+    assert.match(source, /cell\.setAttribute\("aria-hidden", "true"\)/);
+    assert.match(source, /const hintLabel = element\("span", "sr-only"\)/);
+    assert.match(source, /ui\.hintLabel\.textContent = view\.hints\.label/);
+  });
+
+  it("puts the hint strip between the grid and the legend, and Hints in the status bar", () => {
+    assert.match(source, /app\.replaceChildren\(header, statusBar, grid, hintStrip, legend,/);
+    assert.match(source, /statusBar\.append\(status, hintsButton\)/);
+  });
+
+  it("leaves focus on the Hints button while a word attempt is due, so it can be toggled again", () => {
+    assert.match(source, /document\.activeElement !== ui\.decodeInput && document\.activeElement !== ui\.hintsButton/);
   });
 
   it("labels the decode box with a <label>, whose heading, placeholder and button come from the view's panel", () => {
@@ -75,8 +99,8 @@ describe("media/main.ts", () => {
   });
 
   it("gives DEL and ENTER accessible names that start with their visible labels (WCAG 2.5.3)", () => {
-    assert.match(source, /keypadButton\("[^"]*", "DEL",[\s\S]*?del\.setAttribute\("aria-label", "DEL, /);
-    assert.match(source, /keypadButton\("[^"]*", "ENTER",[\s\S]*?enter\.setAttribute\("aria-label", "ENTER, /);
+    assert.match(source, /actionButton\("[^"]*", "DEL",[\s\S]*?del\.setAttribute\("aria-label", "DEL, /);
+    assert.match(source, /actionButton\("[^"]*", "ENTER",[\s\S]*?enter\.setAttribute\("aria-label", "ENTER, /);
   });
 
   it("focuses the decode box, without blocking the key, when shouldFocusDecodeBox says so", () => {
@@ -121,10 +145,11 @@ function fakeNode(record: Record<string, unknown>): unknown {
   });
 }
 
-describe("media/main.ts: the lock icon, run as the bundled webview script", () => {
+describe("media/main.ts: the lock and light-bulb icons, run as the bundled webview script", () => {
   // Regression test for #32: the bundle ran `buildScreen` before `SVG_NS` was
   // set, so the padlock was made with createElementNS(undefined, …) and never drawn.
-  it("creates the padlock's SVG elements in the SVG namespace", () => {
+  // The Hints light bulb (#23) is built the same way, so it's checked too.
+  it("creates the padlock's and the light bulb's SVG elements in the SVG namespace", () => {
     // Bundled like the webview build in scripts/build.ts.
     const { outputFiles } = esbuild.buildSync({
       entryPoints: [fileURLToPath(new URL("../../media/main.ts", import.meta.url))],
@@ -159,7 +184,8 @@ describe("media/main.ts: the lock icon, run as the bundled webview script", () =
     });
     assert.deepEqual(
       namespaces.map((n) => n.tag),
-      ["svg", "rect", "path"],
+      // The padlock, then the light bulb.
+      ["svg", "rect", "path", "svg", "path", "path"],
     );
     for (const { tag, ns } of namespaces) {
       assert.equal(ns, "http://www.w3.org/2000/svg", `<${tag}> namespace`);

@@ -139,16 +139,61 @@ describe("media/styles.css page 3: the hex locked and the final answer", () => {
   });
 });
 
+describe("media/styles.css page 2: the Hints button and strip", () => {
+  it("uses the page 2 colours from docs/design/README.md", () => {
+    assert.equal(DARK_PALETTE.hintsBorder, "#3C3F48");
+    assert.equal(DARK_PALETTE.hintsText, "#CCCFD8");
+    assert.equal(DARK_PALETTE.hintsOn, "#1E2A45");
+    assert.equal(DARK_PALETTE.hintsOnText, "#7EA8FF");
+  });
+
+  it("draws Hints off outlined on the page background", () => {
+    const off = block(".hints-button");
+    assert.match(off, /border: 1px solid var\(--ox-hints-border\);/);
+    assert.match(off, /background: var\(--ox-background\);/);
+    assert.match(off, /color: var\(--ox-hints-text\);/);
+  });
+
+  it("draws Hints on with a blue border and a tinted fill, from aria-pressed", () => {
+    const on = block('.hints-button[aria-pressed="true"]');
+    assert.match(on, /border-color: var\(--ox-right\);/);
+    assert.match(on, /background: var\(--ox-hints-on\);/);
+    assert.match(on, /color: var\(--ox-hints-on-text\);/);
+  });
+
+  it("draws the light bulb in the button's own colour", () => {
+    assert.match(block(".hints-icon"), /stroke: currentColor;/);
+  });
+
+  it("puts Hints on the right of the status line", () => {
+    assert.match(block(".status-bar"), /justify-content: space-between;/);
+  });
+
+  it("draws one dashed cell per byte, in the same columns as the byte pairs", () => {
+    const columns = /grid-template-columns: ([^;]+);/;
+    const gap = /gap: (\d+px);/;
+    assert.equal(columns.exec(block(".hint-strip"))?.[1], columns.exec(block(".grid-row"))?.[1]);
+    assert.equal(gap.exec(block(".hint-strip"))?.[1], gap.exec(block(".grid-row"))?.[1]);
+    assert.match(block(".hint-cell"), /border: 1px dashed var\(--ox-strip-border\);/);
+  });
+
+  it("draws known letters in the text colour and ? muted", () => {
+    assert.match(block(".hint-cell"), /color: var\(--ox-text\);/);
+    assert.match(block(".hint-unknown"), /color: var\(--ox-strip-unknown\);/);
+  });
+});
+
 describe("media/styles.css layout and accessibility", () => {
-  it("makes keys, the Decode button and the decode box at least 44px tall", () => {
+  it("makes keys, the Decode button, the decode box and Hints at least 44px tall", () => {
     assert.match(root, /--ox-touch:\s*44px;/);
-    for (const selector of [".key", ".decode-button", ".decode-input"]) {
+    for (const selector of [".key", ".decode-button", ".decode-input", ".hints-button"]) {
       assert.match(block(selector), /min-height: var\(--ox-touch\);/, selector);
     }
   });
 
-  it("makes keypad keys at least 44px wide too", () => {
+  it("makes keypad keys and Hints at least 44px wide too", () => {
     assert.match(block(".key"), /min-width: var\(--ox-touch\);/);
+    assert.match(block(".hints-button"), /min-width: var\(--ox-touch\);/);
   });
 
   it("puts a wider gap between byte pairs than within a pair", () => {

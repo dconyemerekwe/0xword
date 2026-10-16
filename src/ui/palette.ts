@@ -38,6 +38,23 @@ export const DARK_PALETTE = {
   lockedKeyRight: "#1E3660",
   /** The dimmed digits of locked keys. Estimated from page 3: the table only says "dimmed". */
   lockedKeyText: "#6B7180",
+  // Page 2, the Hints button and strip (docs/design/README.md colour table).
+  /** The Hints button's border while off. */
+  hintsBorder: "#3C3F48",
+  /** The Hints button's text and icon while off. Its fill is `background`. */
+  hintsText: "#CCCFD8",
+  /** The Hints button's fill while on. Its border is `right`. */
+  hintsOn: "#1E2A45",
+  /** The Hints button's text and icon while on. */
+  hintsOnText: "#7EA8FF",
+  /** The hint strip's dashed cell outlines. Estimated from page 2: the table has no value. */
+  stripBorder: "#4A4D55",
+  /**
+   * The muted `?` of a byte not yet decoded. Estimated from page 2 (measured
+   * about #797E89, 4.45:1): the table has no value. Taken 2 units lighter,
+   * within the image's JPEG error, so it meets 4.5:1.
+   */
+  stripUnknown: "#7B808B",
 } as const;
 
 export type PaletteToken = keyof typeof DARK_PALETTE;
@@ -64,6 +81,9 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["onRight", "lockedRight"], // dimmed right-spot tiles
   ["onWrong", "lockedWrong"], // dimmed wrong-spot tiles
   // Locked keys are `disabled`, so WCAG sets them no contrast minimum.
+  ["hintsText", "background"], // the Hints button, off
+  ["hintsOnText", "hintsOn"], // the Hints button, on
+  ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
 ];
 
 /** WCAG AA for normal-size text. */
