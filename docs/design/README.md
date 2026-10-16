@@ -27,6 +27,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Icon buttons (`?`, theme) | | `#CCCFD8` | |
 | Hints button, off | page background | `#CCCFD8` | `#3C3F48` |
 | Hints button, on (page 2) | `#1E2A45` | `#7EA8FF`* | `#2F6FE4`* |
+| Hint strip cell (page 2) | page background | letter `#E8EAF0`, `?` `#7B808B`† | dashed `#4A4D55`† |
 | Tile: right spot | `#2F6FE4` | `#FFFFFF` | |
 | Tile: wrong spot | `#F0A04B` | `#1A1206` | |
 | Tile: not in word | `#343944` | `#C9CFD8` | |
@@ -44,6 +45,8 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | How to play cheatsheet card (page 5) | `#1D2027` | letter `#E8EAF0`, hex `#7EA8FF` | |
 
 On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wrong spot about `#AE783F`) while the hex is locked.
+
+† Added with the Hints story (#23), estimated from pixels of page 2 rather than taken from the original table: the dashed outline measures about `#4A4D55`. The `?` measures about `#797E89`, which is 4.45:1 on the page background; it's used 2 units lighter, as `#7B808B` (about 4.57:1), to meet 4.5:1. The owner should confirm both.
 
 ### Light theme (page 4)
 
@@ -72,7 +75,7 @@ On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wr
   - mid-game: "4-letter word · row 4 of 6"
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
   - solved: "4-letter word · solved"
-- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. When on (page 2), it has a blue border and a tinted fill. It's hidden on the solved screen.
+- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including while a word attempt or the final answer is due. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. There is no count or limit to show. It's hidden once the round is over (solved or out of rows).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
   - Digits are in JetBrains Mono, bold.
