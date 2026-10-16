@@ -1,9 +1,13 @@
 // Scans the webview's DOM layer (media/main.ts) for the security and
-// accessibility rules it must follow. Its behaviour is tested through the
-// controller it drives (test/ui/game.test.ts).
+// accessibility rules it must follow, and runs its bundle once against a fake
+// DOM. Its behaviour is tested through the controller it drives
+// (test/ui/game.test.ts).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
+import * as esbuild from "esbuild";
 
 /** The source without comments, so they may mention what the code avoids. */
 const source = readFileSync(new URL("../../media/main.ts", import.meta.url), "utf8")
@@ -100,5 +104,65 @@ describe("media/main.ts", () => {
     assert.deepEqual(posts.sort(), ["finished", '{ type: "ready" }']);
     assert.doesNotMatch(source, /"roundFinished"/);
     assert.doesNotMatch(source, /takeResult\(/);
+  });
+});
+
+/** A stand-in DOM node: any property reads as a value set on it, or else a no-op function. */
+function fakeNode(record: Record<string, unknown>): unknown {
+  const target: Record<string, unknown> = { ...record, classList: { toggle() {}, add() {}, remove() {} } };
+  return new Proxy(target, {
+    get: (t, key) => (typeof key === "string" && key in t ? t[key] : () => undefined),
+    set: (t, key, value) => {
+      if (typeof key === "string") {
+        t[key] = value;
+      }
+      return true;
+    },
+  });
+}
+
+describe("media/main.ts: the lock icon, run as the bundled webview script", () => {
+  // Regression test for #32: the bundle ran `buildScreen` before `SVG_NS` was
+  // set, so the padlock was made with createElementNS(undefined, …) and never drawn.
+  it("creates the padlock's SVG elements in the SVG namespace", () => {
+    // Bundled like the webview build in scripts/build.ts.
+    const { outputFiles } = esbuild.buildSync({
+      entryPoints: [fileURLToPath(new URL("../../media/main.ts", import.meta.url))],
+      bundle: true,
+      write: false,
+      platform: "browser",
+      target: "es2022",
+      format: "iife",
+      loader: { ".txt": "text" },
+    });
+    const bundle = outputFiles[0];
+    assert.ok(bundle, "esbuild produced the bundle");
+    const namespaces: { tag: string; ns: unknown }[] = [];
+    const document = {
+      getElementById: (id: string) => (id === "app" ? fakeNode({}) : null),
+      createElement: (tag: string) => fakeNode({ tag }),
+      createElementNS: (ns: unknown, tag: string) => {
+        namespaces.push({ tag, ns });
+        return fakeNode({ tag });
+      },
+      createTextNode: () => fakeNode({}),
+      addEventListener() {},
+      activeElement: null,
+    };
+    runInNewContext(bundle.text, {
+      document,
+      window: { addEventListener() {} },
+      requestAnimationFrame() {},
+      HTMLButtonElement: class {},
+      Element: class {},
+      acquireVsCodeApi: () => ({ postMessage() {}, getState: () => undefined, setState() {} }),
+    });
+    assert.deepEqual(
+      namespaces.map((n) => n.tag),
+      ["svg", "rect", "path"],
+    );
+    for (const { tag, ns } of namespaces) {
+      assert.equal(ns, "http://www.w3.org/2000/svg", `<${tag}> namespace`);
+    }
   });
 });

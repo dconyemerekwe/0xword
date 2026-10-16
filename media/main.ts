@@ -61,6 +61,11 @@ interface Screen {
   readonly message: HTMLElement;
 }
 
+// Constants used while the screen is built go above the start-up code below:
+// esbuild turns `const` into `var`, so one declared further down would read
+// as undefined instead of failing (#32).
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 const vscode = acquireVsCodeApi();
 // Restore before saying `ready`, so `init` knows whether a round is already
 // in progress. Invalid saved state is dropped and a fresh session starts.
@@ -110,8 +115,6 @@ function element<K extends keyof HTMLElementTagNameMap>(
   }
   return node;
 }
-
-const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** A new SVG element with its attributes. */
 function svgElement<K extends keyof SVGElementTagNameMap>(
