@@ -24,9 +24,9 @@ export const HEX_DIGITS = [..."0123456789ABCDEF"];
 
 /** How each mark is named in text, so colour is never the only cue. */
 export const MARK_NAMES: Readonly<Record<Mark, string>> = {
-  [Mark.Right]: "right spot",
-  [Mark.Wrong]: "wrong spot",
-  [Mark.Absent]: "not in word",
+  [Mark.Right]: "Right spot",
+  [Mark.Wrong]: "Wrong spot",
+  [Mark.Absent]: "Not in word",
 };
 
 /** A grid tile: empty, typed but not yet scored, or scored with a mark. */
