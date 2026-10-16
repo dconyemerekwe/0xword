@@ -14,6 +14,7 @@ import {
   actionForKey,
   firstNonLetterByte,
   guessMessage,
+  isHexLocked,
   keypad,
   scoredMessage,
   shouldFocusDecodeBox,
@@ -400,6 +401,37 @@ describe("GameController: the hex locks after row 6 (page 3)", () => {
 
   it("isn't locked before the first round", () => {
     assert.equal(harness(undefined, false).controller.view().hexLocked, false);
+  });
+
+  it("decides the lock in one place, so the status line and the card always agree", () => {
+    const views = [
+      harness(undefined, false).controller.view(),
+      harness().controller.view(),
+      harness().play(...guess("TEAM")),
+      atRowSix().controller.view(),
+      atRowSix().play(decode("BITE")),
+      atRowSix().play(decode("BYTE")),
+    ];
+    for (const view of views) {
+      assert.equal(view.status === HEX_LOCKED_STATUS, view.hexLocked, view.status);
+      assert.equal(view.panel === FINAL_PANEL, view.hexLocked, view.status);
+    }
+  });
+});
+
+describe("isHexLocked", () => {
+  it("is true with all 6 rows used in any phase of an unfinished round", () => {
+    for (const phase of ["guess", "answer", "final"] as const) {
+      assert.equal(isHexLocked(phase, MAX_ROWS), true, phase);
+    }
+  });
+
+  it("is false once the round is over, before any round, and with rows left", () => {
+    assert.equal(isHexLocked("solved", MAX_ROWS), false);
+    assert.equal(isHexLocked("failed", MAX_ROWS), false);
+    assert.equal(isHexLocked(null, MAX_ROWS), false);
+    assert.equal(isHexLocked("answer", MAX_ROWS - 1), false);
+    assert.equal(isHexLocked("guess", 0), false);
   });
 });
 

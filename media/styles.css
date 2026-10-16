@@ -326,6 +326,7 @@ body {
 /* "Tried: BUSY · BEST": the dot is decoration, so its alt text is empty. */
 .tried-list li + li::before {
   content: "·" / "";
+  /* The list's 8px gap already sits before each word: pull the dot back 4px to centre it. */
   margin: 0 4px 0 -4px;
 }
 

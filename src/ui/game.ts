@@ -174,8 +174,7 @@ export class GameController {
     const phase: Phase | null = round?.phase ?? null;
     const rows = round?.rows ?? [];
     const answers = round?.answers ?? [];
-    // Keyed off the rows, not the phase, so it holds however rows 1–5 end.
-    const hexLocked = round !== null && !round.isOver && rows.length === MAX_ROWS;
+    const hexLocked = isHexLocked(phase, rows.length);
     // The last answer of a solved round is the right one, not a tried word.
     const wrong = phase === "solved" ? answers.slice(0, -1) : answers;
     // Solved and out of rows come from the phase, so they survive a reload.
@@ -302,11 +301,18 @@ export function firstNonLetterByte(hex: string): string | null {
 }
 
 /**
- * The status line under the title. Once all `MAX_ROWS` rows are scored and
- * the round isn't over, the hex is locked, whatever the phase is called.
+ * True once all `MAX_ROWS` rows are scored and the round isn't over: the hex
+ * is locked and the final answer is due. The one place this rule lives, so
+ * the status line, the card and the keypad always agree. Keyed off the rows,
+ * not the phase name, so it holds however rows 1–5 end.
  */
+export function isHexLocked(phase: Phase | null, rowsUsed: number): boolean {
+  return phase !== null && phase !== "solved" && phase !== "failed" && rowsUsed === MAX_ROWS;
+}
+
+/** The status line under the title: see `isHexLocked` for the locked one. */
 export function statusLine(phase: Phase | null, rowsUsed: number): string {
-  if (phase !== null && phase !== "solved" && phase !== "failed" && rowsUsed === MAX_ROWS) {
+  if (isHexLocked(phase, rowsUsed)) {
     return HEX_LOCKED_STATUS;
   }
   switch (phase) {
