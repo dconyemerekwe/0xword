@@ -1,16 +1,17 @@
 import { HEX_LENGTH } from "./hex.ts";
 import { hasExactKeys, isIntegerInRange, plainFields } from "./plain.ts";
-import { Round, type GuessOutcome, type Phase, type RoundState } from "./round.ts";
+import { Round, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
 import { pickAnswer } from "./words.ts";
 
 /**
  * The saved-state format. Bump it when the format changes, and either migrate
  * older state in `fromState` or let it be dropped. Version 2 removed skipped
  * answer tries and the round's `answerTries` count. Version 3 added the
- * half-typed hex row (`draft`). Older state is dropped, so the panel starts
- * fresh.
+ * half-typed hex row (`draft`). Version 4 added `reported`, so a finished
+ * round is reported to the host only once. Older state is dropped, so the
+ * panel starts fresh.
  */
-export const SESSION_STATE_VERSION = 3;
+export const SESSION_STATE_VERSION = 4;
 
 /**
  * A session saved as plain data. It holds the hidden answer, so it must never
@@ -22,9 +23,14 @@ export interface SessionState {
   readonly round: RoundState;
   /** The hex row being typed: see `isDraft`. */
   readonly draft: string;
+  /** The round's result has been handed out by `takeResult`: see `isReported`. */
+  readonly reported: boolean;
 }
 
-const SESSION_STATE_KEYS = ["version", "roundNumber", "round", "draft"] as const;
+/** A finished round's result as the host gets it: without the hidden answer. */
+export type RoundReport = Omit<RoundResult, "answer">;
+
+const SESSION_STATE_KEYS = ["version", "roundNumber", "round", "draft", "reported"] as const;
 
 /** Up to 8 uppercase hex digits. */
 const DRAFT_PATTERN = new RegExp(`^[0-9A-F]{0,${HEX_LENGTH}}$`);
@@ -39,6 +45,15 @@ export function isDraft(draft: unknown, phase: Phase): draft is string {
 }
 
 /**
+ * True if `reported` can be the "already reported" flag of `round`: a
+ * boolean, and true only once the round is over (an unfinished round has no
+ * result to report).
+ */
+export function isReported(reported: unknown, round: Round): reported is boolean {
+  return reported === false || (reported === true && round.isOver);
+}
+
+/**
  * A run of rounds in one panel: starts each new round with a fresh random
  * answer and counts them. The answer stays inside the `Round`.
  */
@@ -49,6 +64,7 @@ export class Session {
   #round: Round | null = null;
   #roundNumber = 0;
   #draft = "";
+  #reported = false;
 
   /** `random` works like `Math.random`; tests pass a fixed one. */
   constructor(words: readonly string[], random: () => number = Math.random) {
@@ -73,6 +89,28 @@ export class Session {
   /** The hex row being typed, saved with the session so it survives a reload. */
   get draft(): string {
     return this.#draft;
+  }
+
+  /** True once the current round's result has been handed out by `takeResult`. */
+  get reported(): boolean {
+    return this.#reported;
+  }
+
+  /**
+   * The current round's result the first time it's asked for after the round
+   * ends, and null every other time: before the round ends, and once it has
+   * been taken. The webview sends it to the host as `roundFinished`, so each
+   * finished round is counted exactly once. The flag is saved with the
+   * session, so a restored round that was already reported stays reported.
+   */
+  takeResult(): RoundReport | null {
+    const round = this.#round;
+    if (!round?.isOver || this.#reported) {
+      return null;
+    }
+    this.#reported = true;
+    const { solved, rowsUsed, hintsUsed } = round.result();
+    return { solved, rowsUsed, hintsUsed };
   }
 
   /**
@@ -102,12 +140,16 @@ export class Session {
     return outcome;
   }
 
-  /** Replaces the current round, finished or not, with a fresh one. */
+  /**
+   * Replaces the current round, finished or not, with a fresh one. An
+   * unfinished round is dropped with no result, so it's never reported.
+   */
   newRound(): Round {
     const round = new Round(pickAnswer(this.#words, this.#random), this.#wordSet);
     this.#round = round;
     this.#roundNumber++;
     this.#draft = "";
+    this.#reported = false;
     return round;
   }
 
@@ -133,6 +175,7 @@ export class Session {
       roundNumber: this.#roundNumber,
       round: this.#round.toState(),
       draft: this.#draft,
+      reported: this.#reported,
     };
   }
 
@@ -152,12 +195,14 @@ export class Session {
     const session = new Session(words, random);
     const round = Round.fromState(fields.get("round"), session.#wordSet);
     const draft = fields.get("draft");
-    if (!round || !isDraft(draft, round.phase)) {
+    const reported = fields.get("reported");
+    if (!round || !isDraft(draft, round.phase) || !isReported(reported, round)) {
       return null;
     }
     session.#round = round;
     session.#roundNumber = roundNumber;
     session.#draft = draft;
+    session.#reported = reported;
     return session;
   }
 }

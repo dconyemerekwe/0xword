@@ -23,6 +23,21 @@ export const DARK_PALETTE = {
   key: "#2A2E37",
   /** A keypad key whose digit is not in the word: darker than `key`. */
   keyAbsent: "#111318",
+  // Page 3, while the hex is locked (docs/design/README.md colour table).
+  /** The final-answer card's background. Its border, "Last try" and Submit are `wrong`. */
+  finalCard: "#241B12",
+  /** "Type with your keyboard" and Tried on the card. Estimated from page 3: the table has no value. */
+  finalNote: "#D6C8B4",
+  /** Right-spot tiles, dimmed. */
+  lockedRight: "#2754A8",
+  /** Wrong-spot tiles, dimmed; also locked wrong-spot keys (page 3 shows none). */
+  lockedWrong: "#AE783F",
+  /** Unmarked keys, DEL and ENTER. */
+  lockedKey: "#1B1E24",
+  /** Right-spot keys. */
+  lockedKeyRight: "#1E3660",
+  /** The dimmed digits of locked keys. Estimated from page 3: the table only says "dimmed". */
+  lockedKeyText: "#6B7180",
 } as const;
 
 export type PaletteToken = keyof typeof DARK_PALETTE;
@@ -43,6 +58,12 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["onWrong", "wrong"], // wrong-spot tiles and keys
   ["onAbsent", "absent"], // not-in-word tiles
   ["wrong", "background"], // error messages
+  ["text", "finalCard"], // the "Final answer" heading
+  ["wrong", "finalCard"], // "Last try"
+  ["finalNote", "finalCard"], // "Type with your keyboard", Tried words
+  ["onRight", "lockedRight"], // dimmed right-spot tiles
+  ["onWrong", "lockedWrong"], // dimmed wrong-spot tiles
+  // Locked keys are `disabled`, so WCAG sets them no contrast minimum.
 ];
 
 /** WCAG AA for normal-size text. */

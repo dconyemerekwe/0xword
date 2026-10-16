@@ -7,6 +7,7 @@ import { HEX_LENGTH, WORD_LENGTH, hexToWord } from "../game/hex.ts";
 import { MAX_ROWS, type Phase, type Row } from "../game/round.ts";
 import { Mark } from "../game/score.ts";
 import type { Session, SessionState } from "../game/session.ts";
+import type { RoundFinishedMessage } from "../protocol.ts";
 
 /** Everything a player (or the host) can do to the game screen. */
 export type Action =
@@ -52,6 +53,42 @@ export interface TriedWord {
   readonly label: string;
 }
 
+/** The decode panel's text: page 1's decode panel, or page 3's final-answer card. */
+export interface DecodePanel {
+  /** The heading, which is also the text box's label. */
+  readonly heading: string;
+  /** Top right of the panel, or "" for none. */
+  readonly badge: string;
+  readonly placeholder: string;
+  readonly button: string;
+  /** Under the text box, on the left. */
+  readonly note: string;
+}
+
+/** The decode panel after rows 1–5 (page 1). */
+export const DECODE_PANEL: DecodePanel = {
+  heading: "Decode the word",
+  badge: "",
+  placeholder: "Type the English word",
+  button: "Decode",
+  note: "1 try per row",
+};
+
+/** The final-answer card once the hex is locked (page 3). */
+export const FINAL_PANEL: DecodePanel = {
+  heading: "Final answer",
+  badge: "Last try",
+  placeholder: "Decode the bytes above",
+  button: "Submit",
+  note: "Type with your keyboard",
+};
+
+/** The status line while the hex is locked (page 3), after the lock icon. */
+export const HEX_LOCKED_STATUS = `Hex locked · all ${MAX_ROWS} rows used`;
+
+/** Added to the row 6 announcement, since the lock icon and dimming aren't read out. */
+export const FINAL_ANSWER_DUE = "Hex locked: one final answer";
+
 /** Everything the DOM layer needs to draw the screen. */
 export interface ScreenView {
   /** E.g. "4-letter word · row 2 of 6". */
@@ -64,8 +101,14 @@ export interface ScreenView {
   readonly keypadEnabled: boolean;
   /** A row was scored and its one word attempt is due: the decode box is open. */
   readonly wordAttemptDue: boolean;
-  /** Under the decode box: "1 try per row", or "Last try" after row 6. */
-  readonly tryNote: string;
+  /**
+   * All `MAX_ROWS` rows are scored and the round isn't over: the hex is
+   * locked and the one final answer is due (page 3). The status line shows
+   * the lock icon, and the grid and keypad are dimmed.
+   */
+  readonly hexLocked: boolean;
+  /** The decode panel's text: the final-answer card while `hexLocked`. */
+  readonly panel: DecodePanel;
   /** The wrong words tried so far, one per finished row. */
   readonly tried: readonly TriedWord[];
   /** Plain text: why the last action was rejected, what happened, or how the round ended. */
@@ -87,26 +130,37 @@ function rejected(text: string): Notice {
 }
 
 /**
+ * Saves `savedState()`, posts `finished` to the host if it isn't null, and
+ * draws `view()`: `changed()` in media/main.ts.
+ */
+export type Changed = (finished: RoundFinishedMessage | null) => void;
+
+/**
  * Runs the game screen for one session. Every action goes through `dispatch`,
  * which ends by calling `changed` (save and redraw), so no move is lost when
  * the panel is hidden.
  */
 export class GameController {
   readonly #session: Session;
-  readonly #changed: () => void;
+  readonly #changed: Changed;
   /** The last action's message. Not saved: it's gone after a reload. */
   #notice = NO_NOTICE;
 
-  /** `changed` saves `savedState()` and draws `view()`: `changed()` in media/main.ts. */
-  constructor(session: Session, changed: () => void) {
+  constructor(session: Session, changed: Changed) {
     this.#session = session;
     this.#changed = changed;
   }
 
-  /** The one way to change the game. Always ends with `changed`, even if the action was ignored. */
+  /**
+   * The one way to change the game. Always ends with `changed`, even if the
+   * action was ignored. If the round has just ended, and hasn't been reported
+   * yet, `changed` gets the `roundFinished` message to post: this happens
+   * once per finished round, and the saved state already says it was sent.
+   */
   dispatch(action: Action): void {
     this.#notice = this.#apply(action);
-    this.#changed();
+    const result = this.#session.takeResult();
+    this.#changed(result ? { type: "roundFinished", ...result } : null);
   }
 
   /** What to save: the session with its round and draft, or null before the first round. */
@@ -120,6 +174,7 @@ export class GameController {
     const phase: Phase | null = round?.phase ?? null;
     const rows = round?.rows ?? [];
     const answers = round?.answers ?? [];
+    const hexLocked = isHexLocked(phase, rows.length);
     // The last answer of a solved round is the right one, not a tried word.
     const wrong = phase === "solved" ? answers.slice(0, -1) : answers;
     // Solved and out of rows come from the phase, so they survive a reload.
@@ -135,7 +190,8 @@ export class GameController {
       keys: keypad(rows),
       keypadEnabled: phase === "guess",
       wordAttemptDue: phase === "answer" || phase === "final",
-      tryNote: phase === "final" ? "Last try" : "1 try per row",
+      hexLocked,
+      panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
       tried: wrong.map((word) => ({ word, label: `${word}, wrong` })),
       message: notice.text,
       messageIsError: notice.error,
@@ -174,7 +230,9 @@ export class GameController {
           return rejected(guessMessage(outcome.error, draft));
         }
         // Read out by the live region, since focus moves to the decode box.
-        return { text: scoredMessage(session.round?.rows.length ?? 0, outcome.row.marks), error: false };
+        const rowsUsed = session.round?.rows.length ?? 0;
+        const scored = scoredMessage(rowsUsed, outcome.row.marks);
+        return { text: rowsUsed === MAX_ROWS ? `${scored}. ${FINAL_ANSWER_DUE}` : scored, error: false };
       }
       case "decode":
         return this.#decode(action.word);
@@ -242,8 +300,21 @@ export function firstNonLetterByte(hex: string): string | null {
   return null;
 }
 
-/** The status line under the title. */
+/**
+ * True once all `MAX_ROWS` rows are scored and the round isn't over: the hex
+ * is locked and the final answer is due. The one place this rule lives, so
+ * the status line, the card and the keypad always agree. Keyed off the rows,
+ * not the phase name, so it holds however rows 1–5 end.
+ */
+export function isHexLocked(phase: Phase | null, rowsUsed: number): boolean {
+  return phase !== null && phase !== "solved" && phase !== "failed" && rowsUsed === MAX_ROWS;
+}
+
+/** The status line under the title: see `isHexLocked` for the locked one. */
 export function statusLine(phase: Phase | null, rowsUsed: number): string {
+  if (isHexLocked(phase, rowsUsed)) {
+    return HEX_LOCKED_STATUS;
+  }
   switch (phase) {
     case null:
       return `${WORD_LENGTH}-letter word`;
