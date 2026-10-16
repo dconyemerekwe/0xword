@@ -19,6 +19,13 @@
   --ox-on-absent: #B4B9C5;
   --ox-key: #2A2E37;
   --ox-key-absent: #111318;
+  --ox-final-card: #241B12;
+  --ox-final-note: #D6C8B4;
+  --ox-locked-right: #2754A8;
+  --ox-locked-wrong: #AE783F;
+  --ox-locked-key: #1B1E24;
+  --ox-locked-key-right: #1E3660;
+  --ox-locked-key-text: #6B7180;
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -91,8 +98,21 @@ body {
 }
 
 .status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   color: var(--ox-muted);
+}
+
+/* The lock icon before "Hex locked" (page 3): an inline SVG drawn in the text colour. */
+.status-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 
 /* Grid: 6 rows of 4 byte pairs, with a wider gap between pairs than within one. */
@@ -152,6 +172,17 @@ body {
   color: var(--ox-on-absent);
 }
 
+/* The hex is locked (page 3): right and wrong tiles are dimmed. */
+.grid-locked .tile-right {
+  border-color: var(--ox-locked-right);
+  background: var(--ox-locked-right);
+}
+
+.grid-locked .tile-wrong {
+  border-color: var(--ox-locked-wrong);
+  background: var(--ox-locked-wrong);
+}
+
 /* Legend */
 
 .legend {
@@ -196,11 +227,26 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
+  /* Drawn in the panel colour, so the final card's orange border doesn't shift the layout. */
+  border: 2px solid var(--ox-panel);
   border-radius: var(--ox-radius);
   background: var(--ox-panel);
 }
 
+.decode-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .decode-label {
+  font-weight: 700;
+}
+
+.decode-badge {
+  color: var(--ox-wrong);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -277,6 +323,32 @@ body {
   text-decoration: line-through;
 }
 
+/* "Tried: BUSY · BEST": the dot is decoration, so its alt text is empty. */
+.tried-list li + li::before {
+  content: "·" / "";
+  margin: 0 4px 0 -4px;
+}
+
+/* The final-answer card (page 3), in place of the decode panel once the hex is locked. */
+.decode-final {
+  border-color: var(--ox-wrong);
+  background: var(--ox-final-card);
+}
+
+.decode-final .decode-input {
+  border-color: var(--ox-wrong);
+  background: var(--ox-background);
+}
+
+.decode-final .decode-button {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.decode-final .decode-foot {
+  color: var(--ox-final-note);
+}
+
 /* Message */
 
 .message {
@@ -341,6 +413,25 @@ body {
 
 .key:disabled:not(.key-right, .key-wrong, .key-absent) {
   color: var(--ox-muted);
+}
+
+/* The hex is locked (page 3): every key is dimmed, and marked keys keep a dimmed colour. */
+.keypad-locked .key:disabled {
+  background: var(--ox-locked-key);
+  color: var(--ox-locked-key-text);
+}
+
+.keypad-locked .key-right:disabled {
+  background: var(--ox-locked-key-right);
+}
+
+.keypad-locked .key-wrong:disabled {
+  background: var(--ox-locked-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.keypad-locked .key-absent:disabled {
+  background: var(--ox-key-absent);
 }
 
 @media (prefers-reduced-motion: reduce) {

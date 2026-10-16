@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SESSION_STATE_VERSION, Session, isDraft, restoreSession } from "../../src/game/session.ts";
+import { SESSION_STATE_VERSION, Session, isDraft, isReported, restoreSession } from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
+import { MAX_ROWS } from "../../src/game/round.ts";
 import { WORDS } from "./fixtures.ts";
 
 /** A random source that returns these values in turn. */
@@ -198,6 +199,116 @@ function sessionAt(n: number): Session {
   return session;
 }
 
+/** A session whose first round was solved on row 1 (the answer is WORDS[0]), not yet reported. */
+function solved(): Session {
+  const session = new Session(WORDS, () => 0);
+  const answer = WORDS[0];
+  assert.ok(answer);
+  session.newRound().submitGuess(wordToHex(answer));
+  session.round?.submitAnswer(answer);
+  return session;
+}
+
+/** A session whose first round failed: six wrong rows and a wrong final answer. */
+function failed(): Session {
+  const session = new Session(WORDS, () => 0);
+  const other = WORDS[1];
+  assert.ok(other);
+  const round = session.newRound();
+  for (let row = 0; row < MAX_ROWS; row++) {
+    round.submitGuess(wordToHex(other));
+    round.submitAnswer(other);
+  }
+  assert.equal(round.phase, "failed");
+  return session;
+}
+
+describe("Session.takeResult (roundFinished, once)", () => {
+  it("gives nothing before the first round", () => {
+    assert.equal(new Session(WORDS).takeResult(), null);
+  });
+
+  it("gives nothing while the round is in progress, on every phase", () => {
+    const session = new Session(WORDS, () => 0);
+    session.newRound();
+    assert.equal(session.takeResult(), null, "guess");
+    assert.equal(sessionAt(1).takeResult(), null, "answer");
+    assert.equal(session.reported, false);
+  });
+
+  it("gives nothing at the final answer, before it's given", () => {
+    const session = new Session(WORDS, () => 0);
+    const other = WORDS[1];
+    assert.ok(other);
+    const round = session.newRound();
+    for (let row = 0; row < MAX_ROWS - 1; row++) {
+      round.submitGuess(wordToHex(other));
+      round.submitAnswer(other);
+    }
+    round.submitGuess(wordToHex(other));
+    assert.equal(round.phase, "final");
+    assert.equal(session.takeResult(), null);
+  });
+
+  it("gives a solved round's result once, without the answer", () => {
+    const session = solved();
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, hintsUsed: false });
+    assert.equal(session.reported, true);
+    assert.equal(session.takeResult(), null);
+  });
+
+  it("gives a failed round's result once, with all 6 rows", () => {
+    const session = failed();
+    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, hintsUsed: false });
+    assert.equal(session.takeResult(), null);
+  });
+
+  it("records hints used", () => {
+    const session = new Session(WORDS, () => 0);
+    const answer = WORDS[0];
+    assert.ok(answer);
+    const round = session.newRound();
+    round.enableHints();
+    round.submitGuess(wordToHex(answer));
+    round.submitAnswer(answer);
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, hintsUsed: true });
+  });
+
+  it("is reset by a new round, which then reports only once it's over", () => {
+    const session = solved();
+    session.takeResult();
+    session.newRound();
+    assert.equal(session.reported, false);
+    assert.equal(session.takeResult(), null);
+  });
+
+  it("drops an unfinished round replaced by a new round, with no result", () => {
+    const session = sessionAt(1);
+    session.newRound();
+    assert.equal(session.takeResult(), null);
+  });
+});
+
+describe("isReported", () => {
+  it("accepts false for any round, and true only for a finished one", () => {
+    const unfinished = sessionAt(1).round;
+    const finished = solved().round;
+    assert.ok(unfinished && finished);
+    assert.equal(isReported(false, unfinished), true);
+    assert.equal(isReported(false, finished), true);
+    assert.equal(isReported(true, finished), true);
+    assert.equal(isReported(true, unfinished), false);
+  });
+
+  it("rejects anything that isn't a boolean", () => {
+    const finished = solved().round;
+    assert.ok(finished);
+    for (const value of [null, undefined, 0, 1, "true", "false", [], {}]) {
+      assert.equal(isReported(value, finished), false, String(value));
+    }
+  });
+});
+
 /** `state` with its round's fields changed. */
 function withRound(state: Record<string, unknown>, changes: Record<string, unknown>): Record<string, unknown> {
   return { ...state, round: { ...(state.round as object), ...changes } };
@@ -222,9 +333,59 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 3", () => {
-    assert.equal(SESSION_STATE_VERSION, 3);
-    assert.equal(sessionAt(1).toState()?.version, 3);
+  it("saves in format version 4", () => {
+    assert.equal(SESSION_STATE_VERSION, 4);
+    assert.equal(sessionAt(1).toState()?.version, 4);
+  });
+
+  it("saves the already-reported flag", () => {
+    const session = solved();
+    assert.equal(session.toState()?.reported, false);
+    session.takeResult();
+    assert.equal(session.toState()?.reported, true);
+  });
+
+  it("round-trips a reported finished round, which then reports nothing", () => {
+    const session = solved();
+    session.takeResult();
+    const restored = Session.fromState(stored(session), WORDS);
+    assert.equal(restored?.reported, true);
+    assert.equal(restored?.takeResult(), null);
+  });
+
+  it("round-trips a finished round not yet reported, which then reports once", () => {
+    const restored = Session.fromState(stored(solved()), WORDS);
+    assert.equal(restored?.reported, false);
+    assert.ok(restored?.takeResult());
+    assert.equal(restored?.takeResult(), null);
+  });
+
+  it("round-trips an unfinished round as not reported", () => {
+    assert.equal(Session.fromState(stored(sessionAt(2)), WORDS)?.reported, false);
+  });
+
+  describe("rejects an invalid already-reported flag", () => {
+    const cases: readonly (readonly [string, () => unknown])[] = [
+      ["a missing flag (version-3 state)", () => {
+        const { reported: _reported, ...rest } = stored(solved());
+        return { ...rest, version: 3 };
+      }],
+      ["a missing flag", () => {
+        const { reported: _reported, ...rest } = stored(solved());
+        return rest;
+      }],
+      ["version-3 state with the flag", () => ({ ...stored(solved()), version: 3 })],
+      ["null", () => ({ ...stored(solved()), reported: null })],
+      ['the string "true"', () => ({ ...stored(solved()), reported: "true" })],
+      ["1", () => ({ ...stored(solved()), reported: 1 })],
+      ["0", () => ({ ...stored(solved()), reported: 0 })],
+      ["true for a round still in progress", () => ({ ...stored(sessionAt(2)), reported: true })],
+    ];
+    for (const [name, make] of cases) {
+      it(`returns null for ${name}`, () => {
+        assert.equal(Session.fromState(make(), WORDS), null);
+      });
+    }
   });
 
   it("saves the half-typed hex row", () => {

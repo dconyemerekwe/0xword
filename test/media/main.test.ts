@@ -35,12 +35,35 @@ describe("media/main.ts", () => {
     assert.match(source, /function keypadButton[\s\S]*?element\("button"/);
   });
 
-  it('labels the decode box "Decode the word", with the "Type the English word" placeholder', () => {
-    assert.match(source, /element\("label", "[^"]*", "Decode the word"\)/);
-    assert.match(source, /label\.htmlFor = "decode-input"/);
+  it("labels the decode box with a <label>, whose heading, placeholder and button come from the view's panel", () => {
+    // The panel's text ("Decode the word" / "Final answer"…) is tested in test/ui/game.test.ts.
+    assert.match(source, /const decodeLabel = element\("label"/);
+    assert.match(source, /decodeLabel\.htmlFor = "decode-input"/);
     assert.match(source, /decodeInput\.id = "decode-input"/);
-    assert.match(source, /decodeInput\.placeholder = "Type the English word"/);
-    assert.match(source, /element\("button", "[^"]*", "Decode"\)/);
+    assert.match(source, /ui\.decodeLabel\.textContent = view\.panel\.heading/);
+    assert.match(source, /ui\.decodeBadge\.textContent = view\.panel\.badge/);
+    assert.match(source, /ui\.decodeInput\.placeholder = view\.panel\.placeholder/);
+    assert.match(source, /ui\.decodeButton\.textContent = view\.panel\.button/);
+    assert.match(source, /ui\.tryNote\.textContent = view\.panel\.note/);
+  });
+
+  it("shows the final-answer card and locks the grid and keypad from the view's hexLocked", () => {
+    assert.match(source, /ui\.decode\.classList\.toggle\("decode-final", view\.hexLocked\)/);
+    assert.match(source, /ui\.grid\.classList\.toggle\("grid-locked", view\.hexLocked\)/);
+    assert.match(source, /ui\.keypad\.classList\.toggle\("keypad-locked", view\.hexLocked\)/);
+    assert.match(source, /ui\.statusIcon\.toggleAttribute\("hidden", !view\.hexLocked\)/);
+  });
+
+  it("disables the keypad, DEL and ENTER whenever the view says the keypad is off", () => {
+    assert.match(source, /button\.disabled = !view\.keypadEnabled/);
+    assert.match(source, /ui\.del\.disabled = !view\.keypadEnabled/);
+    assert.match(source, /ui\.enter\.disabled = !view\.keypadEnabled/);
+  });
+
+  it("draws the lock icon as SVG elements with createElementNS, hidden from screen readers", () => {
+    assert.match(source, /document\.createElementNS\(SVG_NS, tag\)/);
+    assert.match(source, /const SVG_NS = "http:\/\/www\.w3\.org\/2000\/svg"/);
+    assert.match(source, /svgElement\("svg", \{[^}]*"aria-hidden": "true"/);
   });
 
   it("announces messages in an aria-live region", () => {
@@ -65,7 +88,17 @@ describe("media/main.ts", () => {
     assert.doesNotMatch(source, /\.(submitGuess|submitAnswer)\(/);
   });
 
-  it("saves with setState in changed()", () => {
-    assert.match(source, /function changed\(\): void \{[\s\S]*?vscode\.setState\(state\)[\s\S]*?render\(/);
+  it("saves with setState in changed(), then posts the finished round it's given, then draws", () => {
+    assert.match(
+      source,
+      /function changed\(finished: RoundFinishedMessage \| null\): void \{[\s\S]*?vscode\.setState\(state\)[\s\S]*?if \(finished\) \{\s*vscode\.postMessage\(finished\);\s*\}[\s\S]*?render\(/,
+    );
+  });
+
+  it("posts roundFinished only from changed(): the controller decides when", () => {
+    const posts = [...source.matchAll(/vscode\.postMessage\(([^)]*)\)/g)].map((match) => match[1]);
+    assert.deepEqual(posts.sort(), ["finished", '{ type: "ready" }']);
+    assert.doesNotMatch(source, /"roundFinished"/);
+    assert.doesNotMatch(source, /takeResult\(/);
   });
 });

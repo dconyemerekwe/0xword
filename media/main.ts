@@ -8,7 +8,7 @@ import { WORD_LENGTH } from "../src/game/hex.ts";
 import { MAX_ROWS } from "../src/game/round.ts";
 import { restoreSession, type SessionState } from "../src/game/session.ts";
 import { parseWordList } from "../src/game/words.ts";
-import { parseHostMessage, type WebviewMessage } from "../src/protocol.ts";
+import { parseHostMessage, type RoundFinishedMessage, type WebviewMessage } from "../src/protocol.ts";
 import {
   GameController,
   HEX_DIGITS,
@@ -42,11 +42,17 @@ interface TileElements {
 
 /** The parts of the screen that change. Built once, then updated in place. */
 interface Screen {
-  readonly status: HTMLElement;
+  readonly statusIcon: SVGSVGElement;
+  readonly statusText: HTMLElement;
+  readonly grid: HTMLElement;
   readonly tiles: readonly (readonly TileElements[])[];
+  readonly keypad: HTMLElement;
   readonly keys: readonly HTMLButtonElement[];
   readonly del: HTMLButtonElement;
   readonly enter: HTMLButtonElement;
+  readonly decode: HTMLElement;
+  readonly decodeLabel: HTMLLabelElement;
+  readonly decodeBadge: HTMLElement;
   readonly decodeInput: HTMLInputElement;
   readonly decodeButton: HTMLButtonElement;
   readonly tryNote: HTMLElement;
@@ -67,16 +73,24 @@ const ui = app ? buildScreen(app) : null;
 render(controller.view());
 
 /**
- * Saves the session and redraws. The controller calls this at the end of
- * every action (`dispatch`), so no move is lost the next time the panel is
- * hidden and the webview reloads. The saved state holds the answer: that's
- * fine, because it stays in VS Code's own storage for this webview. It is
- * never put in the DOM or in a message to the host.
+ * Saves the session, tells the host about a finished round, and redraws. The
+ * controller calls this at the end of every action (`dispatch`), so no move
+ * is lost the next time the panel is hidden and the webview reloads. The
+ * saved state holds the answer: that's fine, because it stays in VS Code's
+ * own storage for this webview. It is never put in the DOM or in a message to
+ * the host.
+ *
+ * `finished` is set once per finished round, by the controller. It's posted
+ * after the save, which already marks the round as reported, so a reload
+ * never sends it twice.
  */
-function changed(): void {
+function changed(finished: RoundFinishedMessage | null): void {
   const state = controller.savedState();
   if (state) {
     vscode.setState(state);
+  }
+  if (finished) {
+    vscode.postMessage(finished);
   }
   render(controller.view());
 }
@@ -97,6 +111,30 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** A new SVG element with its attributes. */
+function svgElement<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attributes: Readonly<Record<string, string>>,
+): SVGElementTagNameMap[K] {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) {
+    node.setAttribute(name, value);
+  }
+  return node;
+}
+
+/** The padlock before "Hex locked" (page 3). Decoration: the text says it. */
+function lockIcon(): SVGSVGElement {
+  const icon = svgElement("svg", { class: "status-icon", viewBox: "0 0 16 16", "aria-hidden": "true" });
+  icon.append(
+    svgElement("rect", { x: "3", y: "7", width: "10", height: "7.5", rx: "1.5" }),
+    svgElement("path", { d: "M5.5 7V5a2.5 2.5 0 0 1 5 0v2" }),
+  );
+  return icon;
+}
+
 /** A keypad button that types or acts without taking focus from a mouse click. */
 function keypadButton(className: string, text: string, action: Action): HTMLButtonElement {
   const button = element("button", className, text);
@@ -114,7 +152,7 @@ function keypadButton(className: string, text: string, action: Action): HTMLButt
   return button;
 }
 
-/** Builds the page 1 layout inside `app` and wires its events. */
+/** Builds the game screen (pages 1 and 3) inside `app` and wires its events. */
 function buildScreen(app: HTMLElement): Screen {
   const header = element("header");
   const title = element("h1", "title");
@@ -122,6 +160,9 @@ function buildScreen(app: HTMLElement): Screen {
   header.append(title);
 
   const status = element("p", "status");
+  const statusIcon = lockIcon();
+  const statusText = element("span");
+  status.append(statusIcon, statusText);
 
   const grid = element("div", "grid");
   const tiles = Array.from({ length: MAX_ROWS }, (_, r) => {
@@ -152,16 +193,20 @@ function buildScreen(app: HTMLElement): Screen {
     legend.append(item);
   }
 
+  // The heading, placeholder, button and note come from the view (`panel`):
+  // the decode panel, or the final-answer card once the hex is locked.
   const decode = element("form", "decode");
-  const label = element("label", "decode-label", "Decode the word");
-  label.htmlFor = "decode-input";
+  const decodeLabel = element("label", "decode-label");
+  decodeLabel.htmlFor = "decode-input";
+  const decodeBadge = element("span", "decode-badge");
+  const head = element("div", "decode-head");
+  head.append(decodeLabel, decodeBadge);
   const decodeInput = element("input", "decode-input");
   decodeInput.id = "decode-input";
   decodeInput.type = "text";
-  decodeInput.placeholder = "Type the English word";
   decodeInput.autocomplete = "off";
   decodeInput.spellcheck = false;
-  const decodeButton = element("button", "decode-button", "Decode");
+  const decodeButton = element("button", "decode-button");
   decodeButton.type = "submit";
   const decodeRow = element("div", "decode-row");
   decodeRow.append(decodeInput, decodeButton);
@@ -171,7 +216,7 @@ function buildScreen(app: HTMLElement): Screen {
   tried.append(element("span", "", "Tried:"), triedList);
   const foot = element("div", "decode-foot");
   foot.append(tryNote, tried);
-  decode.append(label, decodeRow, foot);
+  decode.append(head, decodeRow, foot);
   decode.addEventListener("submit", (event) => {
     event.preventDefault();
     controller.dispatch({ type: "decode", word: decodeInput.value });
@@ -209,7 +254,25 @@ function buildScreen(app: HTMLElement): Screen {
     }
   });
 
-  return { status, tiles, keys, del, enter, decodeInput, decodeButton, tryNote, tried, triedList, message };
+  return {
+    statusIcon,
+    statusText,
+    grid,
+    tiles,
+    keypad,
+    keys,
+    del,
+    enter,
+    decode,
+    decodeLabel,
+    decodeBadge,
+    decodeInput,
+    decodeButton,
+    tryNote,
+    tried,
+    triedList,
+    message,
+  };
 }
 
 /** Where a key press lands: the decode box, another control, or the page. */
@@ -228,7 +291,10 @@ function render(view: ScreenView): void {
   if (!ui) {
     return;
   }
-  ui.status.textContent = view.status;
+  ui.statusText.textContent = view.status;
+  ui.statusIcon.toggleAttribute("hidden", !view.hexLocked);
+  ui.grid.classList.toggle("grid-locked", view.hexLocked);
+  ui.keypad.classList.toggle("keypad-locked", view.hexLocked);
 
   ui.tiles.forEach((row, r) => {
     row.forEach((tile, i) => {
@@ -258,7 +324,13 @@ function render(view: ScreenView): void {
   if (!view.wordAttemptDue) {
     ui.decodeInput.value = "";
   }
-  ui.tryNote.textContent = view.tryNote;
+  ui.decode.classList.toggle("decode-final", view.hexLocked);
+  ui.decodeLabel.textContent = view.panel.heading;
+  ui.decodeBadge.textContent = view.panel.badge;
+  ui.decodeBadge.hidden = view.panel.badge === "";
+  ui.decodeInput.placeholder = view.panel.placeholder;
+  ui.decodeButton.textContent = view.panel.button;
+  ui.tryNote.textContent = view.panel.note;
   ui.tried.hidden = view.tried.length === 0;
   ui.triedList.replaceChildren(
     ...view.tried.map(({ word, label }) => {
