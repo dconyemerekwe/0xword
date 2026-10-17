@@ -26,6 +26,12 @@
   --ox-locked-key: #1B1E24;
   --ox-locked-key-right: #1E3660;
   --ox-locked-key-text: #6B7180;
+  --ox-hints-border: #3C3F48;
+  --ox-hints-text: #CCCFD8;
+  --ox-hints-on: #1E2A45;
+  --ox-hints-on-text: #7EA8FF;
+  --ox-strip-border: #4A4D55;
+  --ox-strip-unknown: #7B808B;
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -97,12 +103,55 @@ body {
   font-weight: 1000;
 }
 
+/* The status line, with the Hints button on its right (page 2). */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .status {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   margin: 0;
   color: var(--ox-muted);
+}
+
+/* Outlined on the page background while off; blue border and tinted fill while on. */
+.hints-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: var(--ox-touch);
+  min-height: var(--ox-touch);
+  padding: 0 14px;
+  border: 1px solid var(--ox-hints-border);
+  border-radius: var(--ox-radius);
+  background: var(--ox-background);
+  color: var(--ox-hints-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hints-button[aria-pressed="true"] {
+  border-color: var(--ox-right);
+  background: var(--ox-hints-on);
+  color: var(--ox-hints-on-text);
+}
+
+/* The light bulb: an inline SVG drawn in the button's text colour. */
+.hints-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 
 /* The lock icon before "Hex locked" (page 3): an inline SVG drawn in the text colour. */
@@ -181,6 +230,30 @@ body {
 .grid-locked .tile-wrong {
   border-color: var(--ox-locked-wrong);
   background: var(--ox-locked-wrong);
+}
+
+/* Hint strip (page 2): one dashed cell per byte, in the same columns as the byte pairs. */
+
+.hint-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.hint-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px dashed var(--ox-strip-border);
+  border-radius: 4px;
+  color: var(--ox-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hint-unknown {
+  color: var(--ox-strip-unknown);
 }
 
 /* Legend */

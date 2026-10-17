@@ -12,6 +12,7 @@ import { parseHostMessage, type RoundFinishedMessage, type WebviewMessage } from
 import {
   GameController,
   HEX_DIGITS,
+  HINTS_BUTTON,
   MARK_NAMES,
   actionForKey,
   shouldFocusDecodeBox,
@@ -44,8 +45,12 @@ interface TileElements {
 interface Screen {
   readonly statusIcon: SVGSVGElement;
   readonly statusText: HTMLElement;
+  readonly hintsButton: HTMLButtonElement;
   readonly grid: HTMLElement;
   readonly tiles: readonly (readonly TileElements[])[];
+  readonly hintStrip: HTMLElement;
+  readonly hintCells: readonly HTMLElement[];
+  readonly hintLabel: HTMLElement;
   readonly keypad: HTMLElement;
   readonly keys: readonly HTMLButtonElement[];
   readonly del: HTMLButtonElement;
@@ -138,13 +143,32 @@ function lockIcon(): SVGSVGElement {
   return icon;
 }
 
-/** A keypad button that types or acts without taking focus from a mouse click. */
-function keypadButton(className: string, text: string, action: Action): HTMLButtonElement {
+/** The light bulb before "Hints" (page 2). Decoration: the button's text says it. */
+function bulbIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "hints-icon",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(
+    svgElement("path", { d: "M6 12v-1.4a4.5 4.5 0 1 1 4 0V12z" }),
+    svgElement("path", { d: "M6.5 14.25h3" }),
+  );
+  return icon;
+}
+
+/**
+ * A button (a keypad key or Hints) that dispatches `action` without taking
+ * focus from a mouse click.
+ */
+function actionButton(className: string, text: string, action: Action): HTMLButtonElement {
   const button = element("button", className, text);
   button.type = "button";
-  // A clicked key takes no focus, and a key focused earlier with Tab lets go
-  // of it, so a physical Enter afterwards submits the row instead of pressing
-  // a key again. Tab still reaches every key.
+  // A clicked button takes no focus, and a button focused earlier with Tab
+  // lets go of it, so a physical Enter afterwards submits the row instead of
+  // pressing a button again. Tab still reaches every button.
   button.addEventListener("mousedown", (event) => {
     event.preventDefault();
     if (document.activeElement instanceof HTMLButtonElement) {
@@ -155,7 +179,7 @@ function keypadButton(className: string, text: string, action: Action): HTMLButt
   return button;
 }
 
-/** Builds the game screen (pages 1 and 3) inside `app` and wires its events. */
+/** Builds the game screen (pages 1 to 3) inside `app` and wires its events. */
 function buildScreen(app: HTMLElement): Screen {
   const header = element("header");
   const title = element("h1", "title");
@@ -166,6 +190,11 @@ function buildScreen(app: HTMLElement): Screen {
   const statusIcon = lockIcon();
   const statusText = element("span");
   status.append(statusIcon, statusText);
+  // Its pressed state (`aria-pressed`) and whether it shows come from the view.
+  const hintsButton = actionButton("hints-button", "", { type: "toggleHints" });
+  hintsButton.append(bulbIcon(), element("span", "", HINTS_BUTTON));
+  const statusBar = element("div", "status-bar");
+  statusBar.append(status, hintsButton);
 
   const grid = element("div", "grid");
   const tiles = Array.from({ length: MAX_ROWS }, (_, r) => {
@@ -186,6 +215,17 @@ function buildScreen(app: HTMLElement): Screen {
     grid.append(row);
     return rowTiles;
   });
+
+  // One cell per byte, under the byte pairs. The cells are drawn for sight
+  // only; screen readers get the whole strip as one line, `hintLabel`.
+  const hintStrip = element("div", "hint-strip");
+  const hintCells = Array.from({ length: WORD_LENGTH }, () => {
+    const cell = element("span", "hint-cell");
+    cell.setAttribute("aria-hidden", "true");
+    return cell;
+  });
+  const hintLabel = element("span", "sr-only");
+  hintStrip.append(...hintCells, hintLabel);
 
   const legend = element("ul", "legend");
   for (const [mark, name] of Object.entries(MARK_NAMES)) {
@@ -230,15 +270,15 @@ function buildScreen(app: HTMLElement): Screen {
   message.setAttribute("aria-live", "polite");
 
   const keypad = element("div", "keypad");
-  const keys = HEX_DIGITS.map((digit) => keypadButton("key", digit, { type: "digit", digit }));
-  const del = keypadButton("key key-wide", "DEL", { type: "delete" });
+  const keys = HEX_DIGITS.map((digit) => actionButton("key", digit, { type: "digit", digit }));
+  const del = actionButton("key key-wide", "DEL", { type: "delete" });
   // Accessible names start with the visible label (WCAG 2.5.3).
   del.setAttribute("aria-label", "DEL, delete last digit");
-  const enter = keypadButton("key key-wide", "ENTER", { type: "enter" });
+  const enter = actionButton("key key-wide", "ENTER", { type: "enter" });
   enter.setAttribute("aria-label", "ENTER, enter row");
   keypad.append(...keys, del, enter);
 
-  app.replaceChildren(header, status, grid, legend, decode, message, keypad);
+  app.replaceChildren(header, statusBar, grid, hintStrip, legend, decode, message, keypad);
 
   document.addEventListener("keydown", (event) => {
     if (event.isComposing) {
@@ -260,8 +300,12 @@ function buildScreen(app: HTMLElement): Screen {
   return {
     statusIcon,
     statusText,
+    hintsButton,
     grid,
     tiles,
+    hintStrip,
+    hintCells,
+    hintLabel,
     keypad,
     keys,
     del,
@@ -298,6 +342,16 @@ function render(view: ScreenView): void {
   ui.statusIcon.toggleAttribute("hidden", !view.hexLocked);
   ui.grid.classList.toggle("grid-locked", view.hexLocked);
   ui.keypad.classList.toggle("keypad-locked", view.hexLocked);
+
+  ui.hintsButton.hidden = !view.hints.available;
+  ui.hintsButton.setAttribute("aria-pressed", String(view.hints.on));
+  ui.hintStrip.hidden = !view.hints.on;
+  ui.hintCells.forEach((cell, i) => {
+    const model = view.hints.cells[i];
+    cell.textContent = model?.text ?? "";
+    cell.classList.toggle("hint-unknown", model?.unknown ?? false);
+  });
+  ui.hintLabel.textContent = view.hints.label;
 
   ui.tiles.forEach((row, r) => {
     row.forEach((tile, i) => {
@@ -362,8 +416,9 @@ function render(view: ScreenView): void {
     ui.message.textContent = view.message;
   }
 
-  // A scored row's word attempt is due: the decode box takes the keyboard.
-  if (view.wordAttemptDue && document.activeElement !== ui.decodeInput) {
+  // A scored row's word attempt is due: the decode box takes the keyboard,
+  // unless the Hints button has it, so it can be toggled again from the keyboard.
+  if (view.wordAttemptDue && document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton) {
     ui.decodeInput.focus();
   }
 }

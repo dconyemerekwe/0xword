@@ -1,10 +1,11 @@
 // The game screen's logic: the actions a player can take, what each one does
 // to the session, the messages it shows, and a render model for the DOM layer
 // (media/main.ts) to draw. Pure: no DOM and no `vscode`, so it can be
-// unit-tested with `node --test`. The model never contains the answer.
+// unit-tested with `node --test`. The model never contains the answer, only
+// the letters of bytes the player has fully decoded, while hints are on.
 import type { GuessError } from "../game/guess.ts";
 import { HEX_LENGTH, WORD_LENGTH, hexToWord } from "../game/hex.ts";
-import { MAX_ROWS, type Phase, type Row } from "../game/round.ts";
+import { MAX_ROWS, type Phase, type Round, type Row } from "../game/round.ts";
 import { Mark } from "../game/score.ts";
 import type { Session, SessionState } from "../game/session.ts";
 import type { RoundFinishedMessage } from "../protocol.ts";
@@ -16,7 +17,8 @@ export type Action =
   | { readonly type: "digit"; readonly digit: string } // one hex digit, from the keypad or keyboard
   | { readonly type: "delete" } // DEL or Backspace
   | { readonly type: "enter" } // ENTER: submit the typed hex row
-  | { readonly type: "decode"; readonly word: string }; // the word typed in the decode box
+  | { readonly type: "decode"; readonly word: string } // the word typed in the decode box
+  | { readonly type: "toggleHints" }; // the Hints button: turn hints on or off
 
 export type ActionType = Action["type"];
 
@@ -89,6 +91,35 @@ export const HEX_LOCKED_STATUS = `Hex locked · all ${MAX_ROWS} rows used`;
 /** Added to the row 6 announcement, since the lock icon and dimming aren't read out. */
 export const FINAL_ANSWER_DUE = "Hex locked: one final answer";
 
+/** The Hints button's text. */
+export const HINTS_BUTTON = "Hints";
+
+/** A hint cell whose byte isn't fully decoded yet. */
+export const HINT_UNKNOWN = "?";
+
+/** One cell of the hint strip: a byte's letter, or `HINT_UNKNOWN`. */
+export interface HintCell {
+  /** The letter, or `HINT_UNKNOWN` if the byte isn't fully decoded. */
+  readonly text: string;
+  /** True if the letter isn't known yet: drawn muted. */
+  readonly unknown: boolean;
+}
+
+/**
+ * The Hints button and the hint strip (page 2). Hints are unlimited and
+ * purely the player's choice: there is no count or limit to show.
+ */
+export interface HintsView {
+  /** The Hints button is shown: only while a round is in progress. */
+  readonly available: boolean;
+  /** Hints are on: the button is pressed (`aria-pressed`) and the strip shows. */
+  readonly on: boolean;
+  /** One cell per byte while hints are on; empty while they're off. */
+  readonly cells: readonly HintCell[];
+  /** The strip as read out, e.g. "Hints: B, unknown, T, E"; "" while off. */
+  readonly label: string;
+}
+
 /** Everything the DOM layer needs to draw the screen. */
 export interface ScreenView {
   /** E.g. "4-letter word · row 2 of 6". */
@@ -109,6 +140,8 @@ export interface ScreenView {
   readonly hexLocked: boolean;
   /** The decode panel's text: the final-answer card while `hexLocked`. */
   readonly panel: DecodePanel;
+  /** The Hints button and strip. */
+  readonly hints: HintsView;
   /** The wrong words tried so far, one per finished row. */
   readonly tried: readonly TriedWord[];
   /** Plain text: why the last action was rejected, what happened, or how the round ended. */
@@ -192,6 +225,7 @@ export class GameController {
       wordAttemptDue: phase === "answer" || phase === "final",
       hexLocked,
       panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
+      hints: hintsView(round && !round.isOver ? round : null),
       tried: wrong.map((word) => ({ word, label: `${word}, wrong` })),
       message: notice.text,
       messageIsError: notice.error,
@@ -236,6 +270,19 @@ export class GameController {
       }
       case "decode":
         return this.#decode(action.word);
+      case "toggleHints": {
+        // Any number of times while the round is in progress, word attempt
+        // and final answer included. Ignored before a round and once it's over.
+        const round = session.round;
+        if (round && !round.isOver) {
+          if (round.hintsShown) {
+            round.disableHints();
+          } else {
+            round.enableHints();
+          }
+        }
+        return NO_NOTICE;
+      }
     }
   }
 
@@ -329,6 +376,26 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
       // The row just scored, whose word attempt is due.
       return `${WORD_LENGTH}-letter word · row ${rowsUsed} of ${MAX_ROWS}`;
   }
+}
+
+/**
+ * The Hints button and strip for a round in progress, or for `null` (no
+ * round yet, or the round is over), when the button is hidden.
+ */
+export function hintsView(round: Round | null): HintsView {
+  if (!round) {
+    return { available: false, on: false, cells: [], label: "" };
+  }
+  if (!round.hintsShown) {
+    return { available: true, on: false, cells: [], label: "" };
+  }
+  const letters = round.hintLetters();
+  return {
+    available: true,
+    on: true,
+    cells: letters.map((letter) => ({ text: letter ?? HINT_UNKNOWN, unknown: letter === null })),
+    label: `${HINTS_BUTTON}: ${letters.map((letter) => letter ?? "unknown").join(", ")}`,
+  };
 }
 
 /** All `MAX_ROWS` grid rows: the scored rows, then the draft, then empty rows. */

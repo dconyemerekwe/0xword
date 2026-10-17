@@ -8,10 +8,11 @@ import { pickAnswer } from "./words.ts";
  * older state in `fromState` or let it be dropped. Version 2 removed skipped
  * answer tries and the round's `answerTries` count. Version 3 added the
  * half-typed hex row (`draft`). Version 4 added `reported`, so a finished
- * round is reported to the host only once. Older state is dropped, so the
- * panel starts fresh.
+ * round is reported to the host only once. Version 5 added the round's
+ * `hintsShown`, the Hints on/off toggle, next to the one-way `hintsUsed`.
+ * Older state is dropped, so the panel starts fresh.
  */
-export const SESSION_STATE_VERSION = 4;
+export const SESSION_STATE_VERSION = 5;
 
 /**
  * A session saved as plain data. It holds the hidden answer, so it must never

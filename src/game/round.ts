@@ -34,6 +34,7 @@ export interface RoundResult {
   readonly solved: boolean;
   readonly answer: string;
   readonly rowsUsed: number;
+  /** Hints were turned on at some point in the round, even if turned off again. */
   readonly hintsUsed: boolean;
 }
 
@@ -51,10 +52,13 @@ export interface RoundState {
    */
   readonly answers: readonly string[];
   readonly phase: Phase;
+  /** One-way: hints were turned on at some point. Recorded in the result. */
   readonly hintsUsed: boolean;
+  /** The on/off toggle: hints are shown now. Never true unless `hintsUsed` is. */
+  readonly hintsShown: boolean;
 }
 
-const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed"] as const;
+const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed", "hintsShown"] as const;
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
 /**
@@ -69,7 +73,10 @@ export class Round {
   /** The accepted answer tries, one per finished row. */
   readonly #answers: string[] = [];
   #phase: Phase = "guess";
+  /** One-way: set the first time hints are turned on, and never cleared. */
   #hintsUsed = false;
+  /** The player's on/off toggle. Unlimited: there is no count. */
+  #hintsShown = false;
 
   constructor(answer: string, words: ReadonlySet<string>) {
     if (!words.has(answer)) {
@@ -93,8 +100,14 @@ export class Round {
     return this.#answers;
   }
 
+  /** True once hints have been turned on in this round, even if they're off again. */
   get hintsUsed(): boolean {
     return this.#hintsUsed;
+  }
+
+  /** True while hints are turned on. */
+  get hintsShown(): boolean {
+    return this.#hintsShown;
   }
 
   get isOver(): boolean {
@@ -138,20 +151,33 @@ export class Round {
     return { ok: true, correct };
   }
 
-  /** Turns hints on. The result then records that hints were used. */
+  /**
+   * Turns hints on. The result then records that hints were used, even if
+   * they're turned off again. Allowed any number of times while the round is
+   * in progress; throws once it's over.
+   */
   enableHints(): void {
-    if (this.isOver) {
-      throw new Error("Round is over");
-    }
+    this.#requireInProgress();
+    this.#hintsShown = true;
     this.#hintsUsed = true;
+  }
+
+  /**
+   * Turns hints off. The result still records that hints were used if they
+   * were ever on. Throws once the round is over.
+   */
+  disableHints(): void {
+    this.#requireInProgress();
+    this.#hintsShown = false;
   }
 
   /**
    * The letter of each byte whose two digits have both been in the right spot,
    * in any rows, or null if not yet known: e.g. `["B", null, "T", "E"]`.
+   * Throws unless hints are on.
    */
   hintLetters(): (string | null)[] {
-    if (!this.#hintsUsed) {
+    if (!this.#hintsShown) {
       throw new Error("Hints are not enabled");
     }
     const known = new Array<boolean>(this.#answerHex.length).fill(false);
@@ -190,6 +216,7 @@ export class Round {
       answers: [...this.#answers],
       phase: this.#phase,
       hintsUsed: this.#hintsUsed,
+      hintsShown: this.#hintsShown,
     };
   }
 
@@ -205,6 +232,12 @@ export class Round {
       return replay(raw, words);
     } catch {
       return null;
+    }
+  }
+
+  #requireInProgress(): void {
+    if (this.isOver) {
+      throw new Error("Round is over");
     }
   }
 
@@ -225,7 +258,16 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const rows = plainItems(fields.get("rows"), MAX_ROWS);
   const answers = plainItems(fields.get("answers"), MAX_ROWS);
   const hintsUsed = fields.get("hintsUsed");
-  if (typeof answer !== "string" || !words.has(answer) || !rows || !answers || typeof hintsUsed !== "boolean") {
+  const hintsShown = fields.get("hintsShown");
+  if (
+    typeof answer !== "string" ||
+    !words.has(answer) ||
+    !rows ||
+    !answers ||
+    typeof hintsUsed !== "boolean" ||
+    typeof hintsShown !== "boolean" ||
+    (hintsShown && !hintsUsed)
+  ) {
     return null;
   }
   // Every row but the last must have had its answer try: there are no skips.
@@ -234,8 +276,13 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   }
 
   const round = new Round(answer, words);
+  // Set before the replay, while the round is still in progress. Hints turned
+  // on and off again leave "used" set and "shown" off.
   if (hintsUsed) {
     round.enableHints();
+    if (!hintsShown) {
+      round.disableHints();
+    }
   }
   for (const [i, savedRow] of rows.entries()) {
     const row = plainFields(savedRow);

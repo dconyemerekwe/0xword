@@ -25,7 +25,7 @@ These protect the developers who install the extension. Check every change again
 - **Every hex guess must decode to a real 4-letter word.**
 - After each row the player **must** make one try to type the plain-English word before the next hex row opens. There is no skip. Only listed words are accepted: a rejected word doesn't use the try. Fewer rows used means a better score.
 - After 6 rows the hex grid locks and the player gets one forced final answer.
-- **No modes or difficulty levels.** An optional **Hints** button, off by default, shows the letter of each fully solved byte under the grid (e.g. `B ? T E`). The result records "no hints" or "hints used".
+- **No modes or difficulty levels.** An optional **Hints** button is an on/off toggle, off at the start of each round, that shows the letter of each fully solved byte under the grid (e.g. `B ? T E`). The player can turn it on and off any number of times while a round is in progress: hints are unlimited and used purely by choice, with no counter and no "hints left" anywhere. The result records "hints used" once Hints has been turned on in the round, even if it was turned off again, and "no hints" otherwise.
 - **How to play** (the `?` icon) shows the rules plus an A–Z ASCII cheatsheet, available to everyone.
 
 ## Design
