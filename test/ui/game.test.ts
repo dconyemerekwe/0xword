@@ -161,13 +161,13 @@ describe("GameController: scoring a row with ENTER", () => {
 
   it("announces the scored row's marks in words, as a non-error message", () => {
     const view = harness().play(...guess("TEAM"));
-    assert.equal(view.message, "Row 1: 1 right spot, 4 wrong spot, 3 not in word");
+    assert.equal(view.message, "Row 1: 1 Right spot, 4 Wrong spot, 3 Not in word");
     assert.equal(view.messageIsError, false);
   });
 
   it("numbers the announcement with the row just scored", () => {
     const view = harness().play(...guess("TEAM"), decode("BEAT"), ...guess("BYTE"));
-    assert.equal(view.message, "Row 2: 8 right spot, 0 wrong spot, 0 not in word");
+    assert.equal(view.message, "Row 2: 8 Right spot, 0 Wrong spot, 0 Not in word");
   });
 
   it("marks every tile right for the answer's own hex", () => {
@@ -464,9 +464,9 @@ describe("keypad", () => {
 
   it("names each key's mark in its accessible label", () => {
     const keys = new Map(keypad([{ hex: "123", word: "", marks: [Right, Wrong, Absent] }]).map((key) => [key.digit, key]));
-    assert.equal(keys.get("1")?.label, "1, right spot");
-    assert.equal(keys.get("2")?.label, "2, wrong spot");
-    assert.equal(keys.get("3")?.label, "3, not in word");
+    assert.equal(keys.get("1")?.label, "1, Right spot");
+    assert.equal(keys.get("2")?.label, "2, Wrong spot");
+    assert.equal(keys.get("3")?.label, "3, Not in word");
     assert.equal(keys.get("4")?.label, "4");
   });
 
@@ -576,10 +576,10 @@ describe("messages", () => {
   });
 
   it("counts every mark in a scored row, zeros included", () => {
-    assert.equal(scoredMessage(1, new Array(8).fill(Absent)), "Row 1: 0 right spot, 0 wrong spot, 8 not in word");
+    assert.equal(scoredMessage(1, new Array(8).fill(Absent)), "Row 1: 0 Right spot, 0 Wrong spot, 8 Not in word");
     assert.equal(
       scoredMessage(6, [Right, Wrong, Absent, Right, Wrong, Absent, Right, Right]),
-      "Row 6: 4 right spot, 2 wrong spot, 2 not in word",
+      "Row 6: 4 Right spot, 2 Wrong spot, 2 Not in word",
     );
   });
 
