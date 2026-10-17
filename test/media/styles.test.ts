@@ -92,6 +92,53 @@ describe("media/styles.css colours", () => {
   });
 });
 
+describe("media/styles.css page 3: the hex locked and the final answer", () => {
+  it("uses the page 3 colours from docs/design/README.md", () => {
+    assert.equal(DARK_PALETTE.finalCard, "#241B12");
+    assert.equal(DARK_PALETTE.lockedKey, "#1B1E24");
+    assert.equal(DARK_PALETTE.lockedKeyRight, "#1E3660");
+    assert.equal(DARK_PALETTE.lockedRight, "#2754A8");
+    assert.equal(DARK_PALETTE.lockedWrong, "#AE783F");
+  });
+
+  it("draws the final-answer card with an orange border on its own background", () => {
+    assert.match(block(".decode-final"), /border-color: var\(--ox-wrong\);/);
+    assert.match(block(".decode-final"), /background: var\(--ox-final-card\);/);
+  });
+
+  it('draws "Last try" in orange', () => {
+    assert.match(block(".decode-badge"), /color: var\(--ox-wrong\);/);
+  });
+
+  it("makes Submit orange with dark text", () => {
+    assert.match(block(".decode-final .decode-button"), /background: var\(--ox-wrong\);[\s\S]*color: var\(--ox-on-wrong\);/);
+  });
+
+  it("dims locked keys, keeping right and wrong keys coloured", () => {
+    assert.match(block(".keypad-locked .key:disabled"), /background: var\(--ox-locked-key\);/);
+    assert.match(block(".keypad-locked .key-right:disabled"), /background: var\(--ox-locked-key-right\);/);
+    assert.match(block(".keypad-locked .key-wrong:disabled"), /background: var\(--ox-locked-wrong\);/);
+  });
+
+  it("puts the locked-key rules after the general disabled-key rule, so they win", () => {
+    assert.ok(rules.indexOf(".keypad-locked .key:disabled") > rules.indexOf(".key:disabled:not("));
+  });
+
+  it("keeps locked absent keys struck through", () => {
+    assert.doesNotMatch(block(".keypad-locked .key-absent:disabled"), /text-decoration/);
+    assert.match(block(".key-absent"), /text-decoration: line-through;/);
+  });
+
+  it("dims the right and wrong tiles while the hex is locked", () => {
+    assert.match(block(".grid-locked .tile-right"), /background: var\(--ox-locked-right\);/);
+    assert.match(block(".grid-locked .tile-wrong"), /background: var\(--ox-locked-wrong\);/);
+  });
+
+  it("draws the lock icon in the status line's own colour", () => {
+    assert.match(block(".status-icon"), /stroke: currentColor;/);
+  });
+});
+
 describe("media/styles.css layout and accessibility", () => {
   it("makes keys, the Decode button and the decode box at least 44px tall", () => {
     assert.match(root, /--ox-touch:\s*44px;/);
