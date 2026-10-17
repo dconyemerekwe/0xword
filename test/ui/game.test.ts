@@ -387,7 +387,7 @@ describe("GameController: the hex locks after row 6 (page 3)", () => {
 
   it("announces the lock with row 6's marks, since the icon isn't read out", () => {
     const view = atRowSix().controller.view();
-    assert.match(view.message, /^Row 6: \d right spot, \d wrong spot, \d not in word\. Hex locked: one final answer$/);
+    assert.match(view.message, /^Row 6: \d Right spot, \d Wrong spot, \d Not in word\. Hex locked: one final answer$/);
     assert.equal(view.messageIsError, false);
   });
 
