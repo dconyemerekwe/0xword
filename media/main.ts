@@ -114,6 +114,18 @@ const session = restoreSession(vscode.getState(), parseWordList(wordList));
 const controller = new GameController(session, changed);
 /** How many times `render` has written the message line: see the re-announce in `render`. */
 let messageWrites = 0;
+/** The view's `noticeId` when `render` last drew the message line. */
+let drawnNoticeId = -1;
+/** The text the message line shows, or will once a delayed re-announce lands; null before the first draw. */
+let drawnMessage: string | null = null;
+/**
+ * How to play was opened from the keyboard (Enter or Space on `?`), so
+ * closing it gives focus back to `?`. Opened with the mouse, focus goes back
+ * to the page instead, so a later Enter or Space can't reopen it.
+ */
+let howToPlayOpenedByKeyboard = false;
+/** The last button click came from the keyboard: a click event's `detail` is 0. */
+let lastClickByKeyboard = false;
 const app = document.getElementById("app");
 const ui = app ? buildScreen(app) : null;
 render(controller.view());
@@ -320,7 +332,11 @@ function actionButton(className: string, text: string, action: Action): HTMLButt
       document.activeElement.blur();
     }
   });
-  button.addEventListener("click", () => controller.dispatch(action));
+  button.addEventListener("click", (event) => {
+    // Enter or Space on a button fires a click with no mouse presses: `detail` 0.
+    lastClickByKeyboard = event.detail === 0;
+    controller.dispatch(action);
+  });
   return button;
 }
 
@@ -619,30 +635,47 @@ function render(view: ScreenView): void {
   drawResult(view.result);
 
   ui.message.classList.toggle("message-error", view.messageIsError);
+  // A new notice from this dispatch, rather than a redraw that left it alone
+  // (opening or closing How to play, say).
+  const freshNotice = view.noticeId !== drawnNoticeId;
+  drawnNoticeId = view.noticeId;
   // Every message write takes a new number, so a delayed write only lands if
   // nothing was written after it.
-  const token = ++messageWrites;
-  if (view.messageIsError && ui.message.textContent === view.message) {
+  if (freshNotice && view.messageIsError && view.message === drawnMessage) {
     // The same error again: clear it, then set it on the next frame, so the
     // live region reads it out again.
+    const token = ++messageWrites;
     ui.message.textContent = "";
     requestAnimationFrame(() => {
       if (token === messageWrites) {
         ui.message.textContent = view.message;
       }
     });
-  } else {
+  } else if (view.message !== drawnMessage) {
+    ++messageWrites;
     ui.message.textContent = view.message;
   }
+  drawnMessage = view.message;
 
-  if (view.howToPlayOpen !== howToPlayWasOpen) {
-    // Opening How to play moves focus to its back arrow; closing it gives
-    // focus back to the `?` button that opened it.
-    (view.howToPlayOpen ? ui.backButton : ui.howToPlayButton).focus();
-  } else if (!view.howToPlayOpen && view.wordAttemptDue) {
+  const opening = view.howToPlayOpen && !howToPlayWasOpen;
+  const closing = !view.howToPlayOpen && howToPlayWasOpen;
+  if (opening) {
+    // Focus moves to the back arrow.
+    howToPlayOpenedByKeyboard = lastClickByKeyboard;
+    ui.backButton.focus();
+  } else if (closing && howToPlayOpenedByKeyboard) {
+    // Opened from the keyboard: focus goes back to the `?` that opened it.
+    ui.howToPlayButton.focus();
+  } else {
+    if (closing) {
+      // Opened with the mouse: focus goes back to the page, as after any
+      // clicked button, so Enter enters the row instead of reopening it.
+      ui.backButton.blur();
+    }
     // A scored row's word attempt is due: the decode box takes the keyboard,
     // unless the Hints button has it, so it can be toggled again from the keyboard.
-    if (document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton) {
+    const keyboardFree = document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton;
+    if (!view.howToPlayOpen && view.wordAttemptDue && keyboardFree) {
       ui.decodeInput.focus();
     }
   }

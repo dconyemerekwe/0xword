@@ -214,6 +214,13 @@ export interface ScreenView {
   /** True if `message` says why an action was rejected. */
   readonly messageIsError: boolean;
   /**
+   * Goes up each time an action sets a new message, even one with the same
+   * text, such as the same error twice. It stays the same for actions that
+   * leave the message alone, such as opening and closing How to play. The
+   * DOM layer reads an unchanged error out again only when this changed.
+   */
+  readonly noticeId: number;
+  /**
    * How to play (page 5) is open in place of the game, which is left as it
    * was. While it's open the controller ignores every game move.
    */
@@ -248,6 +255,8 @@ export class GameController {
   readonly #changed: Changed;
   /** The last action's message. Not saved: it's gone after a reload. */
   #notice = NO_NOTICE;
+  /** Counts the actions that set a new notice: see `ScreenView.noticeId`. */
+  #noticeId = 0;
   /** How to play is open. Not saved: a reload shows the game. */
   #howToPlayOpen = false;
 
@@ -263,7 +272,12 @@ export class GameController {
    * once per finished round, and the saved state already says it was sent.
    */
   dispatch(action: Action): void {
-    this.#notice = this.#apply(action);
+    const notice = this.#apply(action);
+    // An action that leaves the message alone returns the same notice.
+    if (notice !== this.#notice) {
+      this.#noticeId++;
+    }
+    this.#notice = notice;
     const result = this.#session.takeResult();
     this.#changed(result ? { type: "roundFinished", ...result } : null);
   }
@@ -302,6 +316,7 @@ export class GameController {
       result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
+      noticeId: this.#noticeId,
       howToPlayOpen: this.#howToPlayOpen,
     };
   }

@@ -215,6 +215,7 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
     attributes,
     listeners,
     focusCalls: 0,
+    textWrites: 0,
     addEventListener: (type: string, listener: (event: unknown) => void) => {
       listeners[type] = listener;
     },
@@ -239,6 +240,9 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
     set: (t, key, value) => {
       if (typeof key === "string") {
         t[key] = value;
+      }
+      if (key === "textContent") {
+        t["textWrites"] = Number(t["textWrites"] ?? 0) + 1;
       }
       return true;
     },
@@ -277,6 +281,8 @@ interface WebviewRun {
   readonly posts: readonly unknown[];
   /** The focused element, or null for the page (`<body>`). */
   readonly focus: FocusTracker;
+  /** Callbacks waiting for the next animation frame. */
+  readonly frames: (() => void)[];
   /** Sends a message from the host, as JSON. */
   send(json: string): void;
   /** Presses a physical key wherever focus is. */
@@ -289,6 +295,7 @@ function runWebview(saved: unknown): WebviewRun {
   const namespaces: { tag: string; ns: unknown }[] = [];
   const posts: unknown[] = [];
   const focus: FocusTracker = { active: null };
+  const frames: (() => void)[] = [];
   const listeners = new Map<string, (event: unknown) => void>();
   const listen = (type: string, listener: (event: unknown) => void): void => {
     listeners.set(type, listener);
@@ -313,7 +320,7 @@ function runWebview(saved: unknown): WebviewRun {
   const context = createContext({
     document,
     window: { addEventListener: listen },
-    requestAnimationFrame() {},
+    requestAnimationFrame: (callback: () => void) => frames.push(callback),
     // So `instanceof` and `closest` see a focused fake <button> as a control.
     HTMLButtonElement: class {
       static [Symbol.hasInstance](value: unknown): boolean {
@@ -345,6 +352,7 @@ function runWebview(saved: unknown): WebviewRun {
     namespaces,
     posts,
     focus,
+    frames,
     send: (json) => fire("message", { data: webviewJson.parse(json) }),
     press: (key) =>
       fire("keydown", {
@@ -380,22 +388,30 @@ function allByClass(run: WebviewRun, className: string): Record<string, unknown>
 }
 
 /**
- * A snapshot of the text, attributes and `hidden` of the elements made so
- * far. `render` makes new Tried list items on every draw, so a later
- * snapshot compares only the elements that existed at the first one.
+ * A snapshot of the text, attributes, `hidden` and `disabled` of the
+ * elements made so far. `render` makes new Tried list items on every draw,
+ * so a later snapshot compares only the elements that existed at the first one.
  */
 function snapshot(run: WebviewRun, count = run.elements.length): string {
-  const fields = ["textContent", "placeholder", "value", "attributes", "hidden", "className"];
+  const fields = ["textContent", "placeholder", "value", "attributes", "hidden", "disabled", "className"];
   return JSON.stringify(run.elements.slice(0, count).map((node) => fields.map((field) => node[field])));
 }
 
-/** Clicks a fake button with the mouse: its mousedown, then its click. */
+/** Clicks a fake button with the mouse: its mousedown, then a click with `detail` 1. */
 function click(node: Record<string, unknown>): void {
   const listeners = node["listeners"] as Record<string, (event: unknown) => void>;
   listeners["mousedown"]?.({ preventDefault() {} });
   const onClick = listeners["click"];
   assert.ok(onClick, "a click listener");
-  onClick({});
+  onClick({ detail: 1 });
+}
+
+/** Presses a fake button from the keyboard: it has focus, and its click has `detail` 0. */
+function keyboardClick(node: Record<string, unknown>): void {
+  (node["focus"] as () => void)();
+  const onClick = (node["listeners"] as Record<string, (event: unknown) => void>)["click"];
+  assert.ok(onClick, "a click listener");
+  onClick({ detail: 0 });
 }
 
 /** All text and attributes the fake DOM holds, as one string. */
@@ -577,15 +593,18 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
 });
 
 describe("media/main.ts: How to play (page 5), run as the bundled webview script", () => {
-  /** Saved states for every screen How to play opens from (answer BYTE), or undefined for a fresh panel. */
   const halfTyped: Action[] = [...guess("TEAM"), decode("BEAT"), ...[..."4259"].map((digit) => ({ type: "digit", digit }) as const)];
   const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => [...guess(w), decode(w)]);
-  const screens: readonly (readonly [string, () => SessionState | undefined])[] = [
-    ["a fresh panel", () => undefined],
-    ["a half-typed row", () => savedAfter(...halfTyped)],
-    ["a word attempt due", () => savedAfter(...guess("TEAM"))],
-    ["the final answer", () => savedAfter(...firstFive, ...guess("ABLE"))],
-    ["the result card", () => FINISHED[0]?.[1]()],
+  /**
+   * Every screen How to play opens from: its saved state (answer BYTE), or
+   * undefined for a fresh panel, and whether a word attempt is due there.
+   */
+  const screens: readonly (readonly [string, () => SessionState | undefined, boolean])[] = [
+    ["a fresh panel", () => undefined, false],
+    ["a half-typed row", () => savedAfter(...halfTyped), false],
+    ["a word attempt due", () => savedAfter(...guess("TEAM")), true],
+    ["the final answer", () => savedAfter(...firstFive, ...guess("ABLE")), true],
+    ["the result card", () => FINISHED[0]?.[1](), false],
   ];
 
   it('draws `?` and the back arrow as real <button>s named "How to play" and "Back to game"', () => {
@@ -646,7 +665,10 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     );
   });
 
-  for (const [name, saved] of screens) {
+  for (const [name, saved, attempt] of screens) {
+    /** Where focus goes after a mouse-opened How to play closes: the decode box, or the page. */
+    const afterMouse = (run: WebviewRun): unknown => (attempt ? byClass(run, "decode-input") : null);
+
     it(`opens from ${name} with ?, moving focus to the back arrow`, () => {
       const run = runWebview(saved());
       click(byLabel(run, "How to play"));
@@ -655,7 +677,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
       assert.equal(run.focus.active, byLabel(run, "Back to game"));
     });
 
-    it(`goes back to ${name} unchanged with the back arrow, focus on ?`, () => {
+    it(`goes back to ${name} unchanged with the back arrow after a mouse open, focus off ?`, () => {
       const run = runWebview(saved());
       const count = run.elements.length;
       const before = snapshot(run);
@@ -664,10 +686,10 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
       assert.equal(byClass(run, "how-to-play")["hidden"], true);
       assert.equal(byClass(run, "game")["hidden"], false);
       assert.equal(snapshot(run, count), before);
-      assert.equal(run.focus.active, byLabel(run, "How to play"));
+      assert.equal(run.focus.active, afterMouse(run));
     });
 
-    it(`goes back to ${name} unchanged with Escape, focus on ?`, () => {
+    it(`goes back to ${name} unchanged with Escape after a mouse open, focus off ?`, () => {
       const run = runWebview(saved());
       const count = run.elements.length;
       const before = snapshot(run);
@@ -675,6 +697,26 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
       run.press("Escape");
       assert.equal(byClass(run, "how-to-play")["hidden"], true);
       assert.equal(snapshot(run, count), before);
+      assert.equal(run.focus.active, afterMouse(run));
+    });
+
+    it(`goes back to ${name} unchanged with Escape after a keyboard open, focus on ?`, () => {
+      const run = runWebview(saved());
+      const count = run.elements.length;
+      const before = snapshot(run);
+      keyboardClick(byLabel(run, "How to play"));
+      assert.equal(run.focus.active, byLabel(run, "Back to game"));
+      run.press("Escape");
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(snapshot(run, count), before);
+      assert.equal(run.focus.active, byLabel(run, "How to play"));
+    });
+
+    it(`goes back to ${name} with the back arrow from the keyboard after a keyboard open, focus on ?`, () => {
+      const run = runWebview(saved());
+      keyboardClick(byLabel(run, "How to play"));
+      keyboardClick(byLabel(run, "Back to game"));
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
       assert.equal(run.focus.active, byLabel(run, "How to play"));
     });
 
@@ -717,5 +759,72 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     const run = runWebview(savedAfter(...guess("TEAM")));
     assert.equal(byClass(run, "how-to-play")["hidden"], true);
     assert.equal(run.focus.active, byClass(run, "decode-input"));
+  });
+
+  // Regression tests: focus went back to `?` after every close, so the next
+  // physical Enter or Space reopened How to play.
+  it("lets ENTER score the row after a mouse open and Escape, instead of reopening How to play", () => {
+    const run = runWebview(savedAfter());
+    for (const digit of "4259") {
+      run.press(digit);
+    }
+    click(byLabel(run, "How to play"));
+    run.press("Escape");
+    for (const digit of "5445") {
+      run.press(digit);
+    }
+    assert.equal(allByClass(run, "tile tile-typed").length, 8);
+    // A real browser would click a focused `?` on Enter; the page has focus instead.
+    assert.equal(run.focus.active, null);
+    run.press("Enter");
+    assert.equal(byClass(run, "how-to-play")["hidden"], true);
+    assert.equal(run.focus.active, byClass(run, "decode-input"), "ENTER scored the row and opened the decode box");
+  });
+
+  it("gives the decode box focus back after a mouse open and close during a word attempt", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const decodeInput = byClass(run, "decode-input");
+    click(byLabel(run, "How to play"));
+    click(byLabel(run, "Back to game"));
+    // So Space and letters go to the decode box, not to `?`.
+    assert.equal(run.focus.active, decodeInput);
+  });
+});
+
+describe("media/main.ts: announcing messages, run as the bundled webview script", () => {
+  /** A fresh round (answer BYTE) with AAAA typed and entered: "AAAA isn't in the word list". */
+  function withError(): WebviewRun {
+    const run = runWebview(savedAfter());
+    for (const key of [...wordToHex("AAAA"), "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "AAAA isn't in the word list");
+    return run;
+  }
+
+  it("reads the same error out again when it happens again: cleared, then set on the next frame", () => {
+    const run = withError();
+    const message = byClass(run, "message");
+    const frames = run.frames.length;
+    run.press("Enter");
+    assert.equal(message["textContent"], "");
+    assert.equal(run.frames.length, frames + 1);
+    run.frames.at(-1)?.();
+    assert.equal(message["textContent"], "AAAA isn't in the word list");
+  });
+
+  it("doesn't clear and rewrite a standing error when How to play opens and closes", () => {
+    const closes = [(run: WebviewRun) => run.press("Escape"), (run: WebviewRun) => click(byLabel(run, "Back to game"))];
+    for (const close of closes) {
+      const run = withError();
+      const message = byClass(run, "message");
+      const writes = message["textWrites"];
+      const frames = run.frames.length;
+      click(byLabel(run, "How to play"));
+      close(run);
+      assert.equal(message["textWrites"], writes, "no write to the live region");
+      assert.equal(run.frames.length, frames, "no delayed rewrite");
+      assert.equal(message["textContent"], "AAAA isn't in the word list");
+    }
   });
 });

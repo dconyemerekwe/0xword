@@ -1246,9 +1246,9 @@ describe("GameController: hiding and showing the panel", () => {
     return harness(restoreSession(saved, WORDS), true);
   }
 
-  /** The view without the transient message, which isn't saved. */
-  function lasting(view: ScreenView): Omit<ScreenView, "message"> {
-    const { message: _message, ...rest } = view;
+  /** The view without the transient message and its count, which aren't saved. */
+  function lasting(view: ScreenView): Omit<ScreenView, "message" | "noticeId"> {
+    const { message: _message, noticeId: _noticeId, ...rest } = view;
     return rest;
   }
 
@@ -1554,6 +1554,22 @@ describe("GameController: How to play (page 5)", () => {
     const view = harness(restoreSession(saved, WORDS), true).controller.view();
     assert.equal(view.howToPlayOpen, false);
     assert.equal(view.wordAttemptDue, true, "the round in progress is restored");
+  });
+
+  it("keeps the notice count when opened and closed, so a standing error isn't read out again", () => {
+    const h = after(...type("41414141"), { type: "enter" });
+    const { noticeId, message } = h.controller.view();
+    const view = h.play(open, ...type("4"), close);
+    assert.equal(view.noticeId, noticeId);
+    assert.equal(view.message, message);
+  });
+
+  it("counts the same error twice as a new notice each time", () => {
+    const h = after(...type("41414141"), { type: "enter" });
+    const first = h.controller.view();
+    const second = h.play({ type: "enter" });
+    assert.equal(second.message, first.message);
+    assert.equal(second.noticeId, first.noticeId + 1);
   });
 
   it("goes through changed() when opened and closed, saving the unchanged state", () => {
