@@ -26,13 +26,13 @@ describe("How to play: names and headings", () => {
 });
 
 describe("How to play: RULES", () => {
-  it("shows the six numbered rules exactly as on page 5", () => {
+  it("shows the six numbered rules as on page 5, with the owner's revised rules 4 and 5", () => {
     assert.deepEqual(RULES.map(plainText), [
       "The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.",
       "Guess 8 hex digits that spell a real 4-letter word.",
       "Each digit turns blue right spot, orange wrong spot, or grey not in the word.",
-      "After each row you get one try to type the English word. Fewer rows is a better score.",
-      "After 6 rows the hex locks and you get one final answer.",
+      "You can decode the English word at any time. A wrong guess doesn't use up a row.",
+      "After 6 rows, the hex keypad locks and you get one final try to decode the English word.",
       "Stuck? Turn on Hints to see the letters you have fully decoded so far.",
     ]);
   });

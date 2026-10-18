@@ -48,7 +48,7 @@ export const BACK_TO_GAME = "Back to game";
 export const RULES_HEADING = "Rules";
 export const CHEATSHEET_HEADING = "ASCII cheatsheet";
 
-/** The six numbered rules, in page 5's wording. */
+/** The six numbered rules: page 5's wording, with the owner's rules 4 and 5. */
 export const RULES: readonly StyledText[] = [
   [plain(`The hidden word has ${WORD_LENGTH} letters, written as ASCII hex: 2 digits per letter.`)],
   [plain(`Guess ${HEX_LENGTH} hex digits that spell a real ${WORD_LENGTH}-letter word.`)],
@@ -61,8 +61,10 @@ export const RULES: readonly StyledText[] = [
     chip("grey", Mark.Absent),
     plain(" not in the word."),
   ],
-  [plain("After each row you get one try to type the English word. Fewer rows is a better score.")],
-  [plain(`After ${MAX_ROWS} rows the hex locks and you get one final answer.`)],
+  // Rules 4 and 5 are the owner's revised wording, not page 5's. Rule 4
+  // describes the optional decoding that #30 builds.
+  [plain("You can decode the English word at any time. A wrong guess doesn't use up a row.")],
+  [plain(`After ${MAX_ROWS} rows, the hex keypad locks and you get one final try to decode the English word.`)],
   [plain("Stuck? Turn on "), strong(HINTS_BUTTON), plain(" to see the letters you have fully decoded so far.")],
 ];
 

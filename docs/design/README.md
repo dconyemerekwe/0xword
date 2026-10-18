@@ -142,9 +142,11 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   1. The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.
   2. Guess 8 hex digits that spell a real 4-letter word.
   3. Each digit turns **blue** right spot, **orange** wrong spot, or **grey** not in the word. Each colour word is shown as a chip in that colour.
-  4. After each row you get one try to type the English word. Fewer rows is a better score.
-  5. After 6 rows the hex locks and you get one final answer.
+  4. You can decode the English word at any time. A wrong guess doesn't use up a row.
+  5. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
   6. Stuck? Turn on **Hints** to see the letters you have fully decoded so far.
+
+  Rules 4 and 5 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." Rule 4 describes optional decoding, which #30 builds: until it lands, the game still asks for one try after each row.
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
