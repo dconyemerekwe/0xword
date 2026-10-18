@@ -1,4 +1,4 @@
-export { WORD_LENGTH, HEX_LENGTH, isWord, isHex, wordToHex, hexToWord } from "./hex.ts";
+export { WORD_LENGTH, HEX_LENGTH, isWord, isHex, letterToHex, wordToHex, hexToWord } from "./hex.ts";
 export { Mark, score } from "./score.ts";
 export { checkGuess, type GuessCheck, type GuessError } from "./guess.ts";
 export { parseWordList, pickAnswer } from "./words.ts";

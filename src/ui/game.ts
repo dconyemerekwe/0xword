@@ -20,9 +20,29 @@ export type Action =
   | { readonly type: "delete" } // DEL or Backspace
   | { readonly type: "enter" } // ENTER: submit the typed hex row
   | { readonly type: "decode"; readonly word: string } // the word typed in the decode box
-  | { readonly type: "toggleHints" }; // the Hints button: turn hints on or off
+  | { readonly type: "toggleHints" } // the Hints button: turn hints on or off
+  | { readonly type: "openHowToPlay" } // the `?` button: show How to play over the game
+  | { readonly type: "closeHowToPlay" }; // the back arrow or Escape: back to the game
 
 export type ActionType = Action["type"];
+
+/**
+ * Whether each action applies while How to play is open. The player's moves
+ * in the round are ignored; the host's `init` and `newRound` still apply, so
+ * New Round from the command palette starts a round behind How to play.
+ * `satisfies` makes every new action type declare its entry here.
+ */
+export const APPLIES_WHILE_HOW_TO_PLAY_OPEN = {
+  init: true,
+  newRound: true,
+  digit: false,
+  delete: false,
+  enter: false,
+  decode: false,
+  toggleHints: false,
+  openHowToPlay: true,
+  closeHowToPlay: true,
+} as const satisfies Readonly<Record<ActionType, boolean>>;
 
 /** The keypad's digits, in order: `0 1 2 3` / `4 5 6 7` / `8 9 A B` / `C D E F`. */
 export const HEX_DIGITS = [..."0123456789ABCDEF"];
@@ -193,6 +213,18 @@ export interface ScreenView {
   readonly message: string;
   /** True if `message` says why an action was rejected. */
   readonly messageIsError: boolean;
+  /**
+   * Goes up each time an action sets a new message, even one with the same
+   * text, such as the same error twice. It stays the same for actions that
+   * leave the message alone, such as opening and closing How to play. The
+   * DOM layer reads an unchanged error out again only when this changed.
+   */
+  readonly noticeId: number;
+  /**
+   * How to play (page 5) is open in place of the game, which is left as it
+   * was. While it's open the controller ignores every game move.
+   */
+  readonly howToPlayOpen: boolean;
 }
 
 /** A message for the player, and whether it reports a rejected action. */
@@ -223,6 +255,10 @@ export class GameController {
   readonly #changed: Changed;
   /** The last action's message. Not saved: it's gone after a reload. */
   #notice = NO_NOTICE;
+  /** Counts the actions that set a new notice: see `ScreenView.noticeId`. */
+  #noticeId = 0;
+  /** How to play is open. Not saved: a reload shows the game. */
+  #howToPlayOpen = false;
 
   constructor(session: Session, changed: Changed) {
     this.#session = session;
@@ -236,7 +272,12 @@ export class GameController {
    * once per finished round, and the saved state already says it was sent.
    */
   dispatch(action: Action): void {
-    this.#notice = this.#apply(action);
+    const notice = this.#apply(action);
+    // An action that leaves the message alone returns the same notice.
+    if (notice !== this.#notice) {
+      this.#noticeId++;
+    }
+    this.#notice = notice;
     const result = this.#session.takeResult();
     this.#changed(result ? { type: "roundFinished", ...result } : null);
   }
@@ -275,13 +316,26 @@ export class GameController {
       result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
+      noticeId: this.#noticeId,
+      howToPlayOpen: this.#howToPlayOpen,
     };
   }
 
   /** Does the action and returns the message to show. */
   #apply(action: Action): Notice {
     const session = this.#session;
+    // While How to play is open, game moves are ignored and the last message
+    // stays, so the game comes back exactly as it was left.
+    if (this.#howToPlayOpen && !APPLIES_WHILE_HOW_TO_PLAY_OPEN[action.type]) {
+      return this.#notice;
+    }
     switch (action.type) {
+      case "openHowToPlay":
+        this.#howToPlayOpen = true;
+        return this.#notice;
+      case "closeHowToPlay":
+        this.#howToPlayOpen = false;
+        return this.#notice;
       case "init":
         session.ensureRound();
         return NO_NOTICE;
@@ -541,6 +595,19 @@ export function actionForKey(press: KeyPress, focus: KeyFocus): Action | null {
   }
   if (press.key === "Enter" && focus === "page") {
     return { type: "enter" };
+  }
+  return null;
+}
+
+/**
+ * The action for a physical key while How to play is open, or null to leave
+ * the key alone: Escape (without Ctrl, Cmd or Alt) goes back to the game.
+ * No other key reaches the game, so typing can't change the grid or the
+ * decode box behind it. Enter and Space still press the focused back arrow.
+ */
+export function howToPlayActionForKey(press: KeyPress): Action | null {
+  if (press.key === "Escape" && !press.ctrlKey && !press.metaKey && !press.altKey) {
+    return { type: "closeHowToPlay" };
   }
   return null;
 }

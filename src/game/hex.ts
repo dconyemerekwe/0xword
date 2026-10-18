@@ -17,16 +17,20 @@ export function isHex(hex: string): boolean {
   return HEX_PATTERN.test(hex);
 }
 
+/** Converts one uppercase letter to its two ASCII hex digits: `letterToHex("B")` is `"42"`. */
+export function letterToHex(letter: string): string {
+  if (!/^[A-Z]$/.test(letter)) {
+    throw new RangeError(`Expected one uppercase letter, got "${letter}"`);
+  }
+  return letter.charCodeAt(0).toString(16).toUpperCase();
+}
+
 /** Converts a word to uppercase ASCII hex: `wordToHex("BYTE")` is `"42595445"`. */
 export function wordToHex(word: string): string {
   if (!isWord(word)) {
     throw new RangeError(`Expected four uppercase letters, got "${word}"`);
   }
-  let hex = "";
-  for (let i = 0; i < word.length; i++) {
-    hex += word.charCodeAt(i).toString(16).toUpperCase();
-  }
-  return hex;
+  return [...word].map(letterToHex).join("");
 }
 
 /**

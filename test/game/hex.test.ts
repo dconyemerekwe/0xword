@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hexToWord, wordToHex } from "../../src/game/hex.ts";
+import { hexToWord, letterToHex, wordToHex } from "../../src/game/hex.ts";
+
+describe("letterToHex", () => {
+  it("converts the first and last letters to two uppercase hex digits", () => {
+    assert.equal(letterToHex("A"), "41");
+    assert.equal(letterToHex("O"), "4F");
+    assert.equal(letterToHex("P"), "50");
+    assert.equal(letterToHex("Z"), "5A");
+  });
+
+  it("rejects anything that isn't one uppercase letter", () => {
+    for (const bad of ["a", "@", "[", "AB", "1", " ", ""]) {
+      assert.throws(() => letterToHex(bad), RangeError, bad);
+    }
+  });
+});
 
 describe("wordToHex", () => {
   it("converts each letter to two uppercase hex digits", () => {
