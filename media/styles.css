@@ -32,6 +32,8 @@
   --ox-hints-on-text: #7EA8FF;
   --ox-strip-border: #4A4D55;
   --ox-strip-unknown: #7B808B;
+  --ox-byte-tile: #1E2A45;
+  --ox-byte-hex: #7EA8FF;
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -421,6 +423,126 @@ body {
 
 .decode-final .decode-foot {
   color: var(--ox-final-note);
+}
+
+/*
+ * The result card (page 4), in place of the legend, decode panel and keypad
+ * once the round is over. Page 4 is drawn in the light theme; this is its
+ * dark match: the panel colour with a blue outline, pale-blue byte tiles.
+ */
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 2px solid var(--ox-right);
+  border-radius: 8px;
+  background: var(--ox-panel);
+}
+
+.result-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* "Congrats! You cracked it" / "Unlucky!": not on page 4, so muted and smaller than the heading. */
+.result-outcome {
+  margin: 0;
+  color: var(--ox-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.result-heading {
+  margin: 0;
+  color: var(--ox-text);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.result-line {
+  margin: 0;
+  color: var(--ox-muted);
+}
+
+/*
+ * One tile per byte: the hex, a down arrow, the letter. The columns may
+ * shrink below their content's width (`minmax(0, 1fr)`), so the tiles never
+ * push past the card's border; in a very narrow panel they wrap to 2 × 2.
+ */
+.result-bytes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Four tiles need about 136px inside the card (each about 28px wide, plus
+ * the gaps): a panel of about 196px. Below 240px, with a margin for wider
+ * fonts, they take two rows.
+ */
+@media (max-width: 240px) {
+  .result-bytes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.result-byte {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 4px;
+  border-radius: var(--ox-radius);
+  background: var(--ox-byte-tile);
+}
+
+.result-hex {
+  color: var(--ox-byte-hex);
+  font-family: var(--ox-mono);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.result-arrow {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--ox-muted);
+  stroke-width: 1.5;
+}
+
+.result-letter {
+  color: var(--ox-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* The only button: Copy result is on hold (#24), so New round takes the full width. */
+.result-button {
+  width: 100%;
+  min-height: var(--ox-touch);
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.result-note {
+  margin: 0;
+  color: var(--ox-muted);
+  text-align: center;
 }
 
 /* Message */

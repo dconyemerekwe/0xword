@@ -183,10 +183,64 @@ describe("media/styles.css page 2: the Hints button and strip", () => {
   });
 });
 
+describe("media/styles.css page 4: the result card, in the dark palette", () => {
+  it("takes the byte tiles' colours from existing dark tokens, adding no new colours", () => {
+    assert.equal(DARK_PALETTE.byteTile, DARK_PALETTE.hintsOn);
+    assert.equal(DARK_PALETTE.byteHex, DARK_PALETTE.hintsOnText);
+  });
+
+  it("draws the card with a blue outline on the panel colour", () => {
+    assert.match(block(".result"), /border: 2px solid var\(--ox-right\);/);
+    assert.match(block(".result"), /background: var\(--ox-panel\);/);
+  });
+
+  it("draws the outcome message muted and smaller than the heading", () => {
+    assert.match(block(".result-outcome"), /color: var\(--ox-muted\);/);
+    const outcome = Number(/font-size: ([\d.]+)px;/.exec(block(".result-outcome"))?.[1]);
+    const heading = Number(/font-size: ([\d.]+)px;/.exec(block(".result-heading"))?.[1]);
+    assert.ok(outcome < heading, `${outcome}px under a ${heading}px heading`);
+  });
+
+  it("draws the heading as large text and the result line muted", () => {
+    const size = Number(/font-size: ([\d.]+)px;/.exec(block(".result-heading"))?.[1]);
+    assert.ok(size >= 24, `${size}px`);
+    assert.match(block(".result-heading"), /color: var\(--ox-text\);/);
+    assert.match(block(".result-line"), /color: var\(--ox-muted\);/);
+  });
+
+  it("keeps the byte tiles inside the card: the columns and tiles may shrink below their content", () => {
+    // With plain `1fr` a column can't be narrower than its tile's content,
+    // so in a narrow panel the 4th tile spilled past the card's border.
+    assert.match(block(".result-bytes"), /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+    assert.match(block(".result-byte"), /min-width: 0;/);
+  });
+
+  it("wraps the byte tiles to 2 × 2 in a very narrow panel, keeping 4 in a row at about 400px", () => {
+    const narrow = /@media \(max-width: (\d+)px\) \{\s*\.result-bytes \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);\s*\}\s*\}/.exec(rules);
+    assert.ok(narrow, "a max-width media query with 2 columns");
+    const breakpoint = Number(narrow[1]);
+    // Four tiles of about 28px plus 3 gaps of 8px, inside the body's and the card's padding and border.
+    const needed = 4 * 28 + 3 * 8 + 2 * 12 + 2 * 16 + 2 * 2;
+    assert.ok(breakpoint >= needed && breakpoint < 400, `${breakpoint}px, needs at least ${needed}px`);
+  });
+
+  it("draws four byte tiles in a row, with the hex in blue and the letter in the text colour", () => {
+    assert.match(block(".result-byte"), /background: var\(--ox-byte-tile\);/);
+    assert.match(block(".result-hex"), /color: var\(--ox-byte-hex\);/);
+    assert.match(block(".result-hex"), /font-family: var\(--ox-mono\);/);
+    assert.match(block(".result-letter"), /color: var\(--ox-text\);/);
+  });
+
+  it("makes New round blue with white text, and the note under the card muted", () => {
+    assert.match(block(".result-button"), /background: var\(--ox-right\);[\s\S]*color: var\(--ox-on-right\);/);
+    assert.match(block(".result-note"), /color: var\(--ox-muted\);/);
+  });
+});
+
 describe("media/styles.css layout and accessibility", () => {
-  it("makes keys, the Decode button, the decode box and Hints at least 44px tall", () => {
+  it("makes keys, the Decode button, the decode box, Hints and New round at least 44px tall", () => {
     assert.match(root, /--ox-touch:\s*44px;/);
-    for (const selector of [".key", ".decode-button", ".decode-input", ".hints-button"]) {
+    for (const selector of [".key", ".decode-button", ".decode-input", ".hints-button", ".result-button"]) {
       assert.match(block(selector), /min-height: var\(--ox-touch\);/, selector);
     }
   });

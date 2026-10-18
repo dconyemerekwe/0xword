@@ -55,6 +55,14 @@ export const DARK_PALETTE = {
    * within the image's JPEG error, so it meets 4.5:1.
    */
   stripUnknown: "#7B808B",
+  // Page 4, the result card. Page 4 is drawn in the light theme, so these are
+  // the dark theme's matches for its values, taken from existing dark tokens
+  // (no new colours). The card itself is `panel` with a `right` border, and
+  // New round is `right` with `onRight` text.
+  /** The byte tiles' fill: the light theme's pale blue (`#EDF3FC`), as `hintsOn`. */
+  byteTile: "#1E2A45",
+  /** The byte tiles' hex: the light theme's blue text, as `hintsOnText` (also How to play's dark hex). */
+  byteHex: "#7EA8FF",
 } as const;
 
 export type PaletteToken = keyof typeof DARK_PALETTE;
@@ -84,6 +92,10 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["hintsText", "background"], // the Hints button, off
   ["hintsOnText", "hintsOn"], // the Hints button, on
   ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
+  // The result card's heading and line are `text` and `muted` on `panel`, and
+  // the note under it `muted` on `background`: all checked above.
+  ["byteHex", "byteTile"], // a result byte tile's hex
+  ["text", "byteTile"], // a result byte tile's letter
 ];
 
 /** WCAG AA for normal-size text. */
