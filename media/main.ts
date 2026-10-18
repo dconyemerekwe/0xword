@@ -333,8 +333,11 @@ function actionButton(className: string, text: string, action: Action): HTMLButt
     }
   });
   button.addEventListener("click", (event) => {
-    // Enter or Space on a button fires a click with no mouse presses: `detail` 0.
-    lastClickByKeyboard = event.detail === 0;
+    // Enter or Space on a button fires a click with no mouse presses:
+    // `detail` 0. A real mouse click never finds the button focused (the
+    // mousedown above prevents it), so a focused button means the keyboard
+    // too, even when a screen reader fakes a mouse click.
+    lastClickByKeyboard = event.detail === 0 || document.activeElement === button;
     controller.dispatch(action);
   });
   return button;

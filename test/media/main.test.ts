@@ -414,6 +414,17 @@ function keyboardClick(node: Record<string, unknown>): void {
   onClick({ detail: 0 });
 }
 
+/**
+ * A screen reader activating a focused button: it fakes a mouse click
+ * (`detail` 1) with no mousedown, so the button keeps focus.
+ */
+function screenReaderClick(node: Record<string, unknown>): void {
+  (node["focus"] as () => void)();
+  const onClick = (node["listeners"] as Record<string, (event: unknown) => void>)["click"];
+  assert.ok(onClick, "a click listener");
+  onClick({ detail: 1 });
+}
+
 /** All text and attributes the fake DOM holds, as one string. */
 function domText(run: WebviewRun): string {
   return JSON.stringify(
@@ -779,6 +790,21 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     run.press("Enter");
     assert.equal(byClass(run, "how-to-play")["hidden"], true);
     assert.equal(run.focus.active, byClass(run, "decode-input"), "ENTER scored the row and opened the decode box");
+  });
+
+  it("counts a screen reader's click on a focused ? as a keyboard open: focus goes back to ?", () => {
+    const closes = [
+      (run: WebviewRun) => run.press("Escape"),
+      (run: WebviewRun) => screenReaderClick(byLabel(run, "Back to game")),
+    ];
+    for (const close of closes) {
+      const run = runWebview(savedAfter(...guess("TEAM")));
+      screenReaderClick(byLabel(run, "How to play"));
+      assert.equal(run.focus.active, byLabel(run, "Back to game"));
+      close(run);
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(run.focus.active, byLabel(run, "How to play"));
+    }
   });
 
   it("gives the decode box focus back after a mouse open and close during a word attempt", () => {
