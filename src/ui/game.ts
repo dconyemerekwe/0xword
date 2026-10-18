@@ -27,17 +27,22 @@ export type Action =
 export type ActionType = Action["type"];
 
 /**
- * The player's moves in the round, ignored while How to play is open. The
- * host's `init` and `newRound` still apply: New Round from the command
- * palette starts a round behind How to play.
+ * Whether each action applies while How to play is open. The player's moves
+ * in the round are ignored; the host's `init` and `newRound` still apply, so
+ * New Round from the command palette starts a round behind How to play.
+ * `satisfies` makes every new action type declare its entry here.
  */
-export const GAME_MOVES: ReadonlySet<ActionType> = new Set<ActionType>([
-  "digit",
-  "delete",
-  "enter",
-  "decode",
-  "toggleHints",
-]);
+export const APPLIES_WHILE_HOW_TO_PLAY_OPEN = {
+  init: true,
+  newRound: true,
+  digit: false,
+  delete: false,
+  enter: false,
+  decode: false,
+  toggleHints: false,
+  openHowToPlay: true,
+  closeHowToPlay: true,
+} as const satisfies Readonly<Record<ActionType, boolean>>;
 
 /** The keypad's digits, in order: `0 1 2 3` / `4 5 6 7` / `8 9 A B` / `C D E F`. */
 export const HEX_DIGITS = [..."0123456789ABCDEF"];
@@ -306,7 +311,7 @@ export class GameController {
     const session = this.#session;
     // While How to play is open, game moves are ignored and the last message
     // stays, so the game comes back exactly as it was left.
-    if (this.#howToPlayOpen && GAME_MOVES.has(action.type)) {
+    if (this.#howToPlayOpen && !APPLIES_WHILE_HOW_TO_PLAY_OPEN[action.type]) {
       return this.#notice;
     }
     switch (action.type) {

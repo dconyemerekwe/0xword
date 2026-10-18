@@ -8,8 +8,8 @@ import { parseWebviewMessage, type RoundFinishedMessage } from "../../src/protoc
 import {
   DECODE_PANEL,
   FAILED_OUTCOME,
+  APPLIES_WHILE_HOW_TO_PLAY_OPEN,
   FINAL_PANEL,
-  GAME_MOVES,
   GameController,
   HEX_DIGITS,
   HEX_LOCKED_STATUS,
@@ -1517,8 +1517,11 @@ describe("GameController: How to play (page 5)", () => {
     });
   }
 
-  it("ignores exactly the player's game moves: init and New Round still apply", () => {
-    assert.deepEqual([...GAME_MOVES].sort(), ["decode", "delete", "digit", "enter", "toggleHints"]);
+  it("ignores exactly the player's game moves: init, New Round, open and close still apply", () => {
+    const ignored = Object.entries(APPLIES_WHILE_HOW_TO_PLAY_OPEN)
+      .filter(([, applies]) => !applies)
+      .map(([type]) => type);
+    assert.deepEqual(ignored.sort(), ["decode", "delete", "digit", "enter", "toggleHints"]);
   });
 
   it("stays open over a New Round from the command palette, which starts a round behind it", () => {
