@@ -262,6 +262,36 @@ describe("media/styles.css page 5: How to play", () => {
     assert.match(block(".section-heading"), /text-transform: uppercase;/);
   });
 
+  it('sets the rules in the same type as "Decode the word": one shared font property', () => {
+    const font = /(?:^|;)\s*font: (var\(--ox-label-font\));/;
+    assert.equal(font.exec(block(".decode-label"))?.[1], "var(--ox-label-font)");
+    assert.equal(font.exec(block(".rules"))?.[1], "var(--ox-label-font)");
+    // Family, size, weight and line spacing all come from the shared value.
+    assert.match(root, /--ox-label-font: 700 14px\/1\.4 var\(--ox-sans\);/);
+    for (const selector of [".decode-label", ".rules"]) {
+      assert.doesNotMatch(block(selector), /font-(family|size|weight)|line-height/, selector);
+    }
+  });
+
+  it("centres each chip's word with equal padding on every side, level with the text around it", () => {
+    const chip = block(".chip");
+    assert.match(chip, /display: inline-flex;/);
+    assert.match(chip, /align-items: center;/);
+    assert.match(chip, /justify-content: center;/);
+    assert.match(chip, /line-height: 1;/);
+    assert.match(chip, /vertical-align: baseline;/);
+    // One padding value: the same above, below and at the sides.
+    assert.match(chip, /padding: \d+px;/);
+  });
+
+  it("keeps the chips within the rules' line height, so they don't spread the lines", () => {
+    const padding = Number(/padding: (\d+)px;/.exec(block(".chip"))?.[1]);
+    const [, size, lineHeight] = /--ox-label-font: \d+ (\d+)px\/([\d.]+)/.exec(root) ?? [];
+    const chipHeight = Number(size) + 2 * padding;
+    const lineBox = Number(size) * Number(lineHeight);
+    assert.ok(chipHeight <= lineBox + 1, `a ${chipHeight}px chip on a ${lineBox}px line`);
+  });
+
   it("draws rule 3's chips in the tile colours", () => {
     assert.match(block(".chip-right"), /background: var\(--ox-right\);\s*color: var\(--ox-on-right\);/);
     assert.match(block(".chip-wrong"), /background: var\(--ox-wrong\);\s*color: var\(--ox-on-wrong\);/);

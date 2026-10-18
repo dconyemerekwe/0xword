@@ -40,6 +40,8 @@
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* The "Decode the word" heading's type, shared with How to play's rules. */
+  --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;
   --ox-radius: 6px;
 }
@@ -358,7 +360,7 @@ body {
 }
 
 .decode-label {
-  font-weight: 700;
+  font: var(--ox-label-font);
 }
 
 .decode-badge {
@@ -623,15 +625,24 @@ body {
   margin: 0;
   padding-left: 22px;
   color: var(--ox-text);
-  font-size: 15px;
-  line-height: 1.45;
+  /* The same type as "Decode the word" on the game screen (the owner's choice). */
+  font: var(--ox-label-font);
 }
 
-/* Rule 3's colour words, as chips in the tile colours. */
+/*
+ * Rule 3's colour words, as chips in the tile colours. The word is centred
+ * with equal padding on every side; as an inline flex box the chip's
+ * baseline is its word's, so it sits level with the text around it.
+ */
 .chip {
-  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
   border-radius: 4px;
   font-weight: 700;
+  line-height: 1;
+  vertical-align: baseline;
 }
 
 .chip-right {
