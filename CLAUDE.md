@@ -45,7 +45,7 @@ These protect the developers who install the extension. Check every change again
   - wrongly guessed keypad keys are also struck through, so colour isn't the only cue
 - Light and dark themes: follow VS Code's theme by default, with a sun/moon toggle to override.
 - Tiles are grouped in byte pairs. Below the grid: an answer box, a 16-key hex keypad, then DEL and ENTER.
-- The solved screen shows each byte decoding to its letter (`42 → B`), with New round and Copy result buttons.
+- The solved screen shows each byte decoding to its letter (`42 → B`), with a New round button.
 - Accessibility: touch targets at least 44px, text contrast at least 4.5:1, real `<button>` and `<label>` elements, and reduced motion respected.
 - Trademark: never use the name "Wordle" or a "-dle" suffix anywhere in the product.
 
