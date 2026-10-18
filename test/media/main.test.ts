@@ -403,7 +403,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     const run = runWebview(saved);
     assert.equal(byClass(run, "result")["hidden"], false);
     assert.equal(byClass(run, "result-heading")["textContent"], "Decoded: BYTE");
-    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows attempted · no hints");
     assert.equal(byClass(run, "result-note")["hidden"], false);
     for (const replaced of ["legend", "decode", "keypad"]) {
       assert.equal(byClass(run, replaced)["hidden"], true, replaced);
@@ -415,7 +415,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"];
     const run = runWebview(savedAfter(...words.flatMap((word) => [...guess(word), decode(word)])));
     assert.equal(byClass(run, "result-heading")["textContent"], "The word was BYTE");
-    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows attempted · no hints");
     assert.deepEqual(run.posts, [{ type: "ready" }]);
   });
 

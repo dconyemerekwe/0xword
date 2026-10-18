@@ -127,11 +127,11 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
 - The grid shows the rows played.
 - A **result card** with a blue outline, in place of the decode panel and keypad:
   - "Decoded: BYTE" as a large heading
-  - the line "3 of 6 rows · no hints" (or "· hints used"). The draft also shows "2 answer tries"; the game leaves it out, because answer tries always equal rows used (see [Differences from the rules](#differences-from-the-rules)).
+  - the line "3 of 6 rows attempted · no hints" (or "· hints used"). The draft also shows "2 answer tries"; the game leaves it out, because answer tries always equal rows used (see [Differences from the rules](#differences-from-the-rules)).
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the heading "The word was BYTE", the line "6 of 6 rows · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the heading "The word was BYTE", the line "6 of 6 rows attempted · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme comes with the theme story. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
@@ -163,5 +163,5 @@ The draft was drawn before the owner settled that **no answer try can be skipped
 
 - **Tried lists and try counts:**
   - The "Tried:" list holds one word per finished row. Page 1 would show three words after three rows, not just BEAT; page 3 would show five before the final answer.
-  - Answer tries always equal rows used, so page 4's result line leaves the count out: it reads "3 of 6 rows · no hints", not "3 of 6 rows · 2 answer tries · no hints".
+  - Answer tries always equal rows used, so page 4's result line leaves the count out: it reads "3 of 6 rows attempted · no hints", not the draft's "3 of 6 rows · 2 answer tries · no hints".
 - **The keypad is locked while a word attempt is due.** Page 1 shows row 4 being typed while the decode box is open. In the game, the next hex row opens only after the word attempt for the previous row.

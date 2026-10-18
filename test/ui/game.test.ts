@@ -698,11 +698,11 @@ function reloaded(h: Harness): Harness {
 }
 
 describe("GameController: the result card for a solved round (page 4)", () => {
-  it('shows "Decoded: BYTE", "3 of 6 rows · no hints", the byte tiles, New round and the note', () => {
+  it('shows "Decoded: BYTE", "3 of 6 rows attempted · no hints", the byte tiles, New round and the note', () => {
     const { result } = solvedAfter(2).controller.view();
     assert.deepEqual(result, {
       heading: "Decoded: BYTE",
-      line: "3 of 6 rows · no hints",
+      line: "3 of 6 rows attempted · no hints",
       bytes: BYTE_TILES,
       button: "New round",
       note: "Your agent is still working. Next round is ready when you are.",
@@ -714,12 +714,12 @@ describe("GameController: the result card for a solved round (page 4)", () => {
   it('reads "· hints used" when hints were turned on, even if turned off again', () => {
     const h = harness();
     h.play(toggleHints, toggleHints);
-    assert.equal(solvedAfter(2, h).controller.view().result?.line, "3 of 6 rows · hints used");
+    assert.equal(solvedAfter(2, h).controller.view().result?.line, "3 of 6 rows attempted · hints used");
   });
 
   it("counts the rows from the first row to the forced final answer", () => {
-    assert.equal(solvedAfter(0).controller.view().result?.line, "1 of 6 rows · no hints");
-    assert.equal(solvedAfter(5).controller.view().result?.line, "6 of 6 rows · no hints");
+    assert.equal(solvedAfter(0).controller.view().result?.line, "1 of 6 rows attempted · no hints");
+    assert.equal(solvedAfter(5).controller.view().result?.line, "6 of 6 rows attempted · no hints");
   });
 
   it("has no answer-tries count and no Copy result", () => {
@@ -741,11 +741,11 @@ describe("GameController: the result card for a solved round (page 4)", () => {
 });
 
 describe("GameController: the result card for a failed round", () => {
-  it('shows "The word was BYTE", "6 of 6 rows · no hints", the byte tiles and New round', () => {
+  it('shows "The word was BYTE", "6 of 6 rows attempted · no hints", the byte tiles and New round', () => {
     const { result } = failed().controller.view();
     assert.deepEqual(result, {
       heading: "The word was BYTE",
-      line: "6 of 6 rows · no hints",
+      line: "6 of 6 rows attempted · no hints",
       bytes: BYTE_TILES,
       button: "New round",
       note: RESULT_NOTE,
@@ -755,7 +755,7 @@ describe("GameController: the result card for a failed round", () => {
   it('reads "· hints used" when hints were turned on', () => {
     const h = atRowSix();
     h.play(toggleHints, decode("BITE"));
-    assert.equal(h.controller.view().result?.line, "6 of 6 rows · hints used");
+    assert.equal(h.controller.view().result?.line, "6 of 6 rows attempted · hints used");
   });
 
   it('shows "4-letter word · not solved" and hides the Hints button', () => {
@@ -875,7 +875,7 @@ describe("resultView", () => {
       ["41>A", "5A>Z", "4F>O", "50>P"],
     );
     assert.equal(view.heading, "Decoded: AZOP");
-    assert.equal(view.line, "4 of 6 rows · no hints");
+    assert.equal(view.line, "4 of 6 rows attempted · no hints");
   });
 });
 

@@ -119,7 +119,7 @@ export interface ResultByte {
 export interface ResultView {
   /** "Decoded: BYTE" for a solved round, "The word was BYTE" for a failed one. */
   readonly heading: string;
-  /** E.g. "3 of 6 rows · no hints" or "6 of 6 rows · hints used". */
+  /** E.g. "3 of 6 rows attempted · no hints" or "6 of 6 rows attempted · hints used". */
   readonly line: string;
   /** One tile per byte of the answer, in order. */
   readonly bytes: readonly ResultByte[];
@@ -426,7 +426,7 @@ export function resultView(result: RoundResult): ResultView {
   const hex = wordToHex(word);
   return {
     heading: result.solved ? `Decoded: ${word}` : `The word was ${word}`,
-    line: `${result.rowsUsed} of ${MAX_ROWS} rows · ${result.hintsUsed ? "hints used" : "no hints"}`,
+    line: `${result.rowsUsed} of ${MAX_ROWS} rows attempted · ${result.hintsUsed ? "hints used" : "no hints"}`,
     bytes: [...word].map((letter, i) => {
       const byte = hex.slice(i * 2, i * 2 + 2);
       return { hex: byte, letter, label: `${byte} is ${letter}` };
