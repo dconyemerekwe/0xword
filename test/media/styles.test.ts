@@ -201,8 +201,23 @@ describe("media/styles.css page 4: the result card, in the dark palette", () => 
     assert.match(block(".result-line"), /color: var\(--ox-muted\);/);
   });
 
+  it("keeps the byte tiles inside the card: the columns and tiles may shrink below their content", () => {
+    // With plain `1fr` a column can't be narrower than its tile's content,
+    // so in a narrow panel the 4th tile spilled past the card's border.
+    assert.match(block(".result-bytes"), /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+    assert.match(block(".result-byte"), /min-width: 0;/);
+  });
+
+  it("wraps the byte tiles to 2 × 2 in a very narrow panel, keeping 4 in a row at about 400px", () => {
+    const narrow = /@media \(max-width: (\d+)px\) \{\s*\.result-bytes \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);\s*\}\s*\}/.exec(rules);
+    assert.ok(narrow, "a max-width media query with 2 columns");
+    const breakpoint = Number(narrow[1]);
+    // Four tiles of about 28px plus 3 gaps of 8px, inside the body's and the card's padding and border.
+    const needed = 4 * 28 + 3 * 8 + 2 * 12 + 2 * 16 + 2 * 2;
+    assert.ok(breakpoint >= needed && breakpoint < 400, `${breakpoint}px, needs at least ${needed}px`);
+  });
+
   it("draws four byte tiles in a row, with the hex in blue and the letter in the text colour", () => {
-    assert.match(block(".result-bytes"), /grid-template-columns: repeat\(4, 1fr\);/);
     assert.match(block(".result-byte"), /background: var\(--ox-byte-tile\);/);
     assert.match(block(".result-hex"), /color: var\(--ox-byte-hex\);/);
     assert.match(block(".result-hex"), /font-family: var\(--ox-mono\);/);

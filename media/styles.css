@@ -459,14 +459,29 @@ body {
   color: var(--ox-muted);
 }
 
-/* One tile per byte: the hex, a down arrow, the letter. */
+/*
+ * One tile per byte: the hex, a down arrow, the letter. The columns may
+ * shrink below their content's width (`minmax(0, 1fr)`), so the tiles never
+ * push past the card's border; in a very narrow panel they wrap to 2 × 2.
+ */
 .result-bytes {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/*
+ * Four tiles need about 136px inside the card (each about 28px wide, plus
+ * the gaps): a panel of about 196px. Below 240px, with a margin for wider
+ * fonts, they take two rows.
+ */
+@media (max-width: 240px) {
+  .result-bytes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .result-byte {
@@ -474,6 +489,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   padding: 12px 4px;
   border-radius: var(--ox-radius);
   background: var(--ox-byte-tile);
