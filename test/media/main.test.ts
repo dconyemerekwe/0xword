@@ -813,6 +813,22 @@ describe("media/main.ts: announcing messages, run as the bundled webview script"
     assert.equal(message["textContent"], "AAAA isn't in the word list");
   });
 
+  // Regression test: a delayed re-announce must not bring back an error that
+  // a later action has already cleared.
+  for (const key of ["Backspace", "4"]) {
+    it(`drops a queued re-announce once the message is cleared, here by ${key}`, () => {
+      const run = withError();
+      const message = byClass(run, "message");
+      run.press("Enter");
+      const queued = run.frames.at(-1);
+      assert.ok(queued, "a delayed rewrite is queued");
+      run.press(key);
+      assert.equal(message["textContent"], "");
+      queued();
+      assert.equal(message["textContent"], "", "the stale error stays gone");
+    });
+  }
+
   it("doesn't clear and rewrite a standing error when How to play opens and closes", () => {
     const closes = [(run: WebviewRun) => run.press("Escape"), (run: WebviewRun) => click(byLabel(run, "Back to game"))];
     for (const close of closes) {
