@@ -446,6 +446,14 @@ body {
   gap: 4px;
 }
 
+/* "Congrats! You cracked it" / "Unlucky!": not on page 4, so muted and smaller than the heading. */
+.result-outcome {
+  margin: 0;
+  color: var(--ox-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .result-heading {
   margin: 0;
   color: var(--ox-text);

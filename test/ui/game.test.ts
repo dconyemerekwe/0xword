@@ -7,6 +7,7 @@ import { Session, restoreSession, type SessionState } from "../../src/game/sessi
 import { parseWebviewMessage, type RoundFinishedMessage } from "../../src/protocol.ts";
 import {
   DECODE_PANEL,
+  FAILED_OUTCOME,
   FINAL_PANEL,
   GameController,
   HEX_DIGITS,
@@ -15,6 +16,7 @@ import {
   HINT_UNKNOWN,
   NEW_ROUND_BUTTON,
   RESULT_NOTE,
+  SOLVED_OUTCOME,
   actionForKey,
   firstNonLetterByte,
   guessMessage,
@@ -698,9 +700,10 @@ function reloaded(h: Harness): Harness {
 }
 
 describe("GameController: the result card for a solved round (page 4)", () => {
-  it('shows "Decoded: BYTE", "3 of 6 rows attempted · no hints", the byte tiles, New round and the note', () => {
+  it('shows "Congrats! You cracked it", "Decoded: BYTE", "3 of 6 rows attempted · no hints", the byte tiles, New round and the note', () => {
     const { result } = solvedAfter(2).controller.view();
     assert.deepEqual(result, {
+      outcome: "Congrats! You cracked it",
       heading: "Decoded: BYTE",
       line: "3 of 6 rows attempted · no hints",
       bytes: BYTE_TILES,
@@ -725,7 +728,7 @@ describe("GameController: the result card for a solved round (page 4)", () => {
   it("has no answer-tries count and no Copy result", () => {
     const { result } = solvedAfter(2).controller.view();
     assert.doesNotMatch(JSON.stringify(result), /tr(y|ies)|copy/i);
-    assert.deepEqual(Object.keys(result ?? {}).sort(), ["button", "bytes", "heading", "line", "note"]);
+    assert.deepEqual(Object.keys(result ?? {}).sort(), ["button", "bytes", "heading", "line", "note", "outcome"]);
   });
 
   it('replaces the decode panel and keypad: "4-letter word · solved", no Hints button, nothing to type', () => {
@@ -741,9 +744,10 @@ describe("GameController: the result card for a solved round (page 4)", () => {
 });
 
 describe("GameController: the result card for a failed round", () => {
-  it('shows "The word was BYTE", "6 of 6 rows attempted · no hints", the byte tiles and New round', () => {
+  it('shows "Unlucky!", "The word was BYTE", "6 of 6 rows attempted · no hints", the byte tiles and New round', () => {
     const { result } = failed().controller.view();
     assert.deepEqual(result, {
+      outcome: "Unlucky!",
       heading: "The word was BYTE",
       line: "6 of 6 rows attempted · no hints",
       bytes: BYTE_TILES,
@@ -784,6 +788,41 @@ describe("GameController: the result card for a failed round", () => {
   });
 });
 
+describe("GameController: the outcome message on the result card", () => {
+  it('says "Congrats! You cracked it" for a solved round, on the first row and at the final answer', () => {
+    assert.equal(SOLVED_OUTCOME, "Congrats! You cracked it");
+    for (const missed of [0, 2, 5]) {
+      assert.equal(solvedAfter(missed).controller.view().result?.outcome, SOLVED_OUTCOME, `${missed} missed`);
+    }
+  });
+
+  it('says "Unlucky!" for a failed round, with or without hints', () => {
+    assert.equal(FAILED_OUTCOME, "Unlucky!");
+    assert.equal(failed().controller.view().result?.outcome, FAILED_OUTCOME);
+    const h = atRowSix();
+    h.play(toggleHints, decode("BITE"));
+    assert.equal(h.controller.view().result?.outcome, FAILED_OUTCOME);
+  });
+
+  it("keeps the heading as it was: the outcome is a separate line", () => {
+    assert.equal(solvedAfter(0).controller.view().result?.heading, "Decoded: BYTE");
+    assert.equal(failed().controller.view().result?.heading, "The word was BYTE");
+  });
+
+  for (const [name, finish, outcome] of [
+    ["solved", () => solvedAfter(2), "Congrats! You cracked it"],
+    ["failed", () => failed(), "Unlucky!"],
+  ] as const) {
+    it(`comes back after a reload: ${name}`, () => {
+      assert.equal(reloaded(finish()).controller.view().result?.outcome, outcome);
+    });
+  }
+
+  it("is gone again once New round starts the next round", () => {
+    assert.equal(solvedAfter(0).play({ type: "newRound" }).result, null);
+  });
+});
+
 describe("GameController: the answer stays out of the view while the round is in progress", () => {
   it("has no result card and no answer in any in-progress view, hints and final answer included", () => {
     const { play } = harness(undefined, false);
@@ -806,6 +845,7 @@ describe("GameController: the answer stays out of the view while the round is in
     for (const [i, view] of views.entries()) {
       assert.equal(view.result, null, `view ${i}`);
       assert.doesNotMatch(JSON.stringify(view), /BYTE|42595445/, `view ${i}`);
+      assert.doesNotMatch(JSON.stringify(view), /Congrats|cracked|Unlucky/, `view ${i}: no outcome`);
     }
   });
 

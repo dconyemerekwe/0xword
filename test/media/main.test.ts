@@ -145,6 +145,7 @@ describe("media/main.ts", () => {
 
   it("draws the result card's text from the view with textContent", () => {
     for (const pattern of [
+      /ui\.resultOutcome\.textContent = result\?\.outcome \?\? ""/,
       /ui\.resultHeading\.textContent = result\?\.heading \?\? ""/,
       /ui\.resultLine\.textContent = result\?\.line \?\? ""/,
       /byte\.hex\.textContent = model\?\.hex \?\? ""/,
@@ -395,6 +396,8 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     assert.doesNotMatch(domText(run), /BYTE|42595445/);
     assert.equal(byClass(run, "result")["hidden"], true);
     assert.equal(byClass(run, "result-heading")["textContent"], "");
+    assert.equal(byClass(run, "result-outcome")["textContent"], "");
+    assert.doesNotMatch(domText(run), /Congrats|cracked|Unlucky/);
   });
 
   it("brings a restored solved round's card back, without posting roundFinished again", () => {
@@ -403,6 +406,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     const run = runWebview(saved);
     assert.equal(byClass(run, "result")["hidden"], false);
     assert.equal(byClass(run, "result-heading")["textContent"], "Decoded: BYTE");
+    assert.equal(byClass(run, "result-outcome")["textContent"], "Congrats! You cracked it");
     assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows attempted · no hints");
     assert.equal(byClass(run, "result-note")["hidden"], false);
     for (const replaced of ["legend", "decode", "keypad"]) {
@@ -415,6 +419,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"];
     const run = runWebview(savedAfter(...words.flatMap((word) => [...guess(word), decode(word)])));
     assert.equal(byClass(run, "result-heading")["textContent"], "The word was BYTE");
+    assert.equal(byClass(run, "result-outcome")["textContent"], "Unlucky!");
     assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows attempted · no hints");
     assert.deepEqual(run.posts, [{ type: "ready" }]);
   });
@@ -425,6 +430,19 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     assert.equal(button["tag"], "button");
     assert.equal(button["type"], "button");
     assert.equal(button["textContent"], "New round");
+  });
+
+  it("names the card with the outcome, then the heading, so screen readers hear the outcome first", () => {
+    const run = runWebview(savedAfter(...guess("BYTE"), decode("BYTE")));
+    const card = byClass(run, "result");
+    assert.equal(card["tag"], "section");
+    assert.deepEqual(card["attributes"], { "aria-labelledby": "result-outcome result-heading" });
+    assert.equal(byClass(run, "result-outcome")["id"], "result-outcome");
+    assert.equal(byClass(run, "result-heading")["id"], "result-heading");
+    // Created first, it comes first in the card's reading order.
+    const order = run.elements.map((node) => node["className"]);
+    assert.ok(order.indexOf("result-outcome") < order.indexOf("result-heading"));
+    assert.match(source, /resultHead\.append\(resultOutcome, resultHeading, resultLine\)/);
   });
 });
 

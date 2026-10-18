@@ -75,6 +75,7 @@ interface Screen {
   readonly triedList: HTMLElement;
   readonly message: HTMLElement;
   readonly result: HTMLElement;
+  readonly resultOutcome: HTMLElement;
   readonly resultHeading: HTMLElement;
   readonly resultLine: HTMLElement;
   readonly resultBytes: readonly ResultByteElements[];
@@ -311,8 +312,12 @@ function buildScreen(app: HTMLElement): Screen {
   // the keypad once the round is over. Its text, the answer included, is set
   // by `render` only then, so the answer is never in the DOM before.
   const result = element("section", "result");
-  result.setAttribute("aria-labelledby", "result-heading");
+  // Named "Congrats! You cracked it, Decoded: BYTE": read out when New round
+  // takes focus inside the card, and first when reading the card in order.
+  result.setAttribute("aria-labelledby", "result-outcome result-heading");
   result.hidden = true;
+  const resultOutcome = element("p", "result-outcome");
+  resultOutcome.id = "result-outcome";
   const resultHeading = element("h2", "result-heading");
   resultHeading.id = "result-heading";
   const resultLine = element("p", "result-line");
@@ -333,7 +338,7 @@ function buildScreen(app: HTMLElement): Screen {
   });
   const resultButton = actionButton("result-button", NEW_ROUND_BUTTON, { type: "newRound" });
   const resultHead = element("div", "result-head");
-  resultHead.append(resultHeading, resultLine);
+  resultHead.append(resultOutcome, resultHeading, resultLine);
   result.append(resultHead, resultList, resultButton);
   const resultNote = element("p", "result-note");
   resultNote.hidden = true;
@@ -381,6 +386,7 @@ function buildScreen(app: HTMLElement): Screen {
     triedList,
     message,
     result,
+    resultOutcome,
     resultHeading,
     resultLine,
     resultBytes,
@@ -522,6 +528,7 @@ function drawResult(result: ScreenView["result"]): void {
   // "Solved" and "Out of rows" are still read out, but the card shows the result.
   ui.message.classList.toggle("sr-only", result !== null);
 
+  ui.resultOutcome.textContent = result?.outcome ?? "";
   ui.resultHeading.textContent = result?.heading ?? "";
   ui.resultLine.textContent = result?.line ?? "";
   ui.resultBytes.forEach((byte, i) => {

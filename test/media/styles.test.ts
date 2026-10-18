@@ -194,6 +194,13 @@ describe("media/styles.css page 4: the result card, in the dark palette", () => 
     assert.match(block(".result"), /background: var\(--ox-panel\);/);
   });
 
+  it("draws the outcome message muted and smaller than the heading", () => {
+    assert.match(block(".result-outcome"), /color: var\(--ox-muted\);/);
+    const outcome = Number(/font-size: ([\d.]+)px;/.exec(block(".result-outcome"))?.[1]);
+    const heading = Number(/font-size: ([\d.]+)px;/.exec(block(".result-heading"))?.[1]);
+    assert.ok(outcome < heading, `${outcome}px under a ${heading}px heading`);
+  });
+
   it("draws the heading as large text and the result line muted", () => {
     const size = Number(/font-size: ([\d.]+)px;/.exec(block(".result-heading"))?.[1]);
     assert.ok(size >= 24, `${size}px`);

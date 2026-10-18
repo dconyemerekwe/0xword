@@ -126,12 +126,13 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - empty tiles with light-grey outlines
 - The grid shows the rows played.
 - A **result card** with a blue outline, in place of the decode panel and keypad:
+  - above the heading, an outcome line that page 4 doesn't draw (owner's wording, #24): "Congrats! You cracked it", in muted text (`#A3A9B6` in the dark theme) at 14px bold, smaller than the heading. Screen readers hear it first: it starts the card's accessible name, followed by the heading.
   - "Decoded: BYTE" as a large heading
   - the line "3 of 6 rows attempted · no hints" (or "· hints used"). The draft also shows "2 answer tries"; the game leaves it out, because answer tries always equal rows used (see [Differences from the rules](#differences-from-the-rules)).
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the heading "The word was BYTE", the line "6 of 6 rows attempted · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme comes with the theme story. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play

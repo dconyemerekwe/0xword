@@ -105,6 +105,12 @@ export const NEW_ROUND_BUTTON = "New round";
 /** Under the result card, in muted text (page 4). */
 export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
 
+/** The line above the result card's heading for a solved round (the owner's wording). */
+export const SOLVED_OUTCOME = "Congrats! You cracked it";
+
+/** The line above the result card's heading for a failed round (the owner's wording). */
+export const FAILED_OUTCOME = "Unlucky!";
+
 /** One byte of the decoded word on the result card: `42`, a down arrow, `B`. */
 export interface ResultByte {
   /** The byte's two hex digits, e.g. "42". */
@@ -117,6 +123,8 @@ export interface ResultByte {
 
 /** The result card that replaces the decode panel and keypad once the round is over (page 4). */
 export interface ResultView {
+  /** Above the heading: `SOLVED_OUTCOME` or `FAILED_OUTCOME`. Not on page 4. */
+  readonly outcome: string;
   /** "Decoded: BYTE" for a solved round, "The word was BYTE" for a failed one. */
   readonly heading: string;
   /** E.g. "3 of 6 rows attempted · no hints" or "6 of 6 rows attempted · hints used". */
@@ -417,14 +425,15 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
 }
 
 /**
- * The result card for a finished round (page 4): the word, the rows used and
- * whether hints were used, and each byte with its letter. There is no
- * answer-tries count: it always equals the rows used.
+ * The result card for a finished round (page 4): the outcome, the word, the
+ * rows used and whether hints were used, and each byte with its letter. There
+ * is no answer-tries count: it always equals the rows used.
  */
 export function resultView(result: RoundResult): ResultView {
   const word = result.answer;
   const hex = wordToHex(word);
   return {
+    outcome: result.solved ? SOLVED_OUTCOME : FAILED_OUTCOME,
     heading: result.solved ? `Decoded: ${word}` : `The word was ${word}`,
     line: `${result.rowsUsed} of ${MAX_ROWS} rows attempted · ${result.hintsUsed ? "hints used" : "no hints"}`,
     bytes: [...word].map((letter, i) => {
