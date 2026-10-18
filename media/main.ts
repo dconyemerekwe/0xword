@@ -500,13 +500,20 @@ function render(view: ScreenView): void {
  * Shows the result card in place of the legend, decode panel and keypad once
  * the round is over, or hides it and clears its text while the round is in
  * progress. When the card first appears, New round takes focus, since the
- * decode box that had it is gone.
+ * decode box that had it is gone. When New round hides the card, focus goes
+ * back to the page rather than staying on the hidden button: from the page,
+ * hex digits and ENTER drive the grid (`actionForKey`). A focused keypad key
+ * would take digits too, but ENTER would press that key instead of entering
+ * the row.
  */
 function drawResult(result: ScreenView["result"]): void {
   if (!ui) {
     return;
   }
   const appearing = result !== null && ui.result.hidden;
+  if (result === null && document.activeElement === ui.resultButton) {
+    ui.resultButton.blur();
+  }
   ui.result.hidden = result === null;
   ui.resultNote.hidden = result === null;
   ui.legend.hidden = result !== null;
