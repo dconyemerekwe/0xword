@@ -1,11 +1,13 @@
 // The game screen's logic: the actions a player can take, what each one does
 // to the session, the messages it shows, and a render model for the DOM layer
 // (media/main.ts) to draw. Pure: no DOM and no `vscode`, so it can be
-// unit-tested with `node --test`. The model never contains the answer, only
-// the letters of bytes the player has fully decoded, while hints are on.
+// unit-tested with `node --test`. While a round is in progress the model never
+// contains the answer, only the letters of bytes the player has fully decoded,
+// while hints are on. The answer joins it only once the round is over, in the
+// result card (`result`).
 import type { GuessError } from "../game/guess.ts";
-import { HEX_LENGTH, WORD_LENGTH, hexToWord } from "../game/hex.ts";
-import { MAX_ROWS, type Phase, type Round, type Row } from "../game/round.ts";
+import { HEX_LENGTH, WORD_LENGTH, hexToWord, wordToHex } from "../game/hex.ts";
+import { MAX_ROWS, type Phase, type Round, type RoundResult, type Row } from "../game/round.ts";
 import { Mark } from "../game/score.ts";
 import type { Session, SessionState } from "../game/session.ts";
 import type { RoundFinishedMessage } from "../protocol.ts";
@@ -97,6 +99,35 @@ export const HINTS_BUTTON = "Hints";
 /** A hint cell whose byte isn't fully decoded yet. */
 export const HINT_UNKNOWN = "?";
 
+/** The result card's only button (page 4). Copy result is on hold (#24). */
+export const NEW_ROUND_BUTTON = "New round";
+
+/** Under the result card, in muted text (page 4). */
+export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
+
+/** One byte of the decoded word on the result card: `42`, a down arrow, `B`. */
+export interface ResultByte {
+  /** The byte's two hex digits, e.g. "42". */
+  readonly hex: string;
+  /** Its letter, e.g. "B". */
+  readonly letter: string;
+  /** Read out instead of the drawn tile, e.g. "42 is B". */
+  readonly label: string;
+}
+
+/** The result card that replaces the decode panel and keypad once the round is over (page 4). */
+export interface ResultView {
+  /** "Decoded: BYTE" for a solved round, "The word was BYTE" for a failed one. */
+  readonly heading: string;
+  /** E.g. "3 of 6 rows · no hints" or "6 of 6 rows · hints used". */
+  readonly line: string;
+  /** One tile per byte of the answer, in order. */
+  readonly bytes: readonly ResultByte[];
+  readonly button: string;
+  /** Under the card. */
+  readonly note: string;
+}
+
 /** One cell of the hint strip: a byte's letter, or `HINT_UNKNOWN`. */
 export interface HintCell {
   /** The letter, or `HINT_UNKNOWN` if the byte isn't fully decoded. */
@@ -144,6 +175,12 @@ export interface ScreenView {
   readonly hints: HintsView;
   /** The wrong words tried so far, one per finished row. */
   readonly tried: readonly TriedWord[];
+  /**
+   * The result card once the round is over, or null while it's in progress
+   * and before the first round. The only part of the view that holds the
+   * answer, so the answer is never drawn while it's still hidden.
+   */
+  readonly result: ResultView | null;
   /** Plain text: why the last action was rejected, what happened, or how the round ended. */
   readonly message: string;
   /** True if `message` says why an action was rejected. */
@@ -227,6 +264,7 @@ export class GameController {
       panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
       hints: hintsView(round && !round.isOver ? round : null),
       tried: wrong.map((word) => ({ word, label: `${word}, wrong` })),
+      result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
     };
@@ -368,7 +406,7 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
     case "solved":
       return `${WORD_LENGTH}-letter word · solved`;
     case "failed":
-      return `${WORD_LENGTH}-letter word · out of rows`;
+      return `${WORD_LENGTH}-letter word · not solved`;
     case "guess":
       return `${WORD_LENGTH}-letter word · row ${rowsUsed + 1} of ${MAX_ROWS}`;
     case "answer":
@@ -376,6 +414,26 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
       // The row just scored, whose word attempt is due.
       return `${WORD_LENGTH}-letter word · row ${rowsUsed} of ${MAX_ROWS}`;
   }
+}
+
+/**
+ * The result card for a finished round (page 4): the word, the rows used and
+ * whether hints were used, and each byte with its letter. There is no
+ * answer-tries count: it always equals the rows used.
+ */
+export function resultView(result: RoundResult): ResultView {
+  const word = result.answer;
+  const hex = wordToHex(word);
+  return {
+    heading: result.solved ? `Decoded: ${word}` : `The word was ${word}`,
+    line: `${result.rowsUsed} of ${MAX_ROWS} rows · ${result.hintsUsed ? "hints used" : "no hints"}`,
+    bytes: [...word].map((letter, i) => {
+      const byte = hex.slice(i * 2, i * 2 + 2);
+      return { hex: byte, letter, label: `${byte} is ${letter}` };
+    }),
+    button: NEW_ROUND_BUTTON,
+    note: RESULT_NOTE,
+  };
 }
 
 /**

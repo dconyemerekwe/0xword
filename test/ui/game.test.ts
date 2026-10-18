@@ -13,12 +13,15 @@ import {
   HEX_LOCKED_STATUS,
   HINTS_BUTTON,
   HINT_UNKNOWN,
+  NEW_ROUND_BUTTON,
+  RESULT_NOTE,
   actionForKey,
   firstNonLetterByte,
   guessMessage,
   hintsView,
   isHexLocked,
   keypad,
+  resultView,
   scoredMessage,
   shouldFocusDecodeBox,
   statusLine,
@@ -322,7 +325,7 @@ describe("GameController: after row 6", () => {
     const view = atRowSix().play(decode("BITE"));
     assert.equal(view.message, "Out of rows");
     assert.equal(view.messageIsError, false);
-    assert.equal(view.status, "4-letter word · out of rows");
+    assert.equal(view.status, "4-letter word · not solved");
     assert.equal(view.wordAttemptDue, false);
     assert.equal(view.keypadEnabled, false);
     assert.equal(view.tried.length, 6);
@@ -663,6 +666,216 @@ describe("GameController: new round", () => {
     play(...type("42"), { type: "init" });
     assert.equal(session.roundNumber, 1);
     assert.equal(session.draft, "42");
+  });
+});
+
+/** BYTE's byte tiles on the result card. */
+const BYTE_TILES = [
+  { hex: "42", letter: "B", label: "42 is B" },
+  { hex: "59", letter: "Y", label: "59 is Y" },
+  { hex: "54", letter: "T", label: "54 is T" },
+  { hex: "45", letter: "E", label: "45 is E" },
+];
+
+/** Misses `missed` rows (0 to 5), then guesses BITE on the next row and decodes BYTE. */
+function solvedAfter(missed: number, h = harness()): Harness {
+  for (const word of FIRST_FIVE.slice(0, missed)) {
+    h.play(...guess(word), decode(word));
+  }
+  h.play(...guess("BITE"), decode("BYTE"));
+  return h;
+}
+
+/** Plays every row and gets the final answer wrong. */
+function failed(h = harness()): Harness {
+  atRowSix(h).play(decode("BITE"));
+  return h;
+}
+
+/** Reloads the webview from the last save, like media/main.ts, and sends `init`. */
+function reloaded(h: Harness): Harness {
+  return harness(restoreSession(h.saves.at(-1), WORDS), true);
+}
+
+describe("GameController: the result card for a solved round (page 4)", () => {
+  it('shows "Decoded: BYTE", "3 of 6 rows · no hints", the byte tiles, New round and the note', () => {
+    const { result } = solvedAfter(2).controller.view();
+    assert.deepEqual(result, {
+      heading: "Decoded: BYTE",
+      line: "3 of 6 rows · no hints",
+      bytes: BYTE_TILES,
+      button: "New round",
+      note: "Your agent is still working. Next round is ready when you are.",
+    });
+    assert.equal(NEW_ROUND_BUTTON, "New round");
+    assert.equal(RESULT_NOTE, "Your agent is still working. Next round is ready when you are.");
+  });
+
+  it('reads "· hints used" when hints were turned on, even if turned off again', () => {
+    const h = harness();
+    h.play(toggleHints, toggleHints);
+    assert.equal(solvedAfter(2, h).controller.view().result?.line, "3 of 6 rows · hints used");
+  });
+
+  it("counts the rows from the first row to the forced final answer", () => {
+    assert.equal(solvedAfter(0).controller.view().result?.line, "1 of 6 rows · no hints");
+    assert.equal(solvedAfter(5).controller.view().result?.line, "6 of 6 rows · no hints");
+  });
+
+  it("has no answer-tries count and no Copy result", () => {
+    const { result } = solvedAfter(2).controller.view();
+    assert.doesNotMatch(JSON.stringify(result), /tr(y|ies)|copy/i);
+    assert.deepEqual(Object.keys(result ?? {}).sort(), ["button", "bytes", "heading", "line", "note"]);
+  });
+
+  it('replaces the decode panel and keypad: "4-letter word · solved", no Hints button, nothing to type', () => {
+    const h = harness();
+    h.play(toggleHints);
+    const view = solvedAfter(2, h).controller.view();
+    assert.equal(view.status, "4-letter word · solved");
+    assert.equal(view.hints.available, false);
+    assert.equal(view.keypadEnabled, false);
+    assert.equal(view.wordAttemptDue, false);
+    assert.equal(view.hexLocked, false);
+  });
+});
+
+describe("GameController: the result card for a failed round", () => {
+  it('shows "The word was BYTE", "6 of 6 rows · no hints", the byte tiles and New round', () => {
+    const { result } = failed().controller.view();
+    assert.deepEqual(result, {
+      heading: "The word was BYTE",
+      line: "6 of 6 rows · no hints",
+      bytes: BYTE_TILES,
+      button: "New round",
+      note: RESULT_NOTE,
+    });
+  });
+
+  it('reads "· hints used" when hints were turned on', () => {
+    const h = atRowSix();
+    h.play(toggleHints, decode("BITE"));
+    assert.equal(h.controller.view().result?.line, "6 of 6 rows · hints used");
+  });
+
+  it('shows "4-letter word · not solved" and hides the Hints button', () => {
+    const view = failed().controller.view();
+    assert.equal(view.status, "4-letter word · not solved");
+    assert.equal(view.hints.available, false);
+    assert.equal(view.keypadEnabled, false);
+    assert.equal(view.wordAttemptDue, false);
+  });
+
+  it("appears straight after the wrong final answer, in the redraw of that same dispatch", () => {
+    const h = atRowSix();
+    const drawn: (ScreenView["result"])[] = [];
+    // Draws like `changed()` in media/main.ts, which renders `view()` at the end of `dispatch`.
+    const controller = new GameController(h.session, () => drawn.push(controller.view().result));
+    assert.equal(controller.view().result, null);
+    controller.dispatch(decode("BITE"));
+    assert.equal(drawn.length, 1);
+    assert.equal(drawn[0]?.heading, "The word was BYTE");
+  });
+
+  it("doesn't appear for a rejected final answer: the last try is still there", () => {
+    for (const word of ["QXZJ", "B4", ""]) {
+      assert.equal(atRowSix().play(decode(word)).result, null, word);
+    }
+  });
+});
+
+describe("GameController: the answer stays out of the view while the round is in progress", () => {
+  it("has no result card and no answer in any in-progress view, hints and final answer included", () => {
+    const { play } = harness(undefined, false);
+    const views = [
+      play(),
+      play({ type: "init" }),
+      play(...type("4259")),
+      play(...type("5445")),
+      play({ type: "delete" }, ...type("5"), { type: "enter" }),
+      play(decode("QXZJ")),
+      play(decode("BITE")),
+      play(toggleHints),
+      play(...guess("BITE")),
+      play(toggleHints),
+      play(decode("BITE"), ...guess("TEAM"), decode("TEAM"), ...guess("BEAT"), decode("BEAT")),
+      play(...guess("BEST"), decode("BEST"), ...guess("BUSY")),
+      play(decode("QXZJ")),
+    ];
+    assert.equal(views.at(-1)?.panel, FINAL_PANEL, "reached the final answer");
+    for (const [i, view] of views.entries()) {
+      assert.equal(view.result, null, `view ${i}`);
+      assert.doesNotMatch(JSON.stringify(view), /BYTE|42595445/, `view ${i}`);
+    }
+  });
+
+  it("adds the answer only once the round is over, solved or failed", () => {
+    assert.match(JSON.stringify(solvedAfter(0).controller.view()), /BYTE/);
+    assert.match(JSON.stringify(failed().controller.view()), /BYTE/);
+  });
+});
+
+describe("GameController: New round on the result card", () => {
+  for (const [name, finish] of [["solved", () => solvedAfter(2)], ["failed", () => failed()]] as const) {
+    it(`starts a fresh round through changed(), with the next round number and no roundFinished: ${name}`, () => {
+      const { play, session, saves, posts } = finish();
+      assert.equal(posts.length, 1, "the finished round was reported once");
+      const before = saves.length;
+      const view = play({ type: "newRound" });
+      assert.equal(saves.length, before + 1, "changed() ran exactly once");
+      const saved = saves.at(-1) as SessionState;
+      assert.equal(saved.roundNumber, 2);
+      assert.equal(saved.reported, false);
+      assert.deepEqual(saved.round.rows, []);
+      assert.equal(session.roundNumber, 2);
+      assert.equal(posts.length, 1, "no roundFinished for the new round");
+      assert.equal(view.result, null);
+      assert.equal(view.status, "4-letter word · row 1 of 6");
+      assert.equal(view.keypadEnabled, true);
+      assert.equal(view.hints.available, true);
+    });
+  }
+
+  it("reports the next round once when it ends, and again only for the one after", () => {
+    const { play, posts } = solvedAfter(0);
+    play({ type: "newRound" }, ...guess("BYTE"), decode("BYTE"));
+    assert.equal(posts.length, 2);
+    play({ type: "newRound" }, { type: "newRound" });
+    assert.equal(posts.length, 2);
+  });
+});
+
+describe("GameController: the result card after a hide or reload", () => {
+  for (const [name, finish] of [["solved", () => solvedAfter(2)], ["failed", () => failed()]] as const) {
+    it(`comes back without posting roundFinished again: ${name}`, () => {
+      const before = finish();
+      const card = before.controller.view().result;
+      assert.ok(card);
+      const after = reloaded(before);
+      assert.deepEqual(after.controller.view().result, card);
+      assert.deepEqual(after.posts, []);
+      assert.deepEqual(reloaded(reloaded(after)).posts, [], "nor after more reloads");
+    });
+  }
+
+  it("starts round 2 from a restored card with New round, still without posting", () => {
+    const after = reloaded(failed());
+    const view = after.play({ type: "newRound" });
+    assert.equal(after.session.roundNumber, 2);
+    assert.equal(view.result, null);
+    assert.deepEqual(after.posts, []);
+  });
+});
+
+describe("resultView", () => {
+  it("decodes each byte of the answer to its letter, from A (41) to Z (5A)", () => {
+    const view = resultView({ solved: true, answer: "AZOP", rowsUsed: 4, hintsUsed: false });
+    assert.deepEqual(
+      view.bytes.map((byte) => `${byte.hex}>${byte.letter}`),
+      ["41>A", "5A>Z", "4F>O", "50>P"],
+    );
+    assert.equal(view.heading, "Decoded: AZOP");
+    assert.equal(view.line, "4 of 6 rows · no hints");
   });
 });
 
@@ -1175,7 +1388,7 @@ describe("messages", () => {
     assert.equal(statusLine("answer", 3), "4-letter word · row 3 of 6");
     assert.equal(statusLine("final", 6), "Hex locked · all 6 rows used");
     assert.equal(statusLine("solved", 2), "4-letter word · solved");
-    assert.equal(statusLine("failed", 6), "4-letter word · out of rows");
+    assert.equal(statusLine("failed", 6), "4-letter word · not solved");
   });
 
   it("keys the locked status line off all 6 rows used and the round not over, not the phase name", () => {

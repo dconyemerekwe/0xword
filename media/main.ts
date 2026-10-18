@@ -14,6 +14,7 @@ import {
   HEX_DIGITS,
   HINTS_BUTTON,
   MARK_NAMES,
+  NEW_ROUND_BUTTON,
   actionForKey,
   shouldFocusDecodeBox,
   type Action,
@@ -41,6 +42,14 @@ interface TileElements {
   readonly mark: HTMLElement;
 }
 
+/** One byte tile on the result card: the hex, a down arrow, the letter. */
+interface ResultByteElements {
+  readonly hex: HTMLElement;
+  readonly letter: HTMLElement;
+  /** What a screen reader reads instead, e.g. "42 is B". */
+  readonly label: HTMLElement;
+}
+
 /** The parts of the screen that change. Built once, then updated in place. */
 interface Screen {
   readonly statusIcon: SVGSVGElement;
@@ -51,6 +60,7 @@ interface Screen {
   readonly hintStrip: HTMLElement;
   readonly hintCells: readonly HTMLElement[];
   readonly hintLabel: HTMLElement;
+  readonly legend: HTMLElement;
   readonly keypad: HTMLElement;
   readonly keys: readonly HTMLButtonElement[];
   readonly del: HTMLButtonElement;
@@ -64,6 +74,12 @@ interface Screen {
   readonly tried: HTMLElement;
   readonly triedList: HTMLElement;
   readonly message: HTMLElement;
+  readonly result: HTMLElement;
+  readonly resultHeading: HTMLElement;
+  readonly resultLine: HTMLElement;
+  readonly resultBytes: readonly ResultByteElements[];
+  readonly resultButton: HTMLButtonElement;
+  readonly resultNote: HTMLElement;
 }
 
 // Constants used while the screen is built go above the start-up code below:
@@ -87,8 +103,8 @@ render(controller.view());
  * controller calls this at the end of every action (`dispatch`), so no move
  * is lost the next time the panel is hidden and the webview reloads. The
  * saved state holds the answer: that's fine, because it stays in VS Code's
- * own storage for this webview. It is never put in the DOM or in a message to
- * the host.
+ * own storage for this webview. It is never put in a message to the host, and
+ * goes in the DOM only on the result card, once the round is over.
  *
  * `finished` is set once per finished round, by the controller. It's posted
  * after the save, which already marks the round as reported, so a reload
@@ -159,9 +175,22 @@ function bulbIcon(): SVGSVGElement {
   return icon;
 }
 
+/** The down arrow between a byte's hex and its letter (page 4). Decoration: the label says it. */
+function arrowIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "result-arrow",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(svgElement("path", { d: "M8 3v10M4 9l4 4 4-4" }));
+  return icon;
+}
+
 /**
- * A button (a keypad key or Hints) that dispatches `action` without taking
- * focus from a mouse click.
+ * A button (a keypad key, Hints or New round) that dispatches `action`
+ * without taking focus from a mouse click.
  */
 function actionButton(className: string, text: string, action: Action): HTMLButtonElement {
   const button = element("button", className, text);
@@ -179,7 +208,7 @@ function actionButton(className: string, text: string, action: Action): HTMLButt
   return button;
 }
 
-/** Builds the game screen (pages 1 to 3) inside `app` and wires its events. */
+/** Builds the game screen (pages 1 to 4) inside `app` and wires its events. */
 function buildScreen(app: HTMLElement): Screen {
   const header = element("header");
   const title = element("h1", "title");
@@ -278,7 +307,38 @@ function buildScreen(app: HTMLElement): Screen {
   enter.setAttribute("aria-label", "ENTER, enter row");
   keypad.append(...keys, del, enter);
 
-  app.replaceChildren(header, statusBar, grid, hintStrip, legend, decode, message, keypad);
+  // The result card (page 4): it replaces the legend, the decode panel and
+  // the keypad once the round is over. Its text, the answer included, is set
+  // by `render` only then, so the answer is never in the DOM before.
+  const result = element("section", "result");
+  result.setAttribute("aria-labelledby", "result-heading");
+  result.hidden = true;
+  const resultHeading = element("h2", "result-heading");
+  resultHeading.id = "result-heading";
+  const resultLine = element("p", "result-line");
+  const resultList = element("ul", "result-bytes");
+  const resultBytes = Array.from({ length: WORD_LENGTH }, () => {
+    const byte = {
+      hex: element("span", "result-hex"),
+      letter: element("span", "result-letter"),
+      label: element("span", "sr-only"),
+    };
+    // The tile is drawn for sight; screen readers get `label` instead.
+    byte.hex.setAttribute("aria-hidden", "true");
+    byte.letter.setAttribute("aria-hidden", "true");
+    const item = element("li", "result-byte");
+    item.append(byte.hex, arrowIcon(), byte.letter, byte.label);
+    resultList.append(item);
+    return byte;
+  });
+  const resultButton = actionButton("result-button", NEW_ROUND_BUTTON, { type: "newRound" });
+  const resultHead = element("div", "result-head");
+  resultHead.append(resultHeading, resultLine);
+  result.append(resultHead, resultList, resultButton);
+  const resultNote = element("p", "result-note");
+  resultNote.hidden = true;
+
+  app.replaceChildren(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, keypad);
 
   document.addEventListener("keydown", (event) => {
     if (event.isComposing) {
@@ -306,6 +366,7 @@ function buildScreen(app: HTMLElement): Screen {
     hintStrip,
     hintCells,
     hintLabel,
+    legend,
     keypad,
     keys,
     del,
@@ -319,6 +380,12 @@ function buildScreen(app: HTMLElement): Screen {
     tried,
     triedList,
     message,
+    result,
+    resultHeading,
+    resultLine,
+    resultBytes,
+    resultButton,
+    resultNote,
   };
 }
 
@@ -333,7 +400,11 @@ function focusOf(target: EventTarget | null, decodeInput: HTMLInputElement): Key
   return "page";
 }
 
-/** Draws `view`. All text goes in with `textContent`; the answer is never in the view. */
+/**
+ * Draws `view`. All text goes in with `textContent`. The answer is only in
+ * the view's result card, once the round is over; until then the card's text
+ * is empty.
+ */
 function render(view: ScreenView): void {
   if (!ui) {
     return;
@@ -399,6 +470,8 @@ function render(view: ScreenView): void {
     }),
   );
 
+  drawResult(view.result);
+
   ui.message.classList.toggle("message-error", view.messageIsError);
   // Every message write takes a new number, so a delayed write only lands if
   // nothing was written after it.
@@ -420,6 +493,40 @@ function render(view: ScreenView): void {
   // unless the Hints button has it, so it can be toggled again from the keyboard.
   if (view.wordAttemptDue && document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton) {
     ui.decodeInput.focus();
+  }
+}
+
+/**
+ * Shows the result card in place of the legend, decode panel and keypad once
+ * the round is over, or hides it and clears its text while the round is in
+ * progress. When the card first appears, New round takes focus, since the
+ * decode box that had it is gone.
+ */
+function drawResult(result: ScreenView["result"]): void {
+  if (!ui) {
+    return;
+  }
+  const appearing = result !== null && ui.result.hidden;
+  ui.result.hidden = result === null;
+  ui.resultNote.hidden = result === null;
+  ui.legend.hidden = result !== null;
+  ui.decode.hidden = result !== null;
+  ui.keypad.hidden = result !== null;
+  // "Solved" and "Out of rows" are still read out, but the card shows the result.
+  ui.message.classList.toggle("sr-only", result !== null);
+
+  ui.resultHeading.textContent = result?.heading ?? "";
+  ui.resultLine.textContent = result?.line ?? "";
+  ui.resultBytes.forEach((byte, i) => {
+    const model = result?.bytes[i];
+    byte.hex.textContent = model?.hex ?? "";
+    byte.letter.textContent = model?.letter ?? "";
+    byte.label.textContent = model?.label ?? "";
+  });
+  ui.resultButton.textContent = result?.button ?? NEW_ROUND_BUTTON;
+  ui.resultNote.textContent = result?.note ?? "";
+  if (appearing) {
+    ui.resultButton.focus();
   }
 }
 

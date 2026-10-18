@@ -183,10 +183,42 @@ describe("media/styles.css page 2: the Hints button and strip", () => {
   });
 });
 
+describe("media/styles.css page 4: the result card, in the dark palette", () => {
+  it("takes the byte tiles' colours from existing dark tokens, adding no new colours", () => {
+    assert.equal(DARK_PALETTE.byteTile, DARK_PALETTE.hintsOn);
+    assert.equal(DARK_PALETTE.byteHex, DARK_PALETTE.hintsOnText);
+  });
+
+  it("draws the card with a blue outline on the panel colour", () => {
+    assert.match(block(".result"), /border: 2px solid var\(--ox-right\);/);
+    assert.match(block(".result"), /background: var\(--ox-panel\);/);
+  });
+
+  it("draws the heading as large text and the result line muted", () => {
+    const size = Number(/font-size: ([\d.]+)px;/.exec(block(".result-heading"))?.[1]);
+    assert.ok(size >= 24, `${size}px`);
+    assert.match(block(".result-heading"), /color: var\(--ox-text\);/);
+    assert.match(block(".result-line"), /color: var\(--ox-muted\);/);
+  });
+
+  it("draws four byte tiles in a row, with the hex in blue and the letter in the text colour", () => {
+    assert.match(block(".result-bytes"), /grid-template-columns: repeat\(4, 1fr\);/);
+    assert.match(block(".result-byte"), /background: var\(--ox-byte-tile\);/);
+    assert.match(block(".result-hex"), /color: var\(--ox-byte-hex\);/);
+    assert.match(block(".result-hex"), /font-family: var\(--ox-mono\);/);
+    assert.match(block(".result-letter"), /color: var\(--ox-text\);/);
+  });
+
+  it("makes New round blue with white text, and the note under the card muted", () => {
+    assert.match(block(".result-button"), /background: var\(--ox-right\);[\s\S]*color: var\(--ox-on-right\);/);
+    assert.match(block(".result-note"), /color: var\(--ox-muted\);/);
+  });
+});
+
 describe("media/styles.css layout and accessibility", () => {
-  it("makes keys, the Decode button, the decode box and Hints at least 44px tall", () => {
+  it("makes keys, the Decode button, the decode box, Hints and New round at least 44px tall", () => {
     assert.match(root, /--ox-touch:\s*44px;/);
-    for (const selector of [".key", ".decode-button", ".decode-input", ".hints-button"]) {
+    for (const selector of [".key", ".decode-button", ".decode-input", ".hints-button", ".result-button"]) {
       assert.match(block(selector), /min-height: var\(--ox-touch\);/, selector);
     }
   });
