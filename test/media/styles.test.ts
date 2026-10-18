@@ -237,6 +237,52 @@ describe("media/styles.css page 4: the result card, in the dark palette", () => 
   });
 });
 
+describe("media/styles.css page 5: How to play", () => {
+  it("uses the page 5 colours from docs/design/README.md", () => {
+    assert.equal(DARK_PALETTE.icon, "#CCCFD8");
+    assert.equal(DARK_PALETTE.cheatHex, "#7EA8FF");
+    assert.equal(DARK_PALETTE.panel, "#1D2027");
+    assert.equal(DARK_PALETTE.chipOnAbsent, "#C9CFD8");
+  });
+
+  it("draws `?` and the back arrow as icons in the icon colour, with 44px targets", () => {
+    const button = block(".icon-button");
+    assert.match(button, /color: var\(--ox-icon\);/);
+    assert.match(button, /min-width: var\(--ox-touch\);/);
+    assert.match(button, /min-height: var\(--ox-touch\);/);
+    assert.match(block(".icon"), /stroke: currentColor;/);
+  });
+
+  it("puts `?` on the right of the header", () => {
+    assert.match(block(".header"), /justify-content: space-between;/);
+  });
+
+  it("draws RULES and ASCII CHEATSHEET in muted capitals", () => {
+    assert.match(block(".section-heading"), /color: var\(--ox-muted\);/);
+    assert.match(block(".section-heading"), /text-transform: uppercase;/);
+  });
+
+  it("draws rule 3's chips in the tile colours", () => {
+    assert.match(block(".chip-right"), /background: var\(--ox-right\);\s*color: var\(--ox-on-right\);/);
+    assert.match(block(".chip-wrong"), /background: var\(--ox-wrong\);\s*color: var\(--ox-on-wrong\);/);
+    assert.match(block(".chip-absent"), /background: var\(--ox-absent\);\s*color: var\(--ox-chip-on-absent\);/);
+  });
+
+  it("draws the cheatsheet as 5 columns of panel-coloured cards, the letter bold and the hex in blue monospace", () => {
+    assert.match(block(".cheatsheet"), /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\);/);
+    assert.match(block(".cheat-card"), /background: var\(--ox-panel\);/);
+    assert.match(block(".cheat-letter"), /color: var\(--ox-text\);/);
+    assert.match(block(".cheat-letter"), /font-weight: 700;/);
+    assert.match(block(".cheat-hex"), /color: var\(--ox-cheat-hex\);/);
+    assert.match(block(".cheat-hex"), /font-family: var\(--ox-mono\);/);
+  });
+
+  it("draws 4_ and 5_ in the cards' blue monospace", () => {
+    assert.match(block(".code"), /color: var\(--ox-cheat-hex\);/);
+    assert.match(block(".code"), /font-family: var\(--ox-mono\);/);
+  });
+});
+
 describe("media/styles.css layout and accessibility", () => {
   it("makes keys, the Decode button, the decode box, Hints and New round at least 44px tall", () => {
     assert.match(root, /--ox-touch:\s*44px;/);

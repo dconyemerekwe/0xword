@@ -34,6 +34,9 @@
   --ox-strip-unknown: #7B808B;
   --ox-byte-tile: #1E2A45;
   --ox-byte-hex: #7EA8FF;
+  --ox-icon: #CCCFD8;
+  --ox-cheat-hex: #7EA8FF;
+  --ox-chip-on-absent: #C9CFD8;
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -86,7 +89,46 @@ body {
   outline-offset: 2px;
 }
 
-/* Header */
+/* The game (pages 1 to 4) and How to play (page 5): one shows at a time. */
+.game,
+.how-to-play {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header: the title on the left, the `?` button on the right (page 1). */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The `?` and back arrow: an icon on the page background, with a 44px target. */
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ox-touch);
+  min-height: var(--ox-touch);
+  padding: 0;
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: none;
+  color: var(--ox-icon);
+  cursor: pointer;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
 
 .title {
   margin: 0;
@@ -543,6 +585,117 @@ body {
   margin: 0;
   color: var(--ox-muted);
   text-align: center;
+}
+
+/*
+ * How to play (page 5), in place of the game. Sizes are estimated from the
+ * page 5 image at a 400px panel: the design gives no measurements.
+ */
+
+.how-to-play-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.how-to-play-heading {
+  margin: 0;
+  color: var(--ox-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* "RULES" and "ASCII CHEATSHEET": small muted capitals. */
+.section-heading {
+  margin: 8px 0 0;
+  color: var(--ox-muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ox-text);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* Rule 3's colour words, as chips in the tile colours. */
+.chip {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.chip-right {
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.chip-wrong {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.chip-absent {
+  background: var(--ox-absent);
+  color: var(--ox-chip-on-absent);
+}
+
+.cheatsheet-line {
+  margin: 0;
+  color: var(--ox-text);
+}
+
+/* `4_` and `5_`: hex, in the cards' blue monospace. */
+.code {
+  color: var(--ox-cheat-hex);
+  font-family: var(--ox-mono);
+  font-weight: 700;
+}
+
+/* 26 cards, 5 to a row. The columns may shrink, so the grid never overflows. */
+.cheatsheet {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cheat-card {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 8px;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--ox-key);
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+}
+
+.cheat-letter {
+  color: var(--ox-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cheat-hex {
+  color: var(--ox-cheat-hex);
+  font-family: var(--ox-mono);
+  font-size: 15px;
+  font-weight: 500;
 }
 
 /* Message */

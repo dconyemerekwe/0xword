@@ -20,9 +20,24 @@ export type Action =
   | { readonly type: "delete" } // DEL or Backspace
   | { readonly type: "enter" } // ENTER: submit the typed hex row
   | { readonly type: "decode"; readonly word: string } // the word typed in the decode box
-  | { readonly type: "toggleHints" }; // the Hints button: turn hints on or off
+  | { readonly type: "toggleHints" } // the Hints button: turn hints on or off
+  | { readonly type: "openHowToPlay" } // the `?` button: show How to play over the game
+  | { readonly type: "closeHowToPlay" }; // the back arrow or Escape: back to the game
 
 export type ActionType = Action["type"];
+
+/**
+ * The player's moves in the round, ignored while How to play is open. The
+ * host's `init` and `newRound` still apply: New Round from the command
+ * palette starts a round behind How to play.
+ */
+export const GAME_MOVES: ReadonlySet<ActionType> = new Set<ActionType>([
+  "digit",
+  "delete",
+  "enter",
+  "decode",
+  "toggleHints",
+]);
 
 /** The keypad's digits, in order: `0 1 2 3` / `4 5 6 7` / `8 9 A B` / `C D E F`. */
 export const HEX_DIGITS = [..."0123456789ABCDEF"];
@@ -193,6 +208,11 @@ export interface ScreenView {
   readonly message: string;
   /** True if `message` says why an action was rejected. */
   readonly messageIsError: boolean;
+  /**
+   * How to play (page 5) is open in place of the game, which is left as it
+   * was. While it's open the controller ignores every game move.
+   */
+  readonly howToPlayOpen: boolean;
 }
 
 /** A message for the player, and whether it reports a rejected action. */
@@ -223,6 +243,8 @@ export class GameController {
   readonly #changed: Changed;
   /** The last action's message. Not saved: it's gone after a reload. */
   #notice = NO_NOTICE;
+  /** How to play is open. Not saved: a reload shows the game. */
+  #howToPlayOpen = false;
 
   constructor(session: Session, changed: Changed) {
     this.#session = session;
@@ -275,13 +297,25 @@ export class GameController {
       result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
+      howToPlayOpen: this.#howToPlayOpen,
     };
   }
 
   /** Does the action and returns the message to show. */
   #apply(action: Action): Notice {
     const session = this.#session;
+    // While How to play is open, game moves are ignored and the last message
+    // stays, so the game comes back exactly as it was left.
+    if (this.#howToPlayOpen && GAME_MOVES.has(action.type)) {
+      return this.#notice;
+    }
     switch (action.type) {
+      case "openHowToPlay":
+        this.#howToPlayOpen = true;
+        return this.#notice;
+      case "closeHowToPlay":
+        this.#howToPlayOpen = false;
+        return this.#notice;
       case "init":
         session.ensureRound();
         return NO_NOTICE;
@@ -541,6 +575,19 @@ export function actionForKey(press: KeyPress, focus: KeyFocus): Action | null {
   }
   if (press.key === "Enter" && focus === "page") {
     return { type: "enter" };
+  }
+  return null;
+}
+
+/**
+ * The action for a physical key while How to play is open, or null to leave
+ * the key alone: Escape (without Ctrl, Cmd or Alt) goes back to the game.
+ * No other key reaches the game, so typing can't change the grid or the
+ * decode box behind it. Enter and Space still press the focused back arrow.
+ */
+export function howToPlayActionForKey(press: KeyPress): Action | null {
+  if (press.key === "Escape" && !press.ctrlKey && !press.metaKey && !press.altKey) {
+    return { type: "closeHowToPlay" };
   }
   return null;
 }

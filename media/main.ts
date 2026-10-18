@@ -16,11 +16,22 @@ import {
   MARK_NAMES,
   NEW_ROUND_BUTTON,
   actionForKey,
+  howToPlayActionForKey,
   shouldFocusDecodeBox,
   type Action,
   type KeyFocus,
   type ScreenView,
 } from "../src/ui/game.ts";
+import {
+  BACK_TO_GAME,
+  CHEATSHEET_HEADING,
+  CHEATSHEET_LINE,
+  HOW_TO_PLAY,
+  RULES,
+  RULES_HEADING,
+  cheatsheet,
+  type StyledText,
+} from "../src/ui/howToPlay.ts";
 // Inlined into the bundle as a string by esbuild's text loader.
 import wordList from "../src/game/words.txt";
 
@@ -52,6 +63,14 @@ interface ResultByteElements {
 
 /** The parts of the screen that change. Built once, then updated in place. */
 interface Screen {
+  /** Everything but How to play: hidden while How to play is open. */
+  readonly game: HTMLElement;
+  /** The `?` button in the header. */
+  readonly howToPlayButton: HTMLButtonElement;
+  /** The How to play screen (page 5). */
+  readonly howToPlay: HTMLElement;
+  /** Its back arrow. */
+  readonly backButton: HTMLButtonElement;
   readonly statusIcon: SVGSVGElement;
   readonly statusText: HTMLElement;
   readonly hintsButton: HTMLButtonElement;
@@ -189,6 +208,102 @@ function arrowIcon(): SVGSVGElement {
   return icon;
 }
 
+/** The circled question mark on the How to play button (page 1). Decoration: the button is named. */
+function questionIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "icon",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(
+    svgElement("circle", { cx: "8", cy: "8", r: "6.5" }),
+    svgElement("path", { d: "M6.25 6.25a1.75 1.75 0 1 1 2.45 1.6c-.45.2-.7.6-.7 1.1v.3M8 11.25v.01" }),
+  );
+  return icon;
+}
+
+/** The back arrow `<` on How to play (page 5). Decoration: the button is named. */
+function backIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "icon",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(svgElement("path", { d: "M10 3.5 5.5 8l4.5 4.5" }));
+  return icon;
+}
+
+/**
+ * `text`'s runs in `parent`, each in its style: plain text nodes, <strong>,
+ * hex in a `code` span, or a chip in a mark's colour. All text is plain text.
+ */
+function appendStyled(parent: HTMLElement, text: StyledText): void {
+  for (const { text: run, style } of text) {
+    if (style === "plain") {
+      parent.append(document.createTextNode(run));
+    } else if (style === "strong") {
+      parent.append(element("strong", "", run));
+    } else if (style === "code") {
+      parent.append(element("span", "code", run));
+    } else {
+      parent.append(element("span", `chip chip-${style}`, run));
+    }
+  }
+}
+
+/**
+ * Builds How to play (page 5): a back arrow and heading, the six rules, and
+ * the A–Z cheatsheet. Its text never changes, so it's all set here.
+ */
+function buildHowToPlay(): { readonly section: HTMLElement; readonly back: HTMLButtonElement } {
+  const section = element("section", "how-to-play");
+  section.setAttribute("aria-labelledby", "how-to-play-heading");
+  section.hidden = true;
+
+  const back = actionButton("icon-button", "", { type: "closeHowToPlay" });
+  back.setAttribute("aria-label", BACK_TO_GAME);
+  back.append(backIcon());
+  const heading = element("h2", "how-to-play-heading", HOW_TO_PLAY);
+  heading.id = "how-to-play-heading";
+  const head = element("div", "how-to-play-head");
+  head.append(back, heading);
+
+  const rules = element("ol", "rules");
+  for (const rule of RULES) {
+    const item = element("li");
+    appendStyled(item, rule);
+    rules.append(item);
+  }
+
+  const line = element("p", "cheatsheet-line");
+  appendStyled(line, CHEATSHEET_LINE);
+  const cards = element("ul", "cheatsheet");
+  for (const card of cheatsheet()) {
+    const letter = element("span", "cheat-letter", card.letter);
+    const hex = element("span", "cheat-hex", card.hex);
+    // The card is drawn for sight; screen readers get "A is 41" instead.
+    letter.setAttribute("aria-hidden", "true");
+    hex.setAttribute("aria-hidden", "true");
+    const item = element("li", "cheat-card");
+    item.append(letter, hex, element("span", "sr-only", card.label));
+    cards.append(item);
+  }
+
+  section.append(
+    head,
+    element("h3", "section-heading", RULES_HEADING),
+    rules,
+    element("h3", "section-heading", CHEATSHEET_HEADING),
+    line,
+    cards,
+  );
+  return { section, back };
+}
+
 /**
  * A button (a keypad key, Hints or New round) that dispatches `action`
  * without taking focus from a mouse click.
@@ -209,12 +324,16 @@ function actionButton(className: string, text: string, action: Action): HTMLButt
   return button;
 }
 
-/** Builds the game screen (pages 1 to 4) inside `app` and wires its events. */
+/** Builds the game screen (pages 1 to 4) and How to play (page 5) inside `app`, and wires their events. */
 function buildScreen(app: HTMLElement): Screen {
-  const header = element("header");
+  const header = element("header", "header");
   const title = element("h1", "title");
   title.append(element("span", "title-hex", "0x"), element("span", "title-word", "WORD"));
-  header.append(title);
+  // On every screen, on the right of the header (page 1).
+  const howToPlayButton = actionButton("icon-button", "", { type: "openHowToPlay" });
+  howToPlayButton.setAttribute("aria-label", HOW_TO_PLAY);
+  howToPlayButton.append(questionIcon());
+  header.append(title, howToPlayButton);
 
   const status = element("p", "status");
   const statusIcon = lockIcon();
@@ -343,10 +462,22 @@ function buildScreen(app: HTMLElement): Screen {
   const resultNote = element("p", "result-note");
   resultNote.hidden = true;
 
-  app.replaceChildren(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, keypad);
+  const game = element("div", "game");
+  game.append(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, keypad);
+  const howToPlay = buildHowToPlay();
+  app.replaceChildren(game, howToPlay.section);
 
   document.addEventListener("keydown", (event) => {
     if (event.isComposing) {
+      return;
+    }
+    // While How to play is open, no key reaches the grid or the decode box.
+    if (controller.view().howToPlayOpen) {
+      const action = howToPlayActionForKey(event);
+      if (action) {
+        event.preventDefault();
+        controller.dispatch(action);
+      }
       return;
     }
     const focus = focusOf(event.target, decodeInput);
@@ -363,6 +494,10 @@ function buildScreen(app: HTMLElement): Screen {
   });
 
   return {
+    game,
+    howToPlayButton,
+    howToPlay: howToPlay.section,
+    backButton: howToPlay.back,
     statusIcon,
     statusText,
     hintsButton,
@@ -415,6 +550,11 @@ function render(view: ScreenView): void {
   if (!ui) {
     return;
   }
+  // How to play covers the game, which is still drawn behind it as it is.
+  const howToPlayWasOpen = !ui.howToPlay.hidden;
+  ui.game.hidden = view.howToPlayOpen;
+  ui.howToPlay.hidden = !view.howToPlayOpen;
+
   ui.statusText.textContent = view.status;
   ui.statusIcon.toggleAttribute("hidden", !view.hexLocked);
   ui.grid.classList.toggle("grid-locked", view.hexLocked);
@@ -495,10 +635,16 @@ function render(view: ScreenView): void {
     ui.message.textContent = view.message;
   }
 
-  // A scored row's word attempt is due: the decode box takes the keyboard,
-  // unless the Hints button has it, so it can be toggled again from the keyboard.
-  if (view.wordAttemptDue && document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton) {
-    ui.decodeInput.focus();
+  if (view.howToPlayOpen !== howToPlayWasOpen) {
+    // Opening How to play moves focus to its back arrow; closing it gives
+    // focus back to the `?` button that opened it.
+    (view.howToPlayOpen ? ui.backButton : ui.howToPlayButton).focus();
+  } else if (!view.howToPlayOpen && view.wordAttemptDue) {
+    // A scored row's word attempt is due: the decode box takes the keyboard,
+    // unless the Hints button has it, so it can be toggled again from the keyboard.
+    if (document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton) {
+      ui.decodeInput.focus();
+    }
   }
 }
 

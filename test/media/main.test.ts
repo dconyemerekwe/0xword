@@ -12,6 +12,7 @@ import { wordToHex } from "../../src/game/hex.ts";
 import { Session, type SessionState } from "../../src/game/session.ts";
 import { EMPTY_STATS, toStatsView } from "../../src/stats.ts";
 import { GameController, type Action } from "../../src/ui/game.ts";
+import { cheatsheet } from "../../src/ui/howToPlay.ts";
 import { WORDS } from "../game/fixtures.ts";
 
 /** The source without comments, so they may mention what the code avoids. */
@@ -60,7 +61,7 @@ describe("media/main.ts", () => {
   });
 
   it("puts the hint strip between the grid and the legend, and Hints in the status bar", () => {
-    assert.match(source, /app\.replaceChildren\(header, statusBar, grid, hintStrip, legend,/);
+    assert.match(source, /game\.append\(header, statusBar, grid, hintStrip, legend,/);
     assert.match(source, /statusBar\.append\(status, hintsButton\)/);
   });
 
@@ -162,7 +163,37 @@ describe("media/main.ts", () => {
     assert.match(source, /ui\.legend\.hidden = result !== null/);
     assert.match(source, /ui\.decode\.hidden = result !== null/);
     assert.match(source, /ui\.keypad\.hidden = result !== null/);
-    assert.match(source, /app\.replaceChildren\([^)]*decode, result, resultNote, message, keypad\)/);
+    assert.match(source, /game\.append\([^)]*decode, result, resultNote, message, keypad\)/);
+  });
+
+  it("makes `?` and the back arrow real <button>s that dispatch through the controller", () => {
+    assert.match(source, /const howToPlayButton = actionButton\("icon-button", "", \{ type: "openHowToPlay" \}\)/);
+    assert.match(source, /const back = actionButton\("icon-button", "", \{ type: "closeHowToPlay" \}\)/);
+    assert.match(source, /howToPlayButton\.setAttribute\("aria-label", HOW_TO_PLAY\)/);
+    assert.match(source, /back\.setAttribute\("aria-label", BACK_TO_GAME\)/);
+    assert.match(source, /header\.append\(title, howToPlayButton\)/);
+  });
+
+  it("puts the game and How to play side by side in the app, one hidden at a time", () => {
+    assert.match(source, /app\.replaceChildren\(game, howToPlay\.section\)/);
+    assert.match(source, /ui\.game\.hidden = view\.howToPlayOpen/);
+    assert.match(source, /ui\.howToPlay\.hidden = !view\.howToPlayOpen/);
+  });
+
+  it("handles keys for How to play before the grid and the decode box can see them", () => {
+    assert.match(
+      source,
+      /if \(controller\.view\(\)\.howToPlayOpen\) \{\s*const action = howToPlayActionForKey\(event\);[\s\S]*?return;\s*\}\s*const focus = focusOf/,
+    );
+  });
+
+  it("draws the rules and cheatsheet from the controller's data, with text nodes and textContent only", () => {
+    assert.match(source, /for \(const rule of RULES\)/);
+    assert.match(source, /appendStyled\(line, CHEATSHEET_LINE\)/);
+    assert.match(source, /for \(const card of cheatsheet\(\)\)/);
+    assert.match(source, /parent\.append\(document\.createTextNode\(run\)\)/);
+    // No rule text is written in the DOM layer itself.
+    assert.doesNotMatch(source, /hidden word|right spot|cheatsheet line|counts up/i);
   });
 });
 
@@ -178,10 +209,15 @@ interface FocusTracker {
  */
 function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { active: null }): Record<string, unknown> {
   const attributes: Record<string, string> = {};
+  const listeners: Record<string, (event: unknown) => void> = {};
   const target: Record<string, unknown> = {
     ...record,
     attributes,
+    listeners,
     focusCalls: 0,
+    addEventListener: (type: string, listener: (event: unknown) => void) => {
+      listeners[type] = listener;
+    },
     classList: { toggle() {}, add() {}, remove() {} },
     setAttribute: (name: string, value: string) => {
       attributes[name] = value;
@@ -331,6 +367,37 @@ function byClass(run: WebviewRun, className: string): Record<string, unknown> {
   return found[0] ?? {};
 }
 
+/** The one element with this accessible name (`aria-label`). */
+function byLabel(run: WebviewRun, label: string): Record<string, unknown> {
+  const found = run.elements.filter((node) => (node["attributes"] as Record<string, string>)["aria-label"] === label);
+  assert.equal(found.length, 1, label);
+  return found[0] ?? {};
+}
+
+/** Every element with this class, in the order they were made. */
+function allByClass(run: WebviewRun, className: string): Record<string, unknown>[] {
+  return run.elements.filter((node) => node["className"] === className);
+}
+
+/**
+ * A snapshot of the text, attributes and `hidden` of the elements made so
+ * far. `render` makes new Tried list items on every draw, so a later
+ * snapshot compares only the elements that existed at the first one.
+ */
+function snapshot(run: WebviewRun, count = run.elements.length): string {
+  const fields = ["textContent", "placeholder", "value", "attributes", "hidden", "className"];
+  return JSON.stringify(run.elements.slice(0, count).map((node) => fields.map((field) => node[field])));
+}
+
+/** Clicks a fake button with the mouse: its mousedown, then its click. */
+function click(node: Record<string, unknown>): void {
+  const listeners = node["listeners"] as Record<string, (event: unknown) => void>;
+  listeners["mousedown"]?.({ preventDefault() {} });
+  const onClick = listeners["click"];
+  assert.ok(onClick, "a click listener");
+  onClick({});
+}
+
 /** All text and attributes the fake DOM holds, as one string. */
 function domText(run: WebviewRun): string {
   return JSON.stringify(
@@ -366,13 +433,27 @@ describe("media/main.ts: the SVG icons, run as the bundled webview script", () =
   // Regression test for #32: the bundle ran `buildScreen` before `SVG_NS` was
   // set, so the padlock was made with createElementNS(undefined, …) and never drawn.
   // The Hints light bulb (#23) and the result card's down arrows (#24) are
-  // built the same way, so they're checked too.
-  it("creates the padlock's, the light bulb's and the down arrows' SVG elements in the SVG namespace", () => {
+  // built the same way, so they're checked too, as are How to play's `?` and
+  // back arrow (#25).
+  it("creates the icons' SVG elements in the SVG namespace: `?`, padlock, light bulb, down arrows, back arrow", () => {
     const { namespaces } = runWebview(undefined);
     assert.deepEqual(
       namespaces.map((n) => n.tag),
-      // The padlock, the light bulb, then one down arrow per byte.
-      ["svg", "rect", "path", "svg", "path", "path", ...new Array<string[]>(4).fill(["svg", "path"]).flat()],
+      // The `?`, the padlock, the light bulb, one down arrow per byte, then the back arrow.
+      [
+        "svg",
+        "circle",
+        "path",
+        "svg",
+        "rect",
+        "path",
+        "svg",
+        "path",
+        "path",
+        ...new Array<string[]>(4).fill(["svg", "path"]).flat(),
+        "svg",
+        "path",
+      ],
     );
     for (const { tag, ns } of namespaces) {
       assert.equal(ns, "http://www.w3.org/2000/svg", `<${tag}> namespace`);
@@ -493,4 +574,148 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
       assert.equal(run.focus.active, byClass(run, "decode-input"), "ENTER scored the row and opened the decode box");
     });
   }
+});
+
+describe("media/main.ts: How to play (page 5), run as the bundled webview script", () => {
+  /** Saved states for every screen How to play opens from (answer BYTE), or undefined for a fresh panel. */
+  const halfTyped: Action[] = [...guess("TEAM"), decode("BEAT"), ...[..."4259"].map((digit) => ({ type: "digit", digit }) as const)];
+  const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => [...guess(w), decode(w)]);
+  const screens: readonly (readonly [string, () => SessionState | undefined])[] = [
+    ["a fresh panel", () => undefined],
+    ["a half-typed row", () => savedAfter(...halfTyped)],
+    ["a word attempt due", () => savedAfter(...guess("TEAM"))],
+    ["the final answer", () => savedAfter(...firstFive, ...guess("ABLE"))],
+    ["the result card", () => FINISHED[0]?.[1]()],
+  ];
+
+  it('draws `?` and the back arrow as real <button>s named "How to play" and "Back to game"', () => {
+    const run = runWebview(undefined);
+    for (const name of ["How to play", "Back to game"]) {
+      const button = byLabel(run, name);
+      assert.equal(button["tag"], "button", name);
+      assert.equal(button["type"], "button", name);
+      assert.equal(button["className"], "icon-button", name);
+    }
+  });
+
+  it('starts closed, with the heading "How to play" set by textContent', () => {
+    const run = runWebview(undefined);
+    assert.equal(byClass(run, "how-to-play")["hidden"], true);
+    assert.equal(byClass(run, "game")["hidden"], false);
+    const heading = byClass(run, "how-to-play-heading");
+    assert.equal(heading["tag"], "h2");
+    assert.equal(heading["textContent"], "How to play");
+    assert.deepEqual(byClass(run, "how-to-play")["attributes"], { "aria-labelledby": "how-to-play-heading" });
+  });
+
+  it("draws the RULES and ASCII CHEATSHEET headings, the six rules and the rule 3 chips", () => {
+    const run = runWebview(undefined);
+    assert.deepEqual(
+      allByClass(run, "section-heading").map((node) => node["textContent"]),
+      ["Rules", "ASCII cheatsheet"],
+    );
+    assert.equal(byClass(run, "rules")["tag"], "ol");
+    assert.deepEqual(
+      ["chip chip-right", "chip chip-wrong", "chip chip-absent"].map((name) => byClass(run, name)["textContent"]),
+      ["blue", "orange", "grey"],
+    );
+    assert.deepEqual(allByClass(run, "code").map((node) => node["textContent"]), ["4_", "5_"]);
+  });
+
+  it("draws 26 cheatsheet cards, A 41 to Z 5A, with textContent and a label for screen readers", () => {
+    const run = runWebview(undefined);
+    assert.equal(allByClass(run, "cheat-card").length, 26);
+    const letters = allByClass(run, "cheat-letter");
+    const hexes = allByClass(run, "cheat-hex");
+    assert.equal(letters.map((node) => node["textContent"]).join(""), "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    assert.deepEqual(
+      hexes.map((node) => node["textContent"]),
+      cheatsheet().map((card) => card.hex),
+    );
+    assert.equal(hexes[0]?.["textContent"], "41");
+    assert.equal(hexes[25]?.["textContent"], "5A");
+    for (const node of [...letters, ...hexes]) {
+      assert.deepEqual(node["attributes"], { "aria-hidden": "true" });
+    }
+    const labels = run.elements
+      .filter((node) => node["className"] === "sr-only" && / is [45]/.test(String(node["textContent"])))
+      .map((node) => node["textContent"]);
+    assert.deepEqual(
+      labels,
+      cheatsheet().map((card) => card.label),
+    );
+  });
+
+  for (const [name, saved] of screens) {
+    it(`opens from ${name} with ?, moving focus to the back arrow`, () => {
+      const run = runWebview(saved());
+      click(byLabel(run, "How to play"));
+      assert.equal(byClass(run, "how-to-play")["hidden"], false);
+      assert.equal(byClass(run, "game")["hidden"], true);
+      assert.equal(run.focus.active, byLabel(run, "Back to game"));
+    });
+
+    it(`goes back to ${name} unchanged with the back arrow, focus on ?`, () => {
+      const run = runWebview(saved());
+      const count = run.elements.length;
+      const before = snapshot(run);
+      click(byLabel(run, "How to play"));
+      click(byLabel(run, "Back to game"));
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(byClass(run, "game")["hidden"], false);
+      assert.equal(snapshot(run, count), before);
+      assert.equal(run.focus.active, byLabel(run, "How to play"));
+    });
+
+    it(`goes back to ${name} unchanged with Escape, focus on ?`, () => {
+      const run = runWebview(saved());
+      const count = run.elements.length;
+      const before = snapshot(run);
+      click(byLabel(run, "How to play"));
+      run.press("Escape");
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(snapshot(run, count), before);
+      assert.equal(run.focus.active, byLabel(run, "How to play"));
+    });
+
+    it(`keeps typed keys from the grid and the decode box while open, from ${name}`, () => {
+      const run = runWebview(saved());
+      const count = run.elements.length;
+      const before = snapshot(run);
+      const decodeInput = byClass(run, "decode-input");
+      click(byLabel(run, "How to play"));
+      const focusCalls = decodeInput["focusCalls"];
+      for (const key of [..."4259beatXYZ ", "Backspace", "Enter", "Delete"]) {
+        run.press(key);
+      }
+      assert.equal(decodeInput["focusCalls"], focusCalls, "the decode box never took focus");
+      assert.equal(run.focus.active, byLabel(run, "Back to game"));
+      run.press("Escape");
+      assert.equal(snapshot(run, count), before, "the grid and decode box are as they were");
+    });
+  }
+
+  it("ignores Escape on the game screen", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const count = run.elements.length;
+    const before = snapshot(run);
+    run.press("Escape");
+    assert.equal(byClass(run, "how-to-play")["hidden"], true);
+    assert.equal(snapshot(run, count), before);
+  });
+
+  it("doesn't focus New round again when going back to the result card", () => {
+    const run = runWebview(FINISHED[0]?.[1]());
+    const newRound = byClass(run, "result-button");
+    assert.equal(newRound["focusCalls"], 1);
+    click(byLabel(run, "How to play"));
+    run.press("Escape");
+    assert.equal(newRound["focusCalls"], 1);
+  });
+
+  it("shows the game, not How to play, after a reload", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    assert.equal(byClass(run, "how-to-play")["hidden"], true);
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+  });
 });

@@ -63,6 +63,16 @@ export const DARK_PALETTE = {
   byteTile: "#1E2A45",
   /** The byte tiles' hex: the light theme's blue text, as `hintsOnText` (also How to play's dark hex). */
   byteHex: "#7EA8FF",
+  // Page 5, How to play (docs/design/README.md colour table). The cheatsheet
+  // cards are `panel` with a `key` outline (estimated from page 5: the table
+  // has no border value), their letters `text`. The rule 3 chips are the tile
+  // colours: `right`/`onRight`, `wrong`/`onWrong`, `absent`/`chipOnAbsent`.
+  /** The `?` and back arrow icon buttons. */
+  icon: "#CCCFD8",
+  /** The cheatsheet cards' hex, and `4_` / `5_` in the line above them. */
+  cheatHex: "#7EA8FF",
+  /** The "grey" chip's text in rule 3: the table's not-in-word tile text. */
+  chipOnAbsent: "#C9CFD8",
 } as const;
 
 export type PaletteToken = keyof typeof DARK_PALETTE;
@@ -96,6 +106,13 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   // the note under it `muted` on `background`: all checked above.
   ["byteHex", "byteTile"], // a result byte tile's hex
   ["text", "byteTile"], // a result byte tile's letter
+  // How to play: the heading, rules and card letters are `text`, and the
+  // section headings `muted`, on `background` or `panel`: checked above. The
+  // "blue" and "orange" chips are `onRight`/`right` and `onWrong`/`wrong`.
+  ["icon", "background"], // the `?` and back arrow buttons
+  ["cheatHex", "panel"], // a cheatsheet card's hex
+  ["cheatHex", "background"], // `4_` and `5_` above the cards
+  ["chipOnAbsent", "absent"], // the "grey" chip in rule 3
 ];
 
 /** WCAG AA for normal-size text. */

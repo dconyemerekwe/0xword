@@ -9,6 +9,7 @@ import {
   DECODE_PANEL,
   FAILED_OUTCOME,
   FINAL_PANEL,
+  GAME_MOVES,
   GameController,
   HEX_DIGITS,
   HEX_LOCKED_STATUS,
@@ -21,6 +22,7 @@ import {
   firstNonLetterByte,
   guessMessage,
   hintsView,
+  howToPlayActionForKey,
   isHexLocked,
   keypad,
   resultView,
@@ -1146,6 +1148,8 @@ describe("GameController: every action saves", () => {
     enter: { type: "enter" },
     decode: { type: "decode", word: "BEAT" },
     toggleHints: { type: "toggleHints" },
+    openHowToPlay: { type: "openHowToPlay" },
+    closeHowToPlay: { type: "closeHowToPlay" },
   };
 
   for (const action of Object.values(samples)) {
@@ -1437,5 +1441,149 @@ describe("messages", () => {
       assert.equal(statusLine(phase, MAX_ROWS), HEX_LOCKED_STATUS, phase);
     }
     assert.equal(statusLine("solved", MAX_ROWS), "4-letter word · solved");
+  });
+});
+
+describe("GameController: How to play (page 5)", () => {
+  const open: Action = { type: "openHowToPlay" };
+  const close: Action = { type: "closeHowToPlay" };
+
+  /** The view without `howToPlayOpen`: the game behind How to play. */
+  function game(view: ScreenView): Omit<ScreenView, "howToPlayOpen"> {
+    const { howToPlayOpen: _open, ...rest } = view;
+    return rest;
+  }
+
+  /** A fresh harness after `actions`. */
+  function after(...actions: Action[]): Harness {
+    const h = harness();
+    h.play(...actions);
+    return h;
+  }
+
+  /** Every screen How to play can be opened from. */
+  const screens: readonly (readonly [string, () => Harness])[] = [
+    ["before the first round", () => harness(undefined, false)],
+    ["row 1, nothing typed", () => harness()],
+    ["a half-typed row with a message", () => after(...guess("TEAM"), decode("BEAT"), ...type("4259"))],
+    ["a rejected row's error", () => after(...type("41414141"), { type: "enter" })],
+    ["a word attempt due, hints on", () => after({ type: "toggleHints" }, ...guess("TEAM"))],
+    ["the final answer", () => atRowSix()],
+    ["the result card of a solved round", () => after(...guess("BYTE"), decode("BYTE"))],
+    [
+      "the result card of a failed round",
+      () => {
+        const h = atRowSix();
+        h.play(decode("BITE"));
+        return h;
+      },
+    ],
+  ];
+
+  it("is closed at the start", () => {
+    assert.equal(harness().controller.view().howToPlayOpen, false);
+  });
+
+  for (const [name, setUp] of screens) {
+    it(`opens from ${name}, leaving the game behind it unchanged`, () => {
+      const h = setUp();
+      const before = h.controller.view();
+      const view = h.play(open);
+      assert.equal(view.howToPlayOpen, true);
+      assert.deepEqual(game(view), game(before));
+    });
+
+    it(`closes back to ${name} exactly as it was, message included`, () => {
+      const h = setUp();
+      const before = h.controller.view();
+      const state = JSON.stringify(h.controller.savedState());
+      const view = h.play(open, close);
+      assert.equal(view.howToPlayOpen, false);
+      assert.deepEqual(view, before);
+      assert.equal(JSON.stringify(h.controller.savedState()), state);
+    });
+
+    it(`ignores every game move while open, from ${name}`, () => {
+      const h = setUp();
+      const before = h.controller.view();
+      const state = JSON.stringify(h.controller.savedState());
+      const posts = h.posts.length;
+      h.play(open, ...type("4259"), { type: "delete" }, { type: "enter" }, decode("TEAM"), decode("BYTE"), {
+        type: "toggleHints",
+      });
+      assert.deepEqual(game(h.controller.view()), game(before));
+      assert.equal(JSON.stringify(h.controller.savedState()), state);
+      assert.equal(h.posts.length, posts, "no roundFinished");
+    });
+  }
+
+  it("ignores exactly the player's game moves: init and New Round still apply", () => {
+    assert.deepEqual([...GAME_MOVES].sort(), ["decode", "delete", "digit", "enter", "toggleHints"]);
+  });
+
+  it("stays open over a New Round from the command palette, which starts a round behind it", () => {
+    const h = after(...guess("TEAM"), open);
+    const view = h.play({ type: "newRound" });
+    assert.equal(view.howToPlayOpen, true);
+    assert.equal(view.status, "4-letter word · row 1 of 6");
+    assert.equal(h.play(close).howToPlayOpen, false);
+  });
+
+  it("starts the first round behind it when init arrives while it's open", () => {
+    const h = harness(undefined, false);
+    h.play(open);
+    const view = h.play({ type: "init" });
+    assert.equal(view.howToPlayOpen, true);
+    assert.equal(view.keypadEnabled, true);
+  });
+
+  it("opening twice or closing while closed changes nothing", () => {
+    const h = harness();
+    assert.equal(h.play(open, open).howToPlayOpen, true);
+    assert.equal(h.play(close).howToPlayOpen, false);
+    assert.equal(h.play(close).howToPlayOpen, false);
+  });
+
+  it("isn't saved, so a reload shows the game", () => {
+    const h = after(...guess("TEAM"), open);
+    const saved = h.saves.at(-1);
+    assert.doesNotMatch(JSON.stringify(saved), /howToPlay/i);
+    const view = harness(restoreSession(saved, WORDS), true).controller.view();
+    assert.equal(view.howToPlayOpen, false);
+    assert.equal(view.wordAttemptDue, true, "the round in progress is restored");
+  });
+
+  it("goes through changed() when opened and closed, saving the unchanged state", () => {
+    const h = after(...type("42"));
+    const before = h.saves.length;
+    h.play(open, close);
+    assert.equal(h.saves.length, before + 2);
+    assert.deepEqual(h.saves.at(-1), h.saves.at(before - 1));
+  });
+});
+
+describe("howToPlayActionForKey", () => {
+  const press = (key: string, modifiers: Partial<KeyPress> = {}): KeyPress => ({
+    key,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    ...modifiers,
+  });
+
+  it("closes How to play on Escape", () => {
+    assert.deepEqual(howToPlayActionForKey(press("Escape")), { type: "closeHowToPlay" });
+  });
+
+  it("leaves Escape with Ctrl, Cmd or Alt alone", () => {
+    for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const) {
+      assert.equal(howToPlayActionForKey(press("Escape", { [modifier]: true })), null, modifier);
+    }
+  });
+
+  it("sends no other key to the game: hex digits, letters, Backspace, Enter, Space, Tab", () => {
+    for (const key of [..."0123456789abcdefABCDEFxyzXYZ", "Backspace", "Enter", " ", "Tab", "Delete"]) {
+      assert.equal(howToPlayActionForKey(press(key)), null, key);
+    }
   });
 });
