@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { NewRoundRequests, messagesAfter } from "./newRoundRequests.ts";
+import { NewRoundRequests, messagesAfter, viewVisibilityChanged } from "./newRoundRequests.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { StatsStore } from "./stats.ts";
 import { ThemeStore } from "./theme.ts";
@@ -73,9 +73,11 @@ class GameViewProvider implements vscode.WebviewViewProvider {
       }
     });
     // A hidden view's webview is unloaded, and sends `ready` again when shown.
+    // Its HTML is rebuilt while hidden, so the next show opens in the current
+    // theme choice rather than the one in the HTML from the last load.
     const visibility = view.onDidChangeVisibility(() => {
-      if (!view.visible) {
-        this.#requests.reset(id);
+      if (viewVisibilityChanged(this.#requests, id, view.visible)) {
+        this.#setHtml(webview);
       }
     });
     view.onDidDispose(() => {
@@ -87,10 +89,16 @@ class GameViewProvider implements vscode.WebviewViewProvider {
         this.#view = undefined;
       }
     });
-    // A fresh nonce on every load. The stored theme goes in the HTML so a
-    // forced choice shows from the first paint. The HTML is kept while the
-    // view is hidden, so after a change it may be stale until `init`, which
-    // always carries the current choice.
+    this.#setHtml(webview);
+  }
+
+  /**
+   * Sets the webview's HTML, with a fresh nonce on every load. The stored
+   * theme goes in the HTML so a forced choice shows from the first paint;
+   * `init` carries it too. Called on resolve and whenever the view is hidden,
+   * never while it's shown (that would reload the panel).
+   */
+  #setHtml(webview: vscode.Webview): void {
     webview.html = buildHtml({
       cspSource: webview.cspSource,
       nonce: createNonce(),
