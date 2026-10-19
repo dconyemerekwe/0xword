@@ -32,6 +32,7 @@ import {
   cheatsheet,
   type StyledText,
 } from "../src/ui/howToPlay.ts";
+import { THEME_ATTRIBUTE, THEME_BUTTON_LABEL, nextTheme, parseTheme, type Theme } from "../src/theme.ts";
 // Inlined into the bundle as a string by esbuild's text loader.
 import wordList from "../src/game/words.txt";
 
@@ -67,6 +68,8 @@ interface Screen {
   readonly game: HTMLElement;
   /** The `?` button in the header. */
   readonly howToPlayButton: HTMLButtonElement;
+  /** The sun/moon button in the header, next to `?`. */
+  readonly themeButton: HTMLButtonElement;
   /** The How to play screen (page 5). */
   readonly howToPlay: HTMLElement;
   /** Its back arrow. */
@@ -126,8 +129,18 @@ let drawnMessage: string | null = null;
 let howToPlayOpenedByKeyboard = false;
 /** The last button click came from the keyboard: a click event's `detail` is 0. */
 let lastClickByKeyboard = false;
+/**
+ * The player's theme choice. The host puts a forced one on <body> in the
+ * HTML (read here, untrusted like any input), and sends it again in `init`.
+ * Not a game action: it isn't saved with the round, and doesn't go through
+ * `changed()`.
+ */
+let theme: Theme = parseTheme(document.body.getAttribute(THEME_ATTRIBUTE));
+/** The player pressed the theme button before `init` arrived: keep that choice. */
+let themeChosenHere = false;
 const app = document.getElementById("app");
 const ui = app ? buildScreen(app) : null;
+applyTheme(theme);
 render(controller.view());
 
 /**
@@ -151,6 +164,29 @@ function changed(finished: RoundFinishedMessage | null): void {
     vscode.postMessage(finished);
   }
   render(controller.view());
+}
+
+/**
+ * Shows `choice`: a forced one goes on <body> as `THEME_ATTRIBUTE`, and
+ * "system" removes it, so the stylesheet follows VS Code's <body> class. The
+ * theme button's name says what its next press does; its icon comes from
+ * the stylesheet, since under "system" it changes with VS Code's theme.
+ */
+function applyTheme(choice: Theme): void {
+  theme = choice;
+  if (choice === "system") {
+    document.body.removeAttribute(THEME_ATTRIBUTE);
+  } else {
+    document.body.setAttribute(THEME_ATTRIBUTE, choice);
+  }
+  ui?.themeButton.setAttribute("aria-label", THEME_BUTTON_LABEL[choice]);
+}
+
+/** The theme button: the next choice, shown at once and remembered by the host. */
+function pressThemeButton(): void {
+  themeChosenHere = true;
+  applyTheme(nextTheme(theme));
+  vscode.postMessage({ type: "setTheme", theme });
 }
 
 /** A new element with an optional class and plain text. */
@@ -233,6 +269,36 @@ function questionIcon(): SVGSVGElement {
     svgElement("circle", { cx: "8", cy: "8", r: "6.5" }),
     svgElement("path", { d: "M6.25 6.25a1.75 1.75 0 1 1 2.45 1.6c-.45.2-.7.6-.7 1.1v.3M8 11.25v.01" }),
   );
+  return icon;
+}
+
+/** The sun on the theme button while the dark palette shows (page 1). Decoration: the button is named. */
+function sunIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "icon theme-sun",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(
+    svgElement("circle", { cx: "8", cy: "8", r: "2.75" }),
+    svgElement("path", {
+      d: "M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06",
+    }),
+  );
+  return icon;
+}
+
+/** The moon on the theme button while the light palette shows (page 4). Decoration: the button is named. */
+function moonIcon(): SVGSVGElement {
+  const icon = svgElement("svg", {
+    class: "icon theme-moon",
+    viewBox: "0 0 16 16",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
+  icon.append(svgElement("path", { d: "M13.5 9.5A5.75 5.75 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" }));
   return icon;
 }
 
@@ -321,6 +387,15 @@ function buildHowToPlay(): { readonly section: HTMLElement; readonly back: HTMLB
  * without taking focus from a mouse click.
  */
 function actionButton(className: string, text: string, action: Action): HTMLButtonElement {
+  return pressButton(className, text, () => controller.dispatch(action));
+}
+
+/**
+ * A button that runs `onPress` without taking focus from a mouse click. Game
+ * actions use `actionButton`; only the theme button, which isn't one, calls
+ * this directly.
+ */
+function pressButton(className: string, text: string, onPress: () => void): HTMLButtonElement {
   const button = element("button", className, text);
   button.type = "button";
   // A clicked button takes no focus, and a button focused earlier with Tab
@@ -338,7 +413,7 @@ function actionButton(className: string, text: string, action: Action): HTMLButt
     // mousedown above prevents it), so a focused button means the keyboard
     // too, even when a screen reader fakes a mouse click.
     lastClickByKeyboard = event.detail === 0 || document.activeElement === button;
-    controller.dispatch(action);
+    onPress();
   });
   return button;
 }
@@ -352,7 +427,13 @@ function buildScreen(app: HTMLElement): Screen {
   const howToPlayButton = actionButton("icon-button", "", { type: "openHowToPlay" });
   howToPlayButton.setAttribute("aria-label", HOW_TO_PLAY);
   howToPlayButton.append(questionIcon());
-  header.append(title, howToPlayButton);
+  // Next to `?`. Not a game action, so it doesn't go through the controller.
+  // Its name is set by `applyTheme`.
+  const themeButton = pressButton("icon-button", "", pressThemeButton);
+  themeButton.append(sunIcon(), moonIcon());
+  const headerButtons = element("div", "header-buttons");
+  headerButtons.append(howToPlayButton, themeButton);
+  header.append(title, headerButtons);
 
   const status = element("p", "status");
   const statusIcon = lockIcon();
@@ -515,6 +596,7 @@ function buildScreen(app: HTMLElement): Screen {
   return {
     game,
     howToPlayButton,
+    themeButton,
     howToPlay: howToPlay.section,
     backButton: howToPlay.back,
     statusIcon,
@@ -730,6 +812,11 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   const message = parseHostMessage(event.data);
   switch (message?.type) {
     case "init":
+      // The stored theme, unless the player already pressed the theme button
+      // since this load (that choice is on its way to the host).
+      if (!themeChosenHere) {
+        applyTheme(message.theme);
+      }
       // The first round starts once the host has answered `ready`, unless
       // one was restored. The stats it carries are shown in a later story.
       controller.dispatch({ type: "init" });

@@ -11,6 +11,7 @@ import * as esbuild from "esbuild";
 import { wordToHex } from "../../src/game/hex.ts";
 import { Session, type SessionState } from "../../src/game/session.ts";
 import { EMPTY_STATS, toStatsView } from "../../src/stats.ts";
+import { THEMES, THEME_ATTRIBUTE, THEME_BUTTON_LABEL, type Theme } from "../../src/theme.ts";
 import { GameController, type Action } from "../../src/ui/game.ts";
 import { cheatsheet } from "../../src/ui/howToPlay.ts";
 import { WORDS } from "../game/fixtures.ts";
@@ -40,9 +41,11 @@ describe("media/main.ts", () => {
   });
 
   it("makes every clickable key, and the Hints button, a real <button>", () => {
-    // The only click handler is in `actionButton`, which makes keypad keys and Hints as <button>.
+    // The only click handler is in `pressButton`, which makes every button
+    // as a <button>: keypad keys, Hints and the rest through `actionButton`.
     assert.equal(source.match(/addEventListener\("click"/g)?.length, 1);
-    assert.match(source, /function actionButton[\s\S]*?element\("button"/);
+    assert.match(source, /function pressButton\(.*\): HTMLButtonElement \{\s*const button = element\("button"/);
+    assert.match(source, /function actionButton\([^)]*\): HTMLButtonElement \{\s*return pressButton\(className, text, \(\) => controller\.dispatch\(action\)\);/);
     assert.match(source, /const hintsButton = actionButton\("hints-button", "", \{ type: "toggleHints" \}\)/);
   });
 
@@ -131,7 +134,7 @@ describe("media/main.ts", () => {
 
   it("posts roundFinished only from changed(): the controller decides when", () => {
     const posts = [...source.matchAll(/vscode\.postMessage\(([^)]*)\)/g)].map((match) => match[1]);
-    assert.deepEqual(posts.sort(), ["finished", '{ type: "ready" }']);
+    assert.deepEqual(posts.sort(), ["finished", '{ type: "ready" }', '{ type: "setTheme", theme }']);
     assert.doesNotMatch(source, /"roundFinished"/);
     assert.doesNotMatch(source, /takeResult\(/);
   });
@@ -171,7 +174,20 @@ describe("media/main.ts", () => {
     assert.match(source, /const back = actionButton\("icon-button", "", \{ type: "closeHowToPlay" \}\)/);
     assert.match(source, /howToPlayButton\.setAttribute\("aria-label", HOW_TO_PLAY\)/);
     assert.match(source, /back\.setAttribute\("aria-label", BACK_TO_GAME\)/);
-    assert.match(source, /header\.append\(title, howToPlayButton\)/);
+    assert.match(source, /headerButtons\.append\(howToPlayButton, themeButton\)/);
+    assert.match(source, /header\.append\(title, headerButtons\)/);
+  });
+
+  it("makes the theme button a real <button> outside the controller, in the header next to `?`", () => {
+    assert.match(source, /const themeButton = pressButton\("icon-button", "", pressThemeButton\)/);
+    assert.match(source, /themeButton\.append\(sunIcon\(\), moonIcon\(\)\)/);
+    // Not a game action: no action type, no dispatch, no save.
+    assert.doesNotMatch(source, /type: "(setTheme|toggleTheme|theme)"\s*\}\s*\)/);
+    assert.doesNotMatch(source, /function pressThemeButton[^}]*(dispatch|changed|setState)/);
+  });
+
+  it("follows VS Code's theme from the stylesheet: no polling, no reading VS Code's <body> classes", () => {
+    assert.doesNotMatch(source, /setInterval|setTimeout|MutationObserver|classList\.contains|vscode-(light|dark|high)/);
   });
 
   it("puts the game and How to play side by side in the app, one hidden at a time", () => {
@@ -222,6 +238,10 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
     classList: { toggle() {}, add() {}, remove() {} },
     setAttribute: (name: string, value: string) => {
       attributes[name] = value;
+    },
+    getAttribute: (name: string) => attributes[name] ?? null,
+    removeAttribute: (name: string) => {
+      delete attributes[name];
     },
     focus: () => {
       target["focusCalls"] = Number(target["focusCalls"]) + 1;
@@ -279,6 +299,10 @@ interface WebviewRun {
   readonly namespaces: readonly { readonly tag: string; readonly ns: unknown }[];
   /** What the webview posted to the host. */
   readonly posts: readonly unknown[];
+  /** How many times the webview saved its state with `setState`. */
+  readonly saves: () => number;
+  /** The fake `<body>`, whose attributes hold the theme choice. */
+  readonly body: Record<string, unknown>;
   /** The focused element, or null for the page (`<body>`). */
   readonly focus: FocusTracker;
   /** Callbacks waiting for the next animation frame. */
@@ -289,18 +313,27 @@ interface WebviewRun {
   press(key: string): void;
 }
 
-/** Runs the bundled webview against a fake DOM, restoring `saved` as its state. */
-function runWebview(saved: unknown): WebviewRun {
+/**
+ * Runs the bundled webview against a fake DOM, restoring `saved` as its
+ * state, with `bodyAttributes` on <body> as the host's HTML put them.
+ */
+function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, string>> = {}): WebviewRun {
   const elements: Record<string, unknown>[] = [];
   const namespaces: { tag: string; ns: unknown }[] = [];
   const posts: unknown[] = [];
+  let saves = 0;
   const focus: FocusTracker = { active: null };
+  const body = fakeNode({ tag: "body" }, focus);
+  for (const [name, value] of Object.entries(bodyAttributes)) {
+    (body["setAttribute"] as (name: string, value: string) => void)(name, value);
+  }
   const frames: (() => void)[] = [];
   const listeners = new Map<string, (event: unknown) => void>();
   const listen = (type: string, listener: (event: unknown) => void): void => {
     listeners.set(type, listener);
   };
   const document = {
+    body,
     getElementById: (id: string) => (id === "app" ? fakeNode({}, focus) : null),
     createElement: (tag: string) => {
       const node = fakeNode({ tag }, focus);
@@ -337,7 +370,9 @@ function runWebview(saved: unknown): WebviewRun {
       // state must be a plain object of the webview's own realm to be restored.
       postMessage: (message: unknown) => posts.push(JSON.parse(JSON.stringify(message))),
       getState: () => (saved === undefined ? undefined : webviewJson.parse(JSON.stringify(saved))),
-      setState() {},
+      setState() {
+        saves++;
+      },
     }),
   });
   const webviewJson = runInContext("JSON", context) as typeof JSON;
@@ -351,6 +386,8 @@ function runWebview(saved: unknown): WebviewRun {
     elements,
     namespaces,
     posts,
+    saves: () => saves,
+    body,
     focus,
     frames,
     send: (json) => fire("message", { data: webviewJson.parse(json) }),
@@ -461,15 +498,20 @@ describe("media/main.ts: the SVG icons, run as the bundled webview script", () =
   // set, so the padlock was made with createElementNS(undefined, …) and never drawn.
   // The Hints light bulb (#23) and the result card's down arrows (#24) are
   // built the same way, so they're checked too, as are How to play's `?` and
-  // back arrow (#25).
-  it("creates the icons' SVG elements in the SVG namespace: `?`, padlock, light bulb, down arrows, back arrow", () => {
+  // back arrow (#25), and the theme button's sun and moon (#26).
+  it("creates the icons' SVG elements in the SVG namespace: `?`, sun, moon, padlock, light bulb, down arrows, back arrow", () => {
     const { namespaces } = runWebview(undefined);
     assert.deepEqual(
       namespaces.map((n) => n.tag),
-      // The `?`, the padlock, the light bulb, one down arrow per byte, then the back arrow.
+      // The `?`, the sun, the moon, the padlock, the light bulb, one down arrow per byte, then the back arrow.
       [
         "svg",
         "circle",
+        "path",
+        "svg",
+        "circle",
+        "path",
+        "svg",
         "path",
         "svg",
         "rect",
@@ -581,7 +623,7 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
     // Ignored keys and a repeated init: each still ends with a render.
     run.press("4");
     run.press("Backspace");
-    run.send(JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS) }));
+    run.send(JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" }));
     assert.equal(byClass(run, "result-button")["focusCalls"], 1);
   });
 
@@ -868,5 +910,130 @@ describe("media/main.ts: announcing messages, run as the bundled webview script"
       assert.equal(run.frames.length, frames, "no delayed rewrite");
       assert.equal(message["textContent"], "AAAA isn't in the word list");
     }
+  });
+});
+
+describe("media/main.ts: the theme button (#26), run as the bundled webview script", () => {
+  /** The theme button: the one button named by `THEME_BUTTON_LABEL`. */
+  function themeButton(run: WebviewRun): Record<string, unknown> {
+    const names: readonly string[] = Object.values(THEME_BUTTON_LABEL);
+    const found = run.elements.filter((node) => names.includes(String(attributes(node)["aria-label"])));
+    assert.equal(found.length, 1, "one theme button");
+    return found[0] ?? {};
+  }
+
+  function attributes(node: Record<string, unknown>): Record<string, string> {
+    return node["attributes"] as Record<string, string>;
+  }
+
+  /** The forced choice on <body>, or undefined for "system". */
+  const forced = (run: WebviewRun): string | undefined => attributes(run.body)[THEME_ATTRIBUTE];
+
+  const init = (theme: unknown): string => JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme });
+
+  /** Every element but the theme button, for checking a press changed nothing else. */
+  function everythingElse(run: WebviewRun): string {
+    const button = themeButton(run);
+    const fields = ["textContent", "placeholder", "value", "attributes", "hidden", "disabled", "className"];
+    return JSON.stringify(run.elements.filter((node) => node !== button).map((node) => fields.map((field) => node[field])));
+  }
+
+  it("is a real <button> with the 44px icon-button class, named for what the next press does", () => {
+    const run = runWebview(undefined);
+    const button = themeButton(run);
+    assert.equal(button["tag"], "button");
+    assert.equal(button["type"], "button");
+    assert.equal(button["className"], "icon-button");
+    assert.equal(attributes(button)["aria-label"], "Switch to light theme");
+    assert.equal(forced(run), undefined, "no saved choice: the panel follows VS Code");
+  });
+
+  for (const [name, press] of [
+    ["the mouse", click],
+    ["the keyboard", keyboardClick],
+  ] as const) {
+    it(`cycles system → light → dark → system with ${name}, sending setTheme each time`, () => {
+      const run = runWebview(undefined);
+      run.send(init("system"));
+      const steps: readonly (readonly [Theme, string | undefined, string])[] = [
+        ["light", "light", "Switch to dark theme"],
+        ["dark", "dark", "Follow VS Code's theme"],
+        ["system", undefined, "Switch to light theme"],
+      ];
+      for (const [theme, attribute, label] of steps) {
+        press(themeButton(run));
+        assert.equal(forced(run), attribute, theme);
+        assert.equal(attributes(themeButton(run))["aria-label"], label, theme);
+        assert.deepEqual(run.posts.at(-1), { type: "setTheme", theme });
+      }
+      assert.equal(run.posts.filter((post) => (post as { type: string }).type === "setTheme").length, 3);
+    });
+  }
+
+  it("isn't a game action: it saves nothing and changes nothing else on the screen", () => {
+    const halfTyped = [...guess("TEAM"), decode("BEAT"), ...[..."4259"].map((digit) => ({ type: "digit", digit }) as const)];
+    const run = runWebview(savedAfter(...halfTyped));
+    run.send(init("system"));
+    const saves = run.saves();
+    const before = everythingElse(run);
+    for (let i = 0; i < THEMES.length; i++) {
+      click(themeButton(run));
+      assert.equal(run.saves(), saves, "no setState");
+      assert.equal(everythingElse(run), before);
+    }
+  });
+
+  it("leaves the decode box's focus alone when pressed with the mouse", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const input = byClass(run, "decode-input");
+    assert.equal(run.focus.active, input);
+    click(themeButton(run));
+    assert.equal(run.focus.active, input);
+  });
+
+  for (const theme of THEMES) {
+    it(`shows the ${theme} choice that init carries`, () => {
+      const run = runWebview(undefined);
+      run.send(init(theme));
+      assert.equal(forced(run), theme === "system" ? undefined : theme);
+      assert.equal(attributes(themeButton(run))["aria-label"], THEME_BUTTON_LABEL[theme]);
+    });
+  }
+
+  it("opens in the forced choice the host put on <body>, before init arrives", () => {
+    const run = runWebview(undefined, { [THEME_ATTRIBUTE]: "dark" });
+    assert.equal(forced(run), "dark");
+    assert.equal(attributes(themeButton(run))["aria-label"], "Follow VS Code's theme");
+    click(themeButton(run));
+    assert.equal(forced(run), undefined);
+    assert.deepEqual(run.posts.at(-1), { type: "setTheme", theme: "system" });
+  });
+
+  it("treats an unknown choice on <body> as system, and removes it", () => {
+    const run = runWebview(undefined, { [THEME_ATTRIBUTE]: "sepia" });
+    assert.equal(forced(run), undefined);
+    assert.equal(attributes(themeButton(run))["aria-label"], "Switch to light theme");
+  });
+
+  for (const [name, theme] of [
+    ["an unknown theme", "sepia"],
+    ["a theme in the wrong case", "Dark"],
+    ["a theme as a number", 1],
+    ["no theme", undefined],
+  ] as const) {
+    it(`ignores an init with ${name}`, () => {
+      const run = runWebview(undefined, { [THEME_ATTRIBUTE]: "light" });
+      run.send(init(theme));
+      assert.equal(forced(run), "light");
+      assert.equal(attributes(themeButton(run))["aria-label"], "Switch to dark theme");
+    });
+  }
+
+  it("keeps a choice made before init arrives, rather than the stored one init carries", () => {
+    const run = runWebview(undefined);
+    click(themeButton(run));
+    run.send(init("dark"));
+    assert.equal(forced(run), "light");
+    assert.deepEqual(run.posts, [{ type: "ready" }, { type: "setTheme", theme: "light" }]);
   });
 });
