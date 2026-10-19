@@ -1,9 +1,10 @@
-// The dark-theme colours of the game screen, and the contrast check they must
-// pass. Pure: no DOM or `vscode`, so it can be unit-tested. media/styles.css
-// declares each token as a CSS custom property with the same value (a test
-// checks they match), and uses only those properties for colour.
+// The dark and light colours of the game screen, and the contrast checks they
+// must pass. Pure: no DOM or `vscode`, so it can be unit-tested.
+// media/styles.css declares each token as a CSS custom property with the same
+// value, the dark ones in :root and the light ones in the light-theme rule (a
+// test checks they match), and uses only those properties for colour.
 
-/** The dark palette (CLAUDE.md Design). The light palette arrives with the theme story. */
+/** The dark palette (CLAUDE.md Design; pages 1–3 and 5). */
 export const DARK_PALETTE = {
   background: "#14161B",
   panel: "#1D2027",
@@ -16,9 +17,13 @@ export const DARK_PALETTE = {
   onRight: "#FFFFFF",
   wrong: "#F0A04B",
   onWrong: "#1A1206",
-  /** Not-in-word tiles, and the faint outline of empty tiles. */
+  /** Orange text: error messages and "Last try". The dark theme's is `wrong` itself. */
+  wrongText: "#F0A04B",
+  /** Not-in-word tiles. */
   absent: "#343944",
   onAbsent: "#B4B9C5",
+  /** The faint outline of empty tiles: `absent` in the dark theme. */
+  emptyBorder: "#343944",
   /** A keypad key whose digit hasn't been marked yet. */
   key: "#2A2E37",
   /** A keypad key whose digit is not in the word: darker than `key`. */
@@ -64,10 +69,12 @@ export const DARK_PALETTE = {
   /** The byte tiles' hex: the light theme's blue text, as `hintsOnText` (also How to play's dark hex). */
   byteHex: "#7EA8FF",
   // Page 5, How to play (docs/design/README.md colour table). The cheatsheet
-  // cards are `panel` with a `key` outline (estimated from page 5: the table
-  // has no border value), their letters `text`. The rule 3 chips are the tile
-  // colours: `right`/`onRight`, `wrong`/`onWrong`, `absent`/`chipOnAbsent`.
-  /** The `?` and back arrow icon buttons. */
+  // cards are `panel` with a `cardBorder` outline, their letters `text`. The
+  // rule 3 chips are the tile colours: `right`/`onRight`, `wrong`/`onWrong`,
+  // `absent`/`chipOnAbsent`.
+  /** The cheatsheet cards' outline: `key` (estimated from page 5: the table has no border value). */
+  cardBorder: "#2A2E37",
+  /** The `?`, theme and back arrow icon buttons. */
   icon: "#CCCFD8",
   /** The cheatsheet cards' hex, and `4_` / `5_` in the line above them. */
   cheatHex: "#7EA8FF",
@@ -78,8 +85,83 @@ export const DARK_PALETTE = {
 export type PaletteToken = keyof typeof DARK_PALETTE;
 
 /**
+ * The light palette (page 4). The page 4 values come from the light colour
+ * table in docs/design/README.md. Every other screen is drawn only in dark,
+ * so its light values are derived from those page 4 values: another page 4
+ * value, or a mix of two of them (`share` of the first over the second, per
+ * sRGB channel), never a new hue. docs/design/README.md lists each one.
+ */
+export const LIGHT_PALETTE: Readonly<Record<PaletteToken, string>> = {
+  // Page 4 (the light colour table).
+  background: "#F6F6F9",
+  /** The result card's white; also the decode panel and cheatsheet cards. */
+  panel: "#FFFFFF",
+  text: "#15181B",
+  muted: "#5D636C",
+  /** Derived: `right`, as the page 4 blue (4.8:1 on the page). */
+  accent: "#2463EA",
+  right: "#2463EA",
+  onRight: "#FFFFFF",
+  wrong: "#F3A524",
+  onWrong: "#1A1206",
+  /** Derived: 50% `onWrong` over `wrong`. The orange itself is 1.9:1 on the page, too light for text. */
+  wrongText: "#875C15",
+  absent: "#6C7281",
+  onAbsent: "#FFFFFF",
+  emptyBorder: "#CFD2D8",
+  // Derived: keys (page 1 has them only in dark).
+  /** 50% of the light outline `#CFD2D8` over `background`. */
+  key: "#E3E4E9",
+  /** `background`: like the dark theme's, an absent key sinks into the page. */
+  keyAbsent: "#F6F6F9",
+  // Derived: page 3, the hex locked.
+  /** 10% `wrong` over `panel`: a pale orange card. */
+  finalCard: "#FEF6E9",
+  /** `muted`. */
+  finalNote: "#5D636C",
+  /** 40% `absent` over `right`: a greyed blue that keeps white text readable. */
+  lockedRight: "#4169C0",
+  /** 40% `absent` over `wrong`. */
+  lockedWrong: "#BD9149",
+  /** 25% of `#CFD2D8` over `background`: fainter than `key`. */
+  lockedKey: "#ECEDF1",
+  /** 15% `right` over `background`. */
+  lockedKeyRight: "#D7E0F7",
+  /** `muted`. */
+  lockedKeyText: "#5D636C",
+  // Derived: page 2, the Hints button and strip.
+  /** The light outline `#CFD2D8`, as on page 4's Copy result. */
+  hintsBorder: "#CFD2D8",
+  /** `text`, as on page 4's Copy result. */
+  hintsText: "#15181B",
+  /** The byte tiles' pale blue, as in the dark theme (`hintsOn` = `byteTile`). */
+  hintsOn: "#EDF3FC",
+  /** The byte tiles' blue hex, as in the dark theme (`hintsOnText` = `byteHex`). */
+  hintsOnText: "#2463EA",
+  /** 50% `muted` over `#CFD2D8`: a little stronger than the empty-tile outline, as in dark. */
+  stripBorder: "#969BA2",
+  /** `muted`. */
+  stripUnknown: "#5D636C",
+  // Page 4, the result card.
+  byteTile: "#EDF3FC",
+  byteHex: "#2463EA",
+  // Derived: page 5, How to play.
+  /** The light outline `#CFD2D8`. */
+  cardBorder: "#CFD2D8",
+  /** `text`: page 4's `?` and moon are drawn dark. */
+  icon: "#15181B",
+  /** The byte tiles' blue hex. */
+  cheatHex: "#2463EA",
+  /** `onAbsent`: page 4's not-in-word text. */
+  chipOnAbsent: "#FFFFFF",
+};
+
+/** Both palettes, by the name media/styles.css and src/theme.ts use. */
+export const PALETTES = { dark: DARK_PALETTE, light: LIGHT_PALETTE } as const;
+
+/**
  * Every text colour the screen draws, with the background it sits on. Each
- * must have a contrast ratio of at least `MIN_TEXT_CONTRAST`.
+ * must have a contrast ratio of at least `MIN_TEXT_CONTRAST` in both palettes.
  */
 export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: PaletteToken])[] = [
   ["text", "background"], // headings, typed tiles, messages
@@ -92,13 +174,13 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["onRight", "right"], // right-spot tiles and keys, the Decode button
   ["onWrong", "wrong"], // wrong-spot tiles and keys
   ["onAbsent", "absent"], // not-in-word tiles
-  ["wrong", "background"], // error messages
+  ["wrongText", "background"], // error messages
   ["text", "finalCard"], // the "Final answer" heading
-  ["wrong", "finalCard"], // "Last try"
+  ["wrongText", "finalCard"], // "Last try"
   ["finalNote", "finalCard"], // "Type with your keyboard", Tried words
   ["onRight", "lockedRight"], // dimmed right-spot tiles
   ["onWrong", "lockedWrong"], // dimmed wrong-spot tiles
-  // Locked keys are `disabled`, so WCAG sets them no contrast minimum.
+  // Locked keys: see DIMMED_KEY_PAIRS.
   ["hintsText", "background"], // the Hints button, off
   ["hintsOnText", "hintsOn"], // the Hints button, on
   ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
@@ -117,6 +199,33 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
 
 /** WCAG AA for normal-size text. */
 export const MIN_TEXT_CONTRAST = 4.5;
+
+/**
+ * The dimmed keys while the hex is locked (page 3), with their background.
+ * They are `disabled`, so WCAG sets them no contrast minimum, but #26 asks
+ * for `MIN_TEXT_CONTRAST` here too. Those that miss it are listed in
+ * `BELOW_MIN_CONTRAST`.
+ */
+export const DIMMED_KEY_PAIRS: readonly (readonly [text: PaletteToken, background: PaletteToken])[] = [
+  ["lockedKeyText", "lockedKey"], // unmarked keys, DEL and ENTER
+  ["lockedKeyText", "lockedKeyRight"], // right-spot keys
+  ["onWrong", "lockedWrong"], // wrong-spot keys
+  ["lockedKeyText", "keyAbsent"], // not-in-word keys (struck through)
+];
+
+/**
+ * Pairs knowingly under `MIN_TEXT_CONTRAST`, as `palette:text/background`.
+ * Each is a design value the owner decides on: they're reported, never
+ * changed to pass (CLAUDE.md Design: raise accessibility conflicts with the
+ * owner). A test checks each one really is under the minimum, so the list
+ * can't go stale.
+ */
+export const BELOW_MIN_CONTRAST: readonly string[] = [
+  // Owner decision: page 3's dimmed dark keys, as built in #22 (3.42, 2.45 and 3.80:1).
+  "dark:lockedKeyText/lockedKey",
+  "dark:lockedKeyText/lockedKeyRight",
+  "dark:lockedKeyText/keyAbsent",
+];
 
 /**
  * Text colours drawn only as WCAG large text (at least 24px, or at least
