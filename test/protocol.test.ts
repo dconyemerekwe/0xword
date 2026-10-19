@@ -9,6 +9,7 @@ import {
   type RoundFinishedMessage,
 } from "../src/protocol.ts";
 import { EMPTY_STATS, type Stats } from "../src/stats.ts";
+import { THEMES, type Theme } from "../src/theme.ts";
 import { WORDS, WORD_SET } from "./game/fixtures.ts";
 
 /** A valid `roundFinished`; each case below changes one thing about it. */
@@ -23,9 +24,25 @@ function without(key: string): Record<string, unknown> {
 }
 
 /** Handlers that record every call, to prove an ignored message changed nothing. */
-function recordingHandlers(stats: Stats = EMPTY_STATS): HostHandlers & { calls: RoundFinishedMessage[] } {
+function recordingHandlers(
+  stats: Stats = EMPTY_STATS,
+  theme: Theme = "system",
+): HostHandlers & { calls: RoundFinishedMessage[]; themes: Theme[] } {
   const calls: RoundFinishedMessage[] = [];
-  return { calls, roundFinished: (message) => calls.push(message), stats: () => stats };
+  const themes: Theme[] = [];
+  return {
+    calls,
+    themes,
+    roundFinished: (message) => calls.push(message),
+    stats: () => stats,
+    setTheme: (choice) => themes.push(choice),
+    theme: () => theme,
+  };
+}
+
+/** A `setTheme` with `theme`, plus any extra fields. */
+function setTheme(theme: unknown, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "setTheme", theme, ...extra };
 }
 
 /** Some played rounds, and their counts with the derived values. */
@@ -36,17 +53,18 @@ const SOME_STATS_VIEW = { ...SOME_STATS, averageRows: 3, hintsUsedRate: 0.25 };
 const EMPTY_INIT = {
   type: "init",
   stats: { played: 0, solved: 0, solvedRowsTotal: 0, hintsUsedCount: 0, averageRows: null, hintsUsedRate: null },
+  theme: "system",
 };
 
-/** A valid `init` with `SOME_STATS`, with the stats fields overridden. */
+/** A valid `init` with `SOME_STATS` and the system theme, with the stats fields overridden. */
 function init(statsOverrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "init", stats: { ...SOME_STATS_VIEW, ...statsOverrides } };
+  return { type: "init", stats: { ...SOME_STATS_VIEW, ...statsOverrides }, theme: "system" };
 }
 
 function initWithout(key: string): Record<string, unknown> {
   const stats: Record<string, unknown> = { ...SOME_STATS_VIEW };
   delete stats[key];
-  return { type: "init", stats };
+  return { type: "init", stats, theme: "system" };
 }
 
 class Lookalike {
@@ -57,7 +75,7 @@ class Lookalike {
 const INVALID: readonly (readonly [string, unknown])[] = [
   // Unknown types
   ["an unknown type", { type: "deleteFiles" }],
-  ["setTheme (Phase 3)", { type: "setTheme", theme: "dark" }],
+  ["setTheme in the wrong case", { type: "SetTheme", theme: "dark" }],
   ["newRound, which only the host sends", { type: "newRound" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
@@ -124,12 +142,43 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: MAX_ROWS - 1 })],
   ["a failed round on the first row", roundFinished({ solved: false, rowsUsed: 1 })],
   ["a failed round with rows left and hints", roundFinished({ solved: false, rowsUsed: 3, hintsUsed: true })],
+  // setTheme: any other value
+  ['setTheme with "sepia"', setTheme("sepia")],
+  ['setTheme with "Dark" in the wrong case', setTheme("Dark")],
+  ['setTheme with " dark " padded', setTheme(" dark ")],
+  ["setTheme with an empty theme", setTheme("")],
+  ['setTheme with "auto"', setTheme("auto")],
+  // setTheme: an extra field
+  ["setTheme with an extra field", setTheme("dark", { extra: 1 })],
+  ["setTheme with an undefined extra field", setTheme("light", { scope: undefined })],
+  ["setTheme with a path", setTheme("dark", { path: "../../settings.json" })],
+  ["setTheme with a JSON-parsed __proto__ key", JSON.parse('{"type":"setTheme","theme":"dark","__proto__":{"polluted":true}}')],
+  // setTheme: a wrong type, or no theme
+  ["setTheme with theme as a number", setTheme(1)],
+  ["setTheme with theme as a boolean", setTheme(true)],
+  ["setTheme with theme as null", setTheme(null)],
+  ["setTheme with theme as an array", setTheme(["dark"])],
+  ["setTheme with theme as an object", setTheme({ name: "dark" })],
+  ["setTheme with theme as a String object", setTheme(new String("dark"))],
+  ["setTheme without a theme", { type: "setTheme" }],
+  ["setTheme with a getter for its theme", Object.defineProperty({ type: "setTheme" }, "theme", { enumerable: true, get: () => "dark" })],
 ];
 
 describe("parseWebviewMessage", () => {
-  describe("accepts only ready and roundFinished", () => {
+  describe("accepts only ready, roundFinished and setTheme", () => {
     it("accepts ready", () => {
       assert.deepEqual(parseWebviewMessage({ type: "ready" }), { type: "ready" });
+    });
+
+    for (const theme of THEMES) {
+      it(`accepts setTheme with ${theme}`, () => {
+        assert.deepEqual(parseWebviewMessage(setTheme(theme)), { type: "setTheme", theme });
+      });
+    }
+
+    it("returns a new setTheme object, not the one it was given", () => {
+      const raw = setTheme("dark");
+      assert.notEqual(parseWebviewMessage(raw), raw);
     });
 
     it("accepts a valid roundFinished", () => {
@@ -232,6 +281,23 @@ describe("handleWebviewMessage", () => {
     assert.deepEqual(handlers.calls, [roundFinished()]);
   });
 
+  it("replies init carrying the stored theme", () => {
+    for (const theme of THEMES) {
+      const reply = handleWebviewMessage({ type: "ready" }, recordingHandlers(EMPTY_STATS, theme));
+      assert.deepEqual(reply, { ...EMPTY_INIT, theme });
+      assert.deepEqual(parseHostMessage(reply), reply);
+    }
+  });
+
+  for (const theme of THEMES) {
+    it(`passes a valid setTheme with ${theme} to its handler, without a reply`, () => {
+      const handlers = recordingHandlers();
+      assert.equal(handleWebviewMessage(setTheme(theme), handlers), null);
+      assert.deepEqual(handlers.themes, [theme]);
+      assert.deepEqual(handlers.calls, []);
+    });
+  }
+
   it("passes the handler a validated copy, not the raw message", () => {
     const handlers = recordingHandlers();
     const raw = roundFinished();
@@ -245,6 +311,7 @@ describe("handleWebviewMessage", () => {
         const handlers = recordingHandlers();
         assert.equal(handleWebviewMessage(raw, handlers), null);
         assert.deepEqual(handlers.calls, []);
+        assert.deepEqual(handlers.themes, []);
       });
     }
   });
@@ -263,6 +330,7 @@ describe("handleWebviewMessage", () => {
         const handlers = recordingHandlers();
         assert.equal(handleWebviewMessage(raw, handlers), null);
         assert.deepEqual(handlers.calls, []);
+        assert.deepEqual(handlers.themes, []);
       });
     }
 
@@ -292,6 +360,13 @@ describe("parseHostMessage", () => {
     assert.deepEqual(parseHostMessage(EMPTY_INIT), EMPTY_INIT);
   });
 
+  for (const theme of THEMES) {
+    it(`accepts init with the ${theme} theme`, () => {
+      const raw = { ...init(), theme };
+      assert.deepEqual(parseHostMessage(raw), raw);
+    });
+  }
+
   it("returns a new stats object, not the one it was given", () => {
     const raw = init();
     const message = parseHostMessage(raw);
@@ -317,10 +392,16 @@ describe("parseHostMessage", () => {
     ["newRound with a JSON-parsed __proto__ key", JSON.parse('{"type":"newRound","__proto__":{"polluted":true}}')],
     ["newRound inherited from a prototype", Object.create({ type: "newRound" })],
     ["a string newRound", "newRound"],
-    ["init without stats", { type: "init" }],
+    ["init without stats", { type: "init", theme: "system" }],
+    ["init without a theme", { type: "init", stats: SOME_STATS_VIEW }],
+    ['init with the theme "sepia"', { ...init(), theme: "sepia" }],
+    ["init with the theme in the wrong case", { ...init(), theme: "Light" }],
+    ["init with the theme as a number", { ...init(), theme: 1 }],
+    ["init with the theme as null", { ...init(), theme: null }],
+    ["setTheme, which only the webview sends", { type: "setTheme", theme: "dark" }],
     ["init with an extra field", { ...init(), html: "<img src=x onerror=alert(1)>" }],
-    ["init with stats as a string", { type: "init", stats: "Played 3" }],
-    ["init with stats as null", { type: "init", stats: null }],
+    ["init with stats as a string", { type: "init", stats: "Played 3", theme: "system" }],
+    ["init with stats as null", { type: "init", stats: null, theme: "system" }],
     ["stats with an extra field", init({ streak: 2 })],
     ["stats with HTML in an extra field", init({ html: "<img src=x onerror=alert(1)>" })],
     ["stats without played", initWithout("played")],

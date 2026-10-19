@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { THEMES, THEME_ATTRIBUTE, type Theme } from "../../src/theme.ts";
 import {
   MEDIA_FOLDER,
   NONCE_BYTES,
@@ -15,8 +16,8 @@ const CSP_SOURCE = "https://*.vscode-cdn.net";
 const SCRIPT_URI = "https://file%2B.vscode-resource.vscode-cdn.net/ext/media/dist/main.js";
 const STYLE_URI = "https://file%2B.vscode-resource.vscode-cdn.net/ext/media/styles.css";
 
-function build(nonce = createNonce()): string {
-  return buildHtml({ cspSource: CSP_SOURCE, nonce, scriptUri: SCRIPT_URI, styleUri: STYLE_URI });
+function build(nonce = createNonce(), theme: Theme = "system"): string {
+  return buildHtml({ cspSource: CSP_SOURCE, nonce, scriptUri: SCRIPT_URI, styleUri: STYLE_URI, theme });
 }
 
 function linkTags(html: string): string[] {
@@ -139,6 +140,7 @@ describe("buildHtml", () => {
       nonce: createNonce(),
       scriptUri: SCRIPT_URI,
       styleUri: '"><style>*{}</style>',
+      theme: "system",
     });
     assert.doesNotMatch(html, /<style\b/i);
     assert.equal(linkTags(html).length, 1);
@@ -146,6 +148,29 @@ describe("buildHtml", () => {
 
   it("leaves the body empty for the script to fill in", () => {
     assert.match(build(), /<main id="app"><\/main>/);
+  });
+
+  it("opens a plain <body> for the system theme, so the stylesheet follows VS Code", () => {
+    assert.match(build(), /\n<body>\n/);
+    assert.doesNotMatch(build(), new RegExp(THEME_ATTRIBUTE));
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    it(`puts a forced ${theme} theme on <body>, so it shows before init arrives`, () => {
+      assert.match(build(createNonce(), theme), new RegExp(`\\n<body ${THEME_ATTRIBUTE}="${theme}">\\n`));
+    });
+  }
+
+  it("builds the HTML for every theme", () => {
+    for (const theme of THEMES) {
+      assert.match(build(createNonce(), theme), /<main id="app"><\/main>/);
+    }
+  });
+
+  it("rejects a theme that isn't one of THEMES, so nothing can break out of the attribute", () => {
+    for (const bad of ["", "sepia", 'dark"><script>alert(1)</script>', "Dark"]) {
+      assert.throws(() => build(createNonce(), bad as Theme), RangeError, bad);
+    }
   });
 
   it("rejects a nonce that createNonce didn't make", () => {
@@ -160,6 +185,7 @@ describe("buildHtml", () => {
       nonce: createNonce(),
       scriptUri: 'x"><script>alert(1)</script>',
       styleUri: STYLE_URI,
+      theme: "system",
     });
     assert.equal(scriptTags(html).length, 1);
     assert.match(html, /src="x&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;"/);

@@ -61,11 +61,13 @@ class FakeStorage implements StatsStorage {
   }
 }
 
-/** The host's handlers wired to a store, the same way `extension.ts` wires them. */
+/** The host's handlers wired to a store, the same way `extension.ts` wires them, with no theme chosen. */
 function handlersFor(store: StatsStore): HostHandlers {
   return {
     roundFinished: (message) => void store.record(message),
     stats: () => store.current(),
+    setTheme: () => {},
+    theme: () => "system",
   };
 }
 
@@ -446,7 +448,7 @@ describe("the host's message handling with a stats store", () => {
 
   it("replies init with zero stats for a new player", () => {
     const reply = handleWebviewMessage({ type: "ready" }, handlersFor(new StatsStore(new FakeStorage())));
-    assert.deepEqual(reply, { type: "init", stats: { ...ZEROS, averageRows: null, hintsUsedRate: null } });
+    assert.deepEqual(reply, { type: "init", stats: { ...ZEROS, averageRows: null, hintsUsedRate: null }, theme: "system" });
   });
 
   it("replies init with the stats after rounds have been recorded", async () => {
@@ -459,6 +461,7 @@ describe("the host's message handling with a stats store", () => {
     assert.deepEqual(handleWebviewMessage({ type: "ready" }, handlers), {
       type: "init",
       stats: { played: 3, solved: 2, solvedRowsTotal: 7, hintsUsedCount: 1, averageRows: 3.5, hintsUsedRate: 1 / 3 },
+      theme: "system",
     });
   });
 
@@ -466,6 +469,6 @@ describe("the host's message handling with a stats store", () => {
     const storage = new FakeStorage();
     storage.values.set(STATS_KEY, { played: -3 });
     const reply = handleWebviewMessage({ type: "ready" }, handlersFor(new StatsStore(storage)));
-    assert.deepEqual(reply, { type: "init", stats: { ...ZEROS, averageRows: null, hintsUsedRate: null } });
+    assert.deepEqual(reply, { type: "init", stats: { ...ZEROS, averageRows: null, hintsUsedRate: null }, theme: "system" });
   });
 });

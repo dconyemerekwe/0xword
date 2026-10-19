@@ -8,6 +8,7 @@
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
+import { isTheme, type Theme } from "./theme.ts";
 
 // Webview -> host
 
@@ -24,14 +25,21 @@ export interface RoundFinishedMessage extends Omit<RoundResult, "answer"> {
   readonly type: "roundFinished";
 }
 
-export type WebviewMessage = ReadyMessage | RoundFinishedMessage;
+/** The player pressed the theme button: remember this choice in every workspace. */
+export interface SetThemeMessage {
+  readonly type: "setTheme";
+  readonly theme: Theme;
+}
+
+export type WebviewMessage = ReadyMessage | RoundFinishedMessage | SetThemeMessage;
 
 // Host -> webview
 
-/** The host's reply to `ready`, carrying the player's current stats. */
+/** The host's reply to `ready`, carrying the player's current stats and theme choice. */
 export interface InitMessage {
   readonly type: "init";
   readonly stats: StatsView;
+  readonly theme: Theme;
 }
 
 /** Start a fresh round: sent once per run of the "0xWORD: New Round" command. */
@@ -52,6 +60,10 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
       return hasExactKeys(fields, ["type"]) ? { type: "ready" } : null;
     case "roundFinished":
       return parseRoundFinished(fields);
+    case "setTheme": {
+      const theme = fields.get("theme");
+      return hasExactKeys(fields, ["type", "theme"]) && isTheme(theme) ? { type: "setTheme", theme } : null;
+    }
     default:
       return null;
   }
@@ -60,9 +72,10 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
 /** Checks a message from the host, on the webview side. Null if unknown. */
 export function parseHostMessage(raw: unknown): HostMessage | null {
   const fields = plainFields(raw);
-  if (fields?.get("type") === "init" && hasExactKeys(fields, ["type", "stats"])) {
+  if (fields?.get("type") === "init" && hasExactKeys(fields, ["type", "stats", "theme"])) {
     const stats = parseStatsView(fields.get("stats"));
-    return stats ? { type: "init", stats } : null;
+    const theme = fields.get("theme");
+    return stats && isTheme(theme) ? { type: "init", stats, theme } : null;
   }
   if (fields?.get("type") === "newRound" && hasExactKeys(fields, ["type"])) {
     return { type: "newRound" };
@@ -76,6 +89,10 @@ export interface HostHandlers {
   roundFinished(message: RoundFinishedMessage): void;
   /** The current stats, sent with `init`. Must not throw. */
   stats(): Stats;
+  /** Called with a validated `setTheme` choice. Must not throw. */
+  setTheme(theme: Theme): void;
+  /** The stored theme choice, sent with `init`. Must not throw. */
+  theme(): Theme;
 }
 
 /**
@@ -87,9 +104,12 @@ export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): Host
   const message = parseWebviewMessage(raw);
   switch (message?.type) {
     case "ready":
-      return { type: "init", stats: toStatsView(handlers.stats()) };
+      return { type: "init", stats: toStatsView(handlers.stats()), theme: handlers.theme() };
     case "roundFinished":
       handlers.roundFinished(message);
+      return null;
+    case "setTheme":
+      handlers.setTheme(message.theme);
       return null;
     default:
       return null;

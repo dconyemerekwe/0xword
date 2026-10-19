@@ -15,12 +15,18 @@ function readyRequests(): { requests: NewRoundRequests; view: number } {
 /** Handlers that record every call and report `stats`. */
 function recordingHandlers(stats: Stats = EMPTY_STATS): HostHandlers & { calls: RoundFinishedMessage[] } {
   const calls: RoundFinishedMessage[] = [];
-  return { calls, roundFinished: (message) => calls.push(message), stats: () => stats };
+  return {
+    calls,
+    roundFinished: (message) => calls.push(message),
+    stats: () => stats,
+    setTheme: () => {},
+    theme: () => "system",
+  };
 }
 
-/** The `init` reply for `stats`. */
+/** The `init` reply for `stats`, with no theme chosen. */
 function init(stats: Stats = EMPTY_STATS) {
-  return { type: "init", stats: toStatsView(stats) };
+  return { type: "init", stats: toStatsView(stats), theme: "system" };
 }
 
 describe("NewRoundRequests", () => {
