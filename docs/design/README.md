@@ -23,7 +23,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Page | `#14161B` | `#E8EAF0` | |
 | Title `0x` | | `#2F6FE4` (owner's choice; the mock-up draws `#7EA8FF`) | |
 | Title `WORD`, headings | | `#E8EAF0` | |
-| Muted text: status line, legend, "1 try per row", "Tried:" | | `#9C9FA8` | |
+| Muted text: status line, legend, "1 try per row" (not built, #30), "Tried:" | | `#9C9FA8` | |
 | Icon buttons (`?`, theme) | | `#CCCFD8` | |
 | Hints button, off | page background | `#CCCFD8` | `#3C3F48` |
 | Hints button, on (page 2) | `#1E2A45` | `#7EA8FF`* | `#2F6FE4`* |
@@ -113,7 +113,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
   - solved: "4-letter word · solved"
   - failed (no page; #24): "4-letter word · not solved"
-- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including while a word attempt or the final answer is due. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. There is no count or limit to show. It's hidden once the round is over (solved or out of rows).
+- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. There is no count or limit to show. It's hidden once the round is over (solved or out of rows).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
   - Digits are in JetBrains Mono, bold.
@@ -139,7 +139,8 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - the heading "Decode the word"
   - a text box with the placeholder "Type the English word"
   - a blue **Decode** button
-  - underneath, "1 try per row" on the left and "Tried: BEAT" on the right, with each tried word struck through
+  - underneath, "Tried: BEAT" on the right, with each tried word struck through. The draft's "1 try per row" on the left is left out: word tries are optional and unlimited (#30).
+- The keypad stays usable while the decode box is open: the player keeps guessing hex and decodes whenever they like, once a row is scored.
 
 ## Page 2: Mid-game with hints on
 
@@ -165,11 +166,11 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
 - A **result card** with a blue outline, in place of the decode panel and keypad:
   - above the heading, an outcome line that page 4 doesn't draw (owner's wording, #24): "Congrats! You cracked it", in muted text (`#A3A9B6` in the dark theme) at 14px bold, smaller than the heading. Screen readers hear it first: it starts the card's accessible name, followed by the heading.
   - "Decoded: BYTE" as a large heading
-  - the line "3 of 6 rows attempted · no hints" (or "· hints used"). The draft also shows "2 answer tries"; the game leaves it out, because answer tries always equal rows used (see [Differences from the rules](#differences-from-the-rules)).
+  - the line "3 of 6 rows · 2 answer tries · no hints" (or "· hints used"), as drawn (#30). One try reads "1 answer try"; any other count is plural.
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows · 1 answer try · no hints" (with the round's own count of tries), the byte tiles and New round. The status line reads "4-letter word · not solved".
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
@@ -183,7 +184,7 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   5. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
   6. Stuck? Turn on **Hints** to see the letters you have fully decoded so far.
 
-  Rules 4 and 5 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." Rule 4 describes optional decoding, which #30 builds: until it lands, the game still asks for one try after each row.
+  Rules 4 and 5 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6.
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
@@ -199,9 +200,9 @@ These apply to every screen and come from CLAUDE.md's Design section:
 
 ## Differences from the rules
 
-The draft was drawn before the owner settled that **no answer try can be skipped**. In the built game, every scored hex row is followed by exactly one word attempt. So:
+Since #30 the game plays as the draft does: the player guesses hex rows freely and decodes the word when they feel ready. The remaining differences:
 
-- **Tried lists and try counts:**
-  - The "Tried:" list holds one word per finished row. Page 1 would show three words after three rows, not just BEAT; page 3 would show five before the final answer.
-  - Answer tries always equal rows used, so page 4's result line leaves the count out: it reads "3 of 6 rows attempted · no hints", not the draft's "3 of 6 rows · 2 answer tries · no hints".
-- **The keypad is locked while a word attempt is due.** Page 1 shows row 4 being typed while the decode box is open. In the game, the next hex row opens only after the word attempt for the previous row.
+- **No "1 try per row" note.** Word tries are unlimited and optional until all 6 rows are used, so page 1's note is left out.
+- **Decoding opens after the first scored row.** Before row 1 is scored, the decode box and its button are disabled (owner's decision on #30).
+- **The "Tried:" list** holds every wrong listed word, in order, however many there are, repeats included. Rejected words (malformed or not in the list) are never added and don't count as tries.
+- **Scored rows show no message.** The tile colours show the result; screen readers hear the row's marks ("Row 2: 4 Right spot, …") from a visually hidden live region (owner's decision on #30).
