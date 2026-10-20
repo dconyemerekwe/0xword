@@ -1,1 +1,5 @@
 * text=auto eol=lf
+# Bundled fonts and their licences are kept byte for byte as downloaded, so
+# their SHA-256 checksums match media/fonts/README.md on every checkout.
+media/fonts/*.ttf binary
+media/fonts/*.txt -text
