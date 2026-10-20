@@ -1,5 +1,6 @@
 // Builds the webview's HTML and Content Security Policy. Pure: no `vscode`
 // import, so it can be unit-tested with `node --test`.
+import { THEME_ATTRIBUTE, isTheme, type Theme } from "../theme.ts";
 
 /** The only folder the webview may load from (`localResourceRoots`). */
 export const MEDIA_FOLDER = "media";
@@ -39,6 +40,12 @@ export interface HtmlParts {
   readonly scriptUri: string;
   /** `webview.asWebviewUri` of `STYLE_PATH`. */
   readonly styleUri: string;
+  /**
+   * The stored theme choice. A forced one goes on `<body>` as
+   * `THEME_ATTRIBUTE`, so the panel opens in it rather than flashing the
+   * other palette until `init` arrives.
+   */
+  readonly theme: Theme;
 }
 
 /** The strict CSP: nothing from outside, and only the nonce-tagged script runs. */
@@ -57,11 +64,15 @@ export function buildCsp(cspSource: string, nonce: string): string {
  * it in with `textContent`, which also proves the script ran. All styling
  * comes from the linked stylesheet (allowed by `style-src`): no inline styles.
  */
-export function buildHtml({ cspSource, nonce, scriptUri, styleUri }: HtmlParts): string {
+export function buildHtml({ cspSource, nonce, scriptUri, styleUri, theme }: HtmlParts): string {
   if (!NONCE_PATTERN.test(nonce)) {
     throw new RangeError("The nonce must come from createNonce");
   }
+  if (!isTheme(theme)) {
+    throw new RangeError("The theme must be one of THEMES");
+  }
   const csp = escapeAttribute(buildCsp(cspSource, nonce));
+  const body = theme === "system" ? "<body>" : `<body ${THEME_ATTRIBUTE}="${theme}">`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -71,7 +82,7 @@ export function buildHtml({ cspSource, nonce, scriptUri, styleUri }: HtmlParts):
   <title>0xWORD</title>
   <link rel="stylesheet" href="${escapeAttribute(styleUri)}">
 </head>
-<body>
+${body}
   <main id="app"></main>
   <script nonce="${nonce}" src="${escapeAttribute(scriptUri)}"></script>
 </body>

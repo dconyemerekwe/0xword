@@ -1,8 +1,15 @@
 /*
  * 0xWORD game screen. Loaded with <link> under the CSP's `style-src`; there is
- * no inline style anywhere. Colours come only from the custom properties in
- * :root, which match DARK_PALETTE in src/ui/palette.ts (a test checks this and
- * their contrast). Light theme and bundled fonts arrive in later stories.
+ * no inline style anywhere. Colours come only from custom properties: the dark
+ * palette in :root and the light palette in the rule after it, which match
+ * DARK_PALETTE and LIGHT_PALETTE in src/ui/palette.ts (a test checks this and
+ * their contrast). Bundled fonts arrive in a later story.
+ *
+ * Which palette shows (src/theme.ts `shownPalette`): the dark one by default,
+ * which covers VS Code's `vscode-dark` and `vscode-high-contrast` themes. The
+ * light one for VS Code's light themes, unless the player forced dark, or
+ * whenever the player forced light. VS Code switches its <body> class live, so
+ * "system" follows a theme change at once.
  */
 
 :root {
@@ -15,8 +22,10 @@
   --ox-on-right: #FFFFFF;
   --ox-wrong: #F0A04B;
   --ox-on-wrong: #1A1206;
+  --ox-wrong-text: #F0A04B;
   --ox-absent: #343944;
   --ox-on-absent: #B4B9C5;
+  --ox-empty-border: #343944;
   --ox-key: #2A2E37;
   --ox-key-absent: #111318;
   --ox-final-card: #241B12;
@@ -34,9 +43,14 @@
   --ox-strip-unknown: #7B808B;
   --ox-byte-tile: #1E2A45;
   --ox-byte-hex: #7EA8FF;
+  --ox-card-border: #2A2E37;
   --ox-icon: #CCCFD8;
   --ox-cheat-hex: #7EA8FF;
   --ox-chip-on-absent: #C9CFD8;
+
+  /* The theme button shows a sun on the dark palette (page 1). */
+  --ox-sun-display: block;
+  --ox-moon-display: none;
 
   --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -44,6 +58,53 @@
   --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;
   --ox-radius: 6px;
+}
+
+/*
+ * The light palette (page 4; the derived values are listed in
+ * docs/design/README.md). On <body>, so it overrides :root for the whole page.
+ */
+body.vscode-light:not([data-ox-theme="dark"]),
+body.vscode-high-contrast-light:not([data-ox-theme="dark"]),
+body[data-ox-theme="light"] {
+  --ox-background: #F6F6F9;
+  --ox-panel: #FFFFFF;
+  --ox-text: #15181B;
+  --ox-muted: #5D636C;
+  --ox-accent: #2463EA;
+  --ox-right: #2463EA;
+  --ox-on-right: #FFFFFF;
+  --ox-wrong: #F3A524;
+  --ox-on-wrong: #1A1206;
+  --ox-wrong-text: #875C15;
+  --ox-absent: #6C7281;
+  --ox-on-absent: #FFFFFF;
+  --ox-empty-border: #CFD2D8;
+  --ox-key: #E3E4E9;
+  --ox-key-absent: #F6F6F9;
+  --ox-final-card: #FEF6E9;
+  --ox-final-note: #5D636C;
+  --ox-locked-right: #4169C0;
+  --ox-locked-wrong: #BD9149;
+  --ox-locked-key: #ECEDF1;
+  --ox-locked-key-right: #D7E0F7;
+  --ox-locked-key-text: #5D636C;
+  --ox-hints-border: #CFD2D8;
+  --ox-hints-text: #15181B;
+  --ox-hints-on: #EDF3FC;
+  --ox-hints-on-text: #2463EA;
+  --ox-strip-border: #969BA2;
+  --ox-strip-unknown: #5D636C;
+  --ox-byte-tile: #EDF3FC;
+  --ox-byte-hex: #2463EA;
+  --ox-card-border: #CFD2D8;
+  --ox-icon: #15181B;
+  --ox-cheat-hex: #2463EA;
+  --ox-chip-on-absent: #FFFFFF;
+
+  /* A moon on the light palette (page 4). */
+  --ox-sun-display: none;
+  --ox-moon-display: block;
 }
 
 * {
@@ -99,7 +160,7 @@ body {
   gap: 12px;
 }
 
-/* Header: the title on the left, the `?` button on the right (page 1). */
+/* Header: the title on the left, the `?` and theme buttons on the right (page 1). */
 
 .header {
   display: flex;
@@ -108,7 +169,21 @@ body {
   gap: 12px;
 }
 
-/* The `?` and back arrow: an icon on the page background, with a 44px target. */
+.header-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+/* The theme button holds both icons; the palette's properties show one. */
+.theme-sun {
+  display: var(--ox-sun-display);
+}
+
+.theme-moon {
+  display: var(--ox-moon-display);
+}
+
+/* The `?`, theme and back arrow buttons: an icon on the page background, with a 44px target. */
 .icon-button {
   display: inline-flex;
   flex: none;
@@ -235,7 +310,7 @@ body {
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
-  border: 2px solid var(--ox-absent);
+  border: 2px solid var(--ox-empty-border);
   border-radius: 4px;
   color: var(--ox-text);
   font-family: var(--ox-mono);
@@ -364,7 +439,7 @@ body {
 }
 
 .decode-badge {
-  color: var(--ox-wrong);
+  color: var(--ox-wrong-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -691,7 +766,7 @@ body {
   gap: 0 8px;
   min-width: 0;
   min-height: 36px;
-  border: 1px solid var(--ox-key);
+  border: 1px solid var(--ox-card-border);
   border-radius: var(--ox-radius);
   background: var(--ox-panel);
 }
@@ -719,7 +794,7 @@ body {
 }
 
 .message-error {
-  color: var(--ox-wrong);
+  color: var(--ox-wrong-text);
 }
 
 /* Keypad: 4 rows of 4 keys, then DEL and ENTER. */

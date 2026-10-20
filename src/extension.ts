@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import { NewRoundRequests, messagesAfter } from "./newRoundRequests.ts";
+import { NewRoundRequests, messagesAfter, viewVisibilityChanged } from "./newRoundRequests.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { StatsStore } from "./stats.ts";
+import { ThemeStore } from "./theme.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH, buildHtml, createNonce } from "./webview/html.ts";
 
 /** The webview view's id, as contributed in package.json. */
@@ -11,7 +12,8 @@ const VIEW_ID = "0xword.game";
 const NEW_ROUND_COMMAND = "0xword.newRound";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new GameViewProvider(context.extensionUri, statsHandlers(new StatsStore(context.globalState)));
+  const handlers = hostHandlers(new StatsStore(context.globalState), new ThemeStore(context.globalState));
+  const provider = new GameViewProvider(context.extensionUri, handlers);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider),
     vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),
@@ -20,12 +22,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-/** What the host does with valid messages: count finished rounds and report stats. */
-function statsHandlers(store: StatsStore): HostHandlers {
+/**
+ * What the host does with valid messages: count finished rounds, report
+ * stats, and remember the theme choice. Both stores live in `globalState`, so
+ * they apply in every workspace.
+ */
+function hostHandlers(stats: StatsStore, theme: ThemeStore): HostHandlers {
   return {
-    // `record` never rejects, so nothing escapes the message listener.
-    roundFinished: (message) => void store.record(message),
-    stats: () => store.current(),
+    // `record` and `save` never reject, so nothing escapes the message listener.
+    roundFinished: (message) => void stats.record(message),
+    stats: () => stats.current(),
+    setTheme: (choice) => void theme.save(choice),
+    theme: () => theme.current(),
   };
 }
 
@@ -65,9 +73,11 @@ class GameViewProvider implements vscode.WebviewViewProvider {
       }
     });
     // A hidden view's webview is unloaded, and sends `ready` again when shown.
+    // Its HTML is rebuilt while hidden, so the next show opens in the current
+    // theme choice rather than the one in the HTML from the last load.
     const visibility = view.onDidChangeVisibility(() => {
-      if (!view.visible) {
-        this.#requests.reset(id);
+      if (viewVisibilityChanged(this.#requests, id, view.visible)) {
+        this.#setHtml(webview);
       }
     });
     view.onDidDispose(() => {
@@ -79,12 +89,22 @@ class GameViewProvider implements vscode.WebviewViewProvider {
         this.#view = undefined;
       }
     });
-    // A fresh nonce on every load.
+    this.#setHtml(webview);
+  }
+
+  /**
+   * Sets the webview's HTML, with a fresh nonce on every load. The stored
+   * theme goes in the HTML so a forced choice shows from the first paint;
+   * `init` carries it too. Called on resolve and whenever the view is hidden,
+   * never while it's shown (that would reload the panel).
+   */
+  #setHtml(webview: vscode.Webview): void {
     webview.html = buildHtml({
       cspSource: webview.cspSource,
       nonce: createNonce(),
       scriptUri: webview.asWebviewUri(vscode.Uri.joinPath(this.#extensionUri, ...SCRIPT_PATH)).toString(),
       styleUri: webview.asWebviewUri(vscode.Uri.joinPath(this.#extensionUri, ...STYLE_PATH)).toString(),
+      theme: this.#handlers.theme(),
     });
   }
 

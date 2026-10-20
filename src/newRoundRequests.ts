@@ -103,6 +103,26 @@ export class NewRoundRequests {
 }
 
 /**
+ * View `view`'s visibility changed. Returns true if its HTML should be built
+ * again now.
+ *
+ * Hidden: its webview is unloaded, so it stops listening (`reset`; queued
+ * requests are kept for its next `ready`). VS Code loads the same HTML string
+ * again when the view is shown, so the HTML is rebuilt while it's hidden: the
+ * next show then opens in the current theme choice, with a fresh nonce. It's
+ * never rebuilt while shown, since that would reload the panel mid-round.
+ *
+ * Shown: nothing changes until the reloaded webview sends `ready`.
+ */
+export function viewVisibilityChanged(requests: NewRoundRequests, view: number, visible: boolean): boolean {
+  if (visible) {
+    return false;
+  }
+  requests.reset(view);
+  return true;
+}
+
+/**
  * The host's full answer to a message from view `view`: the protocol's reply,
  * and after an `init`, one `newRound` per request queued while the webview
  * wasn't listening. `init` must come first, so the webview's first round

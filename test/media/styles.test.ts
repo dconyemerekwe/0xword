@@ -3,14 +3,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { DARK_PALETTE, isLargeText } from "../../src/ui/palette.ts";
+import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
+import { DARK_PALETTE, LIGHT_PALETTE, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
 
 const css = readFileSync(new URL(`../../${STYLE_PATH.join("/")}`, import.meta.url), "utf8");
 /** The stylesheet without comments. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const root = /:root\s*\{([^}]*)\}/.exec(rules)?.[1] ?? "";
-const outsideRoot = rules.replace(/:root\s*\{[^}]*\}/, "");
+/** The light palette's rule: its selector list and its declarations. */
+const lightRule = /(?<=\})\s*([^{}]*\[data-ox-theme="light"\])\s*\{([^}]*)\}/.exec(rules);
+const lightSelectors = lightRule?.[1]?.split(",").map((selector) => selector.trim()) ?? [];
+const light = lightRule?.[2] ?? "";
+/** Everything but the two palette rules. */
+const outsidePalettes = rules.replace(lightRule?.[0] ?? "", "").replace(/:root\s*\{[^}]*\}/, "");
 
 /** `onRight` → `--ox-on-right`. */
 function property(token: string): string {
@@ -31,17 +37,27 @@ describe("media/styles.css colours", () => {
     }
   });
 
-  it("declares no colour token that the palette doesn't have", () => {
-    const declared = [...root.matchAll(/(--ox-[a-z-]+):\s*#/g)].map((match) => match[1]);
-    const known = Object.keys(DARK_PALETTE).map(property);
-    assert.deepEqual(declared.filter((name) => !known.includes(name ?? "")), []);
+  it("declares every light palette token in the light rule, with the tested value", () => {
+    assert.ok(lightRule, "a light palette rule");
+    for (const [token, value] of Object.entries(LIGHT_PALETTE)) {
+      const declared = new RegExp(`${property(token)}:\\s*(#[0-9A-Fa-f]{6});`).exec(light)?.[1];
+      assert.equal(declared?.toUpperCase(), value.toUpperCase(), token);
+    }
   });
 
-  it("uses colours only through those properties: no literal colours outside :root", () => {
-    assert.doesNotMatch(outsideRoot, /#[0-9A-Fa-f]{3,8}\b/);
-    assert.doesNotMatch(outsideRoot, /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i);
+  it("declares no colour token that the palette doesn't have", () => {
+    const known = Object.keys(DARK_PALETTE).map(property);
+    for (const block of [root, light]) {
+      const declared = [...block.matchAll(/(--ox-[a-z-]+):\s*#/g)].map((match) => match[1]);
+      assert.deepEqual(declared.filter((name) => !known.includes(name ?? "")), []);
+    }
+  });
+
+  it("uses colours only through those properties: no literal colours outside the two palette rules", () => {
+    assert.doesNotMatch(outsidePalettes, /#[0-9A-Fa-f]{3,8}\b/);
+    assert.doesNotMatch(outsidePalettes, /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i);
     // Named colours, in any property that takes a colour.
-    for (const [, name, value] of outsideRoot.matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/g)) {
+    for (const [, name, value] of outsidePalettes.matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/g)) {
       if (/color|background|border|outline|fill|stroke|shadow|decoration/.test(name ?? "")) {
         const words =
           (value ?? "")
@@ -75,7 +91,7 @@ describe("media/styles.css colours", () => {
   });
 
   it("uses the large-text-only blue for text nowhere but the title", () => {
-    const uses = [...outsideRoot.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    const uses = [...outsidePalettes.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(([, , body]) => /(^|[\s;])color: var\(--ox-right\);/.test(body ?? ""))
       .map(([, selector]) => selector?.trim());
     assert.deepEqual(uses, [".title-hex"]);
@@ -89,6 +105,55 @@ describe("media/styles.css colours", () => {
 
   it("strikes through tried words", () => {
     assert.match(block(".tried-word"), /text-decoration: line-through;/);
+  });
+});
+
+describe("media/styles.css light and dark themes", () => {
+  it("puts the dark palette in :root: the default, for vscode-dark and vscode-high-contrast", () => {
+    assert.match(root, /--ox-background: #14161B;/);
+    // No other rule picks a palette from VS Code's dark classes.
+    assert.doesNotMatch(rules, /vscode-dark|vscode-high-contrast(?!-light)/);
+  });
+
+  it("switches to the light palette for VS Code's light themes unless dark is forced, or whenever light is forced", () => {
+    const expected = [
+      ...LIGHT_BODY_CLASSES.map((name) => `body.${name}:not([${THEME_ATTRIBUTE}="dark"])`),
+      `body[${THEME_ATTRIBUTE}="light"]`,
+    ];
+    assert.deepEqual(lightSelectors, expected);
+  });
+
+  it("decides the palette nowhere else", () => {
+    const mentions = [...rules.matchAll(/vscode-light|vscode-high-contrast-light|data-ox-theme/g)].length;
+    assert.equal(mentions, lightSelectors.join(",").match(/vscode-light|vscode-high-contrast-light|data-ox-theme/g)?.length);
+  });
+
+  it("puts the light palette on <body>, after :root, so it overrides the dark one", () => {
+    assert.ok(lightSelectors.every((selector) => selector.startsWith("body")));
+    assert.ok(rules.indexOf(lightRule?.[0] ?? "") > rules.indexOf(":root"));
+  });
+
+  it("shows the theme button's sun on the dark palette and its moon on the light one", () => {
+    const shown = (block: string, icon: string): string | undefined =>
+      new RegExp(`--ox-${icon}-display: (\\w+);`).exec(block)?.[1];
+    for (const [palette, block] of [["dark", root], ["light", light]] as const) {
+      const icon = THEME_ICON[palette];
+      const other = icon === "sun" ? "moon" : "sun";
+      assert.equal(shown(block, icon), "block", `${palette}: ${icon}`);
+      assert.equal(shown(block, other), "none", `${palette}: ${other}`);
+    }
+    assert.match(block(".theme-sun"), /display: var\(--ox-sun-display\);/);
+    assert.match(block(".theme-moon"), /display: var\(--ox-moon-display\);/);
+  });
+
+  it("puts the `?` and theme buttons side by side on the right of the header", () => {
+    assert.match(block(".header"), /justify-content: space-between;/);
+    assert.match(block(".header-buttons"), /display: flex;/);
+  });
+
+  it("outlines empty tiles and cheatsheet cards with their own tokens, as the light theme draws them differently", () => {
+    assert.match(block(".tile"), /border: 2px solid var\(--ox-empty-border\);/);
+    assert.match(block(".cheat-card"), /border: 1px solid var\(--ox-card-border\);/);
   });
 });
 
@@ -106,8 +171,10 @@ describe("media/styles.css page 3: the hex locked and the final answer", () => {
     assert.match(block(".decode-final"), /background: var\(--ox-final-card\);/);
   });
 
-  it('draws "Last try" in orange', () => {
-    assert.match(block(".decode-badge"), /color: var\(--ox-wrong\);/);
+  it('draws "Last try" and error messages in the orange text colour: `wrong` itself in the dark theme', () => {
+    assert.match(block(".decode-badge"), /color: var\(--ox-wrong-text\);/);
+    assert.match(block(".message-error"), /color: var\(--ox-wrong-text\);/);
+    assert.equal(DARK_PALETTE.wrongText, DARK_PALETTE.wrong);
   });
 
   it("makes Submit orange with dark text", () => {

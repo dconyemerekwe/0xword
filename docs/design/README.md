@@ -64,7 +64,44 @@ On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wr
 | New round button | `#2463EA` | `#FFFFFF` | |
 | Copy result button (on hold, not built) | `#FFFFFF` | `#15181B` | `#CFD2D8`* |
 
+#### Light values derived for screens drawn only in dark (#26)
+
+Pages 1–3 and 5 exist only in dark, so their light values are derived from the page 4 values above. Each is another page 4 value, or a mix of two of them ("50% A over B", per sRGB channel), never a new hue. A unit test (`test/ui/palette.test.ts`) recomputes every one. **The owner should confirm them.**
+
+| Token (`src/ui/palette.ts`) | Used for | Light value | Derived as |
+|---|---|---|---|
+| `panel` | decode panel, cheatsheet cards | `#FFFFFF` | the result card's white |
+| `accent` | keyboard focus ring | `#2463EA` | `right` |
+| `wrongText` | "Last try", error messages | `#875C15` | 50% `onWrong` `#1A1206` over `wrong` `#F3A524`. The orange itself is 1.9:1 on the page, too light for text. In the dark theme this is `wrong`. |
+| `key` | neutral key, DEL, ENTER | `#E3E4E9` | 50% outline `#CFD2D8` over the page |
+| `keyAbsent` | absent key (struck through), disabled Decode | `#F6F6F9` | the page: like the dark theme's, the key sinks into the page |
+| `finalCard` | final-answer card (page 3) | `#FEF6E9` | 10% `wrong` over white |
+| `finalNote` | "Type with your keyboard", Tried on the card | `#5D636C` | `muted` |
+| `lockedRight` | dimmed right-spot tiles | `#4169C0` | 40% `absent` over `right`: greyed rather than lightened, so white digits stay readable |
+| `lockedWrong` | dimmed wrong-spot tiles and keys | `#BD9149` | 40% `absent` over `wrong` |
+| `lockedKey` | locked neutral key, DEL, ENTER | `#ECEDF1` | 25% outline over the page: fainter than `key` |
+| `lockedKeyRight` | locked right-spot key | `#D7E0F7` | 15% `right` over the page |
+| `lockedKeyText` | locked keys' digits | `#5D636C` | `muted` |
+| `hintsBorder` | Hints button outline, off | `#CFD2D8` | the outline, as on Copy result |
+| `hintsText` | Hints button, off | `#15181B` | `text`, as on Copy result |
+| `hintsOn` / `hintsOnText` | Hints button, on | `#EDF3FC` / `#2463EA` | the byte tiles' fill and hex, as the dark theme pairs them |
+| `stripBorder` | hint strip's dashed cells | `#969BA2` | 50% `muted` over the outline: a little stronger than empty tiles, as in dark |
+| `stripUnknown` | hint strip's `?` | `#5D636C` | `muted` |
+| `cardBorder` | cheatsheet card outline | `#CFD2D8` | the outline. In the dark theme this is `key`. |
+| `icon` | `?`, theme and back arrow buttons | `#15181B` | `text`: page 4 draws `?` and the moon dark |
+| `cheatHex` | cheatsheet hex, `4_` / `5_` | `#2463EA` | the byte tiles' hex |
+| `chipOnAbsent` | the "grey" chip in How to play | `#FFFFFF` | the not-in-word tile text |
+
+Three tokens were added so the light theme can differ where the dark theme reuses a colour. Their dark values are the existing ones, so the dark theme is unchanged: `wrongText` (`#F0A04B`, `wrong`), `emptyBorder` (`#343944`, `absent`) and `cardBorder` (`#2A2E37`, `key`).
+
+#### Which palette shows (#26)
+
+- **System** (the default): VS Code's dark and high-contrast dark themes (`body.vscode-dark`, `vscode-high-contrast`) get the dark palette; its light and high-contrast light themes (`vscode-light`, `vscode-high-contrast-light`) get the light one. VS Code changes these classes live, so the panel follows a theme change at once.
+- **Light** or **Dark**: forced with the theme button in the header, next to `?`. It cycles System → Light → Dark → System. It shows a sun while the dark palette is showing and a moon while the light one is, and its accessible name says what the next press does ("Switch to light theme", "Switch to dark theme", "Follow VS Code's theme"). The choice is kept in VS Code's `globalState`, so it applies in every workspace.
+
 **Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (about 4.1:1). Placeholder text is a hint, not content; raise it with the owner before changing it.
+
+The palette unit test checks every text pair the game draws in both palettes (`TEXT_PAIRS` and `DIMMED_KEY_PAIRS` in `src/ui/palette.ts`). All of them meet 4.5:1 except page 3's dimmed keys in the dark theme, which are listed for the owner rather than changed (#26): the locked digit `#6B7180` is 3.42:1 on a neutral key `#1B1E24`, 2.45:1 on a right-spot key `#1E3660` and 3.80:1 on an absent key `#111318`. The keys are `disabled`, so WCAG sets them no minimum. The light theme's dimmed keys all meet 4.5:1.
 
 ## Shared layout (pages 1–4)
 
@@ -133,7 +170,7 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
 - **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · no hints", the byte tiles and New round. The status line reads "4-letter word · not solved".
-- **Dark theme (#24):** the card is built in the dark palette first; the light theme comes with the theme story. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
+- **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
 

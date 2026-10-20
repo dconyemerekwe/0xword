@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NewRoundRequests, messagesAfter } from "../src/newRoundRequests.ts";
+import { NewRoundRequests, messagesAfter, viewVisibilityChanged } from "../src/newRoundRequests.ts";
 import type { HostHandlers, RoundFinishedMessage } from "../src/protocol.ts";
 import { EMPTY_STATS, toStatsView, type Stats } from "../src/stats.ts";
 
@@ -15,12 +15,18 @@ function readyRequests(): { requests: NewRoundRequests; view: number } {
 /** Handlers that record every call and report `stats`. */
 function recordingHandlers(stats: Stats = EMPTY_STATS): HostHandlers & { calls: RoundFinishedMessage[] } {
   const calls: RoundFinishedMessage[] = [];
-  return { calls, roundFinished: (message) => calls.push(message), stats: () => stats };
+  return {
+    calls,
+    roundFinished: (message) => calls.push(message),
+    stats: () => stats,
+    setTheme: () => {},
+    theme: () => "system",
+  };
 }
 
-/** The `init` reply for `stats`. */
+/** The `init` reply for `stats`, with no theme chosen. */
 function init(stats: Stats = EMPTY_STATS) {
-  return { type: "init", stats: toStatsView(stats) };
+  return { type: "init", stats: toStatsView(stats), theme: "system" };
 }
 
 describe("NewRoundRequests", () => {
@@ -263,5 +269,74 @@ describe("messagesAfter", () => {
     assert.deepEqual(messagesAfter({ type: "ready", extra: 1 }, recordingHandlers(), requests, view), []);
     assert.equal(requests.pending, 1);
     assert.equal(requests.isReady, false);
+  });
+});
+
+describe("viewVisibilityChanged", () => {
+  it("rebuilds the HTML when the view is hidden, so the next show loads the current theme", () => {
+    const { requests, view } = readyRequests();
+    assert.equal(viewVisibilityChanged(requests, view, false), true);
+  });
+
+  it("never rebuilds the HTML when the view is shown: that would reload the panel mid-round", () => {
+    const { requests, view } = readyRequests();
+    assert.equal(viewVisibilityChanged(requests, view, true), false);
+  });
+
+  it("stops sending to a hidden view and queues runs until its reloaded webview says ready", () => {
+    const { requests, view } = readyRequests();
+    const before = requests.generation;
+    viewVisibilityChanged(requests, view, false);
+    assert.equal(requests.isReady, false);
+    assert.notEqual(requests.generation, before, "a newRound posted before the hide counts as stale");
+    assert.equal(requests.request(), null, "queued, not sent to the hidden view");
+    assert.equal(requests.pending, 1);
+  });
+
+  it("delivers the queued runs once, after init, when the rebuilt view says ready", () => {
+    const { requests, view } = readyRequests();
+    viewVisibilityChanged(requests, view, false);
+    requests.request();
+    requests.request();
+    // Shown again: nothing happens until the reloaded webview's `ready`.
+    viewVisibilityChanged(requests, view, true);
+    assert.equal(requests.isReady, false);
+    assert.equal(requests.pending, 2);
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
+      init(),
+      { type: "newRound" },
+      { type: "newRound" },
+    ]);
+    assert.equal(requests.pending, 0);
+    assert.equal(requests.isReady, true);
+  });
+
+  it("leaves a shown view ready", () => {
+    const { requests, view } = readyRequests();
+    const generation = requests.generation;
+    viewVisibilityChanged(requests, view, true);
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.generation, generation);
+    assert.equal(requests.request(), generation);
+  });
+
+  it("doesn't stop a newer view when an older view's hide arrives late", () => {
+    const requests = new NewRoundRequests();
+    const oldView = requests.attach();
+    const newView = requests.attach();
+    requests.ready(newView);
+    const generation = requests.generation;
+    viewVisibilityChanged(requests, oldView, false);
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.generation, generation);
+  });
+
+  it("keeps queued runs across repeated hides", () => {
+    const requests = new NewRoundRequests();
+    const view = requests.attach();
+    requests.request();
+    viewVisibilityChanged(requests, view, false);
+    viewVisibilityChanged(requests, view, false);
+    assert.equal(requests.pending, 1);
   });
 });
