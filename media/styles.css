@@ -3,7 +3,7 @@
  * no inline style anywhere. Colours come only from custom properties: the dark
  * palette in :root and the light palette in the rule after it, which match
  * DARK_PALETTE and LIGHT_PALETTE in src/ui/palette.ts (a test checks this and
- * their contrast). Bundled fonts arrive in a later story.
+ * their contrast).
  *
  * Which palette shows (src/theme.ts `shownPalette`): the dark one by default,
  * which covers VS Code's `vscode-dark` and `vscode-high-contrast` themes. The
@@ -11,6 +11,28 @@
  * whenever the player forced light. VS Code switches its <body> class live, so
  * "system" follows a theme change at once.
  */
+
+/*
+ * The bundled fonts (media/fonts/README.md lists their source and checksums),
+ * loaded by relative URL under the CSP's `font-src`. Each variable file covers
+ * every weight used, including DM Sans 1000 for the title's `WORD`. If a file
+ * fails to load, the fallbacks after it in --ox-sans and --ox-mono are used.
+ */
+@font-face {
+  font-family: "DM Sans";
+  src: url("fonts/DMSans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
 
 :root {
   --ox-background: #14161B;
@@ -52,8 +74,8 @@
   --ox-sun-display: block;
   --ox-moon-display: none;
 
-  --ox-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ox-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --ox-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ox-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
   /* The "Decode the word" heading's type, shared with How to play's rules. */
   --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;

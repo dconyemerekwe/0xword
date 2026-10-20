@@ -403,7 +403,9 @@ describe("media/styles.css layout and accessibility", () => {
     assert.match(rules, /@media \(prefers-reduced-motion: reduce\)/);
   });
 
-  it("loads nothing: no @import and no url()", () => {
-    assert.doesNotMatch(rules, /@import|url\(/i);
+  it("loads nothing but the bundled fonts: no @import, and url() only inside @font-face", () => {
+    assert.doesNotMatch(rules, /@import/i);
+    // test/media/fonts.test.ts checks that those URLs are relative and point into media/fonts/.
+    assert.doesNotMatch(rules.replace(/@font-face\s*\{[^}]*\}/g, ""), /url\(/i);
   });
 });
