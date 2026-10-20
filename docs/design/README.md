@@ -23,7 +23,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Page | `#14161B` | `#E8EAF0` | |
 | Title `0x` | | `#2F6FE4` (owner's choice; the mock-up draws `#7EA8FF`) | |
 | Title `WORD`, headings | | `#E8EAF0` | |
-| Muted text: status line, legend, "1 try per row" (not built, #30), "Tried:" | | `#9C9FA8` | |
+| Muted text: status line, legend, "Tried:" | | `#9C9FA8` | |
 | Icon buttons (`?`, theme) | | `#CCCFD8` | |
 | Hints button, off | page background | `#CCCFD8` | `#3C3F48` |
 | Hints button, on (page 2) | `#1E2A45` | `#7EA8FF`* | `#2F6FE4`* |
