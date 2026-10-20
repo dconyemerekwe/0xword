@@ -28,7 +28,7 @@ If you're given a story's acceptance criteria or a bug report, check that every 
 
 **Correctness**
 - Phase transitions in `Round` (`guess` → `answer`/`final` → `solved`/`failed`) stay valid. Nothing is accepted in the wrong phase.
-- The game rules in `CLAUDE.md` hold (e.g. every hex guess decodes to a real word, one answer try per row, forced final answer after row 6).
+- The game rules in `CLAUDE.md` hold (e.g. every hex guess decodes to a real word, optional, unlimited answer tries once a row is scored, no repeated words or rows, forced final answer after row 6).
 - Off-by-one errors around `MAX_ROWS`, `WORD_LENGTH`, `HEX_LENGTH`.
 - `undefined` from indexing is handled, not hidden with `!`.
 - Errors are returned as the existing result types (`{ ok: false, error }`) where the code already does that, not thrown.
