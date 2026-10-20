@@ -423,7 +423,8 @@ export class GameController {
     if (!round?.canDecode) {
       return NO_NOTICE;
     }
-    const outcome = round.submitAnswer(input);
+    // Through the session, which drops a half-typed row once the round is over (#43).
+    const outcome = this.#session.submitAnswer(input);
     const word = input.trim().toUpperCase();
     if (!outcome.ok) {
       return rejected(answerMessage(outcome.error, word));

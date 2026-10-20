@@ -1058,6 +1058,20 @@ describe("GameController: the result card after a hide or reload", () => {
     });
   }
 
+  // Regression test for #43: the round was saved with the half-typed row, and dropped on reload.
+  it("comes back when the word was solved with the next hex row half typed, the card and grid unchanged", () => {
+    const before = harness();
+    const view = before.play(...guess("TEAM"), ...type("42"), decode("BYTE"));
+    assert.ok(view.result);
+    assert.equal(before.session.draft, "");
+    assert.deepEqual(rowStates(view, 1), new Array(8).fill("empty"), "the half row isn't drawn on the card's grid");
+    const after = reloaded(before);
+    assert.equal(after.session.round?.phase, "solved", "the saved round, not a fresh one");
+    assert.deepEqual(after.controller.view().result, view.result);
+    assert.deepEqual(after.controller.view().rows, view.rows);
+    assert.deepEqual(after.posts, []);
+  });
+
   it("starts round 2 from a restored card with New round, still without posting", () => {
     const after = reloaded(failed());
     const view = after.play({ type: "newRound" });

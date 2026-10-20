@@ -1,6 +1,6 @@
 import { HEX_LENGTH } from "./hex.ts";
 import { hasExactKeys, isIntegerInRange, plainFields } from "./plain.ts";
-import { Round, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
+import { Round, type AnswerOutcome, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
 import { pickAnswer } from "./words.ts";
 
 /**
@@ -138,6 +138,25 @@ export class Session {
     }
     const outcome = this.#round.submitGuess(this.#draft);
     if (outcome.ok) {
+      this.#draft = "";
+    }
+    return outcome;
+  }
+
+  /**
+   * Tries the word in the round, like `Round.submitAnswer`, and clears the
+   * half-typed hex row if that ended the round: a finished round has no
+   * draft (see `isDraft`), or its saved state couldn't be restored (#43).
+   * A wrong or rejected word before row 6 keeps the draft, since the player
+   * carries on typing hex. Throws if there is no round, or the round can't
+   * take an answer now.
+   */
+  submitAnswer(input: string): AnswerOutcome {
+    if (!this.#round) {
+      throw new Error("No round to answer in");
+    }
+    const outcome = this.#round.submitAnswer(input);
+    if (this.#round.isOver) {
       this.#draft = "";
     }
     return outcome;

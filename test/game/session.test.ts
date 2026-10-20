@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { SESSION_STATE_VERSION, Session, isDraft, isReported, restoreSession } from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
 import { MAX_ROWS } from "../../src/game/round.ts";
+import { GameController } from "../../src/ui/game.ts";
 import { WORDS } from "./fixtures.ts";
 
 /** A random source that returns these values in turn. */
@@ -665,5 +666,90 @@ describe("restoreSession (webview start-up)", () => {
     session.newRound();
     session.newRound();
     assert.equal(session.roundNumber, 7);
+  });
+});
+
+// Regression tests for #43: a round could end on a decode while the next hex
+// row was half typed, and was saved with that draft, which restore rejects.
+describe("solving with a half-typed hex row", () => {
+  /** A controller over a fresh session (answer WORDS[0]) with row 1 scored and `42` typed for row 2. */
+  function halfTyped(): { session: Session; controller: GameController } {
+    const other = WORDS[1];
+    assert.ok(other);
+    const session = new Session(WORDS, () => 0);
+    const controller = new GameController(session, () => {});
+    controller.dispatch({ type: "init" });
+    for (const digit of wordToHex(other)) {
+      controller.dispatch({ type: "digit", digit });
+    }
+    controller.dispatch({ type: "enter" });
+    // The player starts typing row 2, then decodes the right word instead.
+    controller.dispatch({ type: "digit", digit: "4" });
+    controller.dispatch({ type: "digit", digit: "2" });
+    assert.equal(session.draft, "42");
+    return { session, controller };
+  }
+
+  it("restores the solved round after the panel is hidden and shown", () => {
+    const answer = WORDS[0];
+    assert.ok(answer);
+    const { session, controller } = halfTyped();
+    controller.dispatch({ type: "decode", word: answer });
+    assert.equal(session.round?.phase, "solved");
+
+    const saved = controller.savedState();
+    const restored = Session.fromState(JSON.parse(JSON.stringify(saved)), WORDS);
+    assert.notEqual(
+      restored,
+      null,
+      `saved state rejected: ${JSON.stringify({ phase: saved?.round.phase, draft: saved?.draft })}`,
+    );
+    assert.equal(restored?.round?.phase, "solved");
+  });
+
+  it("clears the draft when a decode solves the round, and keeps it for a wrong or rejected word", () => {
+    const answer = WORDS[0];
+    const wrong = WORDS[2];
+    assert.ok(answer && wrong);
+    const { session } = halfTyped();
+    assert.deepEqual(session.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
+    assert.equal(session.draft, "42", "a rejected word leaves the half row");
+    assert.deepEqual(session.submitAnswer(wrong), { ok: true, correct: false });
+    assert.equal(session.draft, "42", "a wrong word leaves the half row: the player carries on typing");
+    assert.deepEqual(session.submitAnswer(answer), { ok: true, correct: true });
+    assert.equal(session.draft, "");
+    assert.equal(session.toState()?.draft, "");
+  });
+
+  it("has no draft to lose when a wrong final answer fails the round: the locked keypad takes none", () => {
+    const session = atFinal();
+    assert.throws(() => session.setDraft("4"), RangeError);
+    assert.deepEqual(session.submitAnswer(WORDS[MAX_ROWS + 1] ?? ""), { ok: true, correct: false });
+    assert.equal(session.round?.phase, "failed");
+    assert.equal(session.draft, "");
+    assert.equal(Session.fromState(stored(session), WORDS)?.round?.phase, "failed");
+  });
+
+  it("keeps a finished round free of a draft whatever comes after: digits, DEL, ENTER, Hints, init", () => {
+    const answer = WORDS[0];
+    assert.ok(answer);
+    const { session, controller } = halfTyped();
+    controller.dispatch({ type: "decode", word: answer });
+    for (const action of [
+      { type: "digit", digit: "4" },
+      { type: "delete" },
+      { type: "enter" },
+      { type: "toggleHints" },
+      { type: "init" },
+      { type: "decode", word: answer },
+    ] as const) {
+      controller.dispatch(action);
+      assert.equal(session.draft, "", action.type);
+    }
+    assert.ok(Session.fromState(stored(session), WORDS));
+  });
+
+  it("throws, like Round.submitAnswer, with no round to answer in", () => {
+    assert.throws(() => new Session(WORDS).submitAnswer("BYTE"), /No round/);
   });
 });
