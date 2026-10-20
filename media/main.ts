@@ -522,10 +522,15 @@ function buildScreen(app: HTMLElement): Screen {
     // (`actionForKey`), so the player carries on guessing hex. At the final
     // answer a wrong word ends the round, and New round takes focus instead.
     // A rejected word keeps the box's focus and text, so it can be corrected.
+    // Decode itself may have focus (clicked, or Tab then Enter): it stays
+    // enabled now, so it lets go too, or the next ENTER would press it
+    // instead of entering the hex row.
     if (controller.view().tried.length !== triedBefore) {
       decodeInput.value = "";
-      if (document.activeElement === decodeInput) {
-        decodeInput.blur();
+      for (const control of [decodeInput, decodeButton]) {
+        if (document.activeElement === control) {
+          control.blur();
+        }
       }
     }
   });

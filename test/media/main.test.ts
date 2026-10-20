@@ -1021,6 +1021,23 @@ describe("media/main.ts: optional decoding (#30), run as the bundled webview scr
     assert.equal(allByClass(run, "tile tile-typed").length, 4, "physical hex keys reach the grid");
   });
 
+  // Regression test: focus stayed on a clicked Decode button, so the next
+  // ENTER submitted an empty word instead of entering the hex row.
+  it("lets go of a focused Decode button after a wrong word, so ENTER scores the next hex row", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const button = byClass(run, "decode-button");
+    (button["focus"] as () => void)();
+    submitWord(run, "BEAT");
+    assert.equal(run.focus.active, null, "focus is back on the page");
+    for (const key of [...wordToHex("BYTE"), "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "", "no empty word was submitted");
+    assert.equal(allByClass(run, "tile tile-typed").length, 0, "row 2 was scored");
+    // Row 1 (TEAM) has 1 right spot; row 2 (BYTE) has all 8.
+    assert.equal(allByClass(run, "tile tile-right").length, 9, "BYTE's row is all right spot");
+  });
+
   it("keeps a repeated word's text and focus in the box, with a visible plain-text reason", () => {
     const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT")));
     const input = byClass(run, "decode-input");
