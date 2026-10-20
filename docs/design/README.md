@@ -139,7 +139,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - the heading "Decode the word"
   - a text box with the placeholder "Type the English word"
   - a blue **Decode** button
-  - underneath, "Tried: BEAT" on the right, with each tried word struck through. The draft's "1 try per row" on the left is left out: word tries are optional and unlimited (#30).
+  - underneath, "Tried: BEAT" on the right, with each tried word struck through. The draft's "1 try per row" on the left is left out: word tries are optional and unlimited, though each word can be tried only once (#30).
 - The keypad stays usable while the decode box is open: the player keeps guessing hex and decodes whenever they like, once a row is scored.
 
 ## Page 2: Mid-game with hints on
@@ -204,5 +204,6 @@ Since #30 the game plays as the draft does: the player guesses hex rows freely a
 
 - **No "1 try per row" note.** Word tries are unlimited and optional until all 6 rows are used, so page 1's note is left out.
 - **Decoding opens after the first scored row.** Before row 1 is scored, the decode box and its button are disabled (owner's decision on #30).
-- **The "Tried:" list** holds every wrong listed word, in order, however many there are, repeats included. Rejected words (malformed or not in the list) are never added and don't count as tries.
+- **The "Tried:" list** holds every wrong listed word, in order, however many there are. Rejected words (malformed, not in the list, or already tried in this round in any letter case, which shows "You've already tried BEAT") are never added and don't count as tries. A hex row already scored is rejected too ("You've already tried that row") and uses no row (owner's decision on #30).
+- **After a wrong word, focus goes back to the page**, where the physical keyboard drives the hex grid, so the player carries on guessing hex. A rejected word keeps its text and focus in the box.
 - **Scored rows show no message.** The tile colours show the result; screen readers hear the row's marks ("Row 2: 4 Right spot, …") from a visually hidden live region (owner's decision on #30).
