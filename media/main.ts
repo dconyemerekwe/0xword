@@ -96,6 +96,8 @@ interface Screen {
   readonly tried: HTMLElement;
   readonly triedList: HTMLElement;
   readonly message: HTMLElement;
+  /** A visually hidden live region: what only screen readers hear (`ScreenView.announcement`). */
+  readonly announcement: HTMLElement;
   readonly result: HTMLElement;
   readonly resultOutcome: HTMLElement;
   readonly resultHeading: HTMLElement;
@@ -121,6 +123,10 @@ let messageWrites = 0;
 let drawnNoticeId = -1;
 /** The text the message line shows, or will once a delayed re-announce lands; null before the first draw. */
 let drawnMessage: string | null = null;
+/** Like `messageWrites`, for the hidden announcement region. */
+let announcementWrites = 0;
+/** Like `drawnMessage`, for the hidden announcement region. */
+let drawnAnnouncement: string | null = null;
 /**
  * How to play was opened from the keyboard (Enter or Space on `?`), so
  * closing it gives focus back to `?`. Opened with the mouse, focus goes back
@@ -511,12 +517,22 @@ function buildScreen(app: HTMLElement): Screen {
   decode.append(head, decodeRow, foot);
   decode.addEventListener("submit", (event) => {
     event.preventDefault();
+    const triedBefore = controller.view().tried.length;
     controller.dispatch({ type: "decode", word: decodeInput.value });
+    // A wrong word was taken as a try and joined Tried: empty the box for the
+    // next one. A rejected word stays, so it can be corrected.
+    if (controller.view().tried.length !== triedBefore) {
+      decodeInput.value = "";
+    }
   });
 
   const message = element("p", "message");
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
+  // Nothing shows on screen: scored rows and wrong words are read out here.
+  const announcement = element("p", "sr-only");
+  announcement.setAttribute("role", "status");
+  announcement.setAttribute("aria-live", "polite");
 
   const keypad = element("div", "keypad");
   const keys = HEX_DIGITS.map((digit) => actionButton("key", digit, { type: "digit", digit }));
@@ -563,7 +579,7 @@ function buildScreen(app: HTMLElement): Screen {
   resultNote.hidden = true;
 
   const game = element("div", "game");
-  game.append(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, keypad);
+  game.append(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, announcement, keypad);
   const howToPlay = buildHowToPlay();
   app.replaceChildren(game, howToPlay.section);
 
@@ -581,7 +597,7 @@ function buildScreen(app: HTMLElement): Screen {
       return;
     }
     const focus = focusOf(event.target, decodeInput);
-    if (shouldFocusDecodeBox(event, focus, controller.view().wordAttemptDue)) {
+    if (shouldFocusDecodeBox(event, focus, controller.view().hexLocked)) {
       // No preventDefault: the character goes on to the newly focused box.
       decodeInput.focus();
       return;
@@ -621,6 +637,7 @@ function buildScreen(app: HTMLElement): Screen {
     tried,
     triedList,
     message,
+    announcement,
     result,
     resultOutcome,
     resultHeading,
@@ -694,9 +711,9 @@ function render(view: ScreenView): void {
   ui.del.disabled = !view.keypadEnabled;
   ui.enter.disabled = !view.keypadEnabled;
 
-  ui.decodeInput.disabled = !view.wordAttemptDue;
-  ui.decodeButton.disabled = !view.wordAttemptDue;
-  if (!view.wordAttemptDue) {
+  ui.decodeInput.disabled = !view.decodeAvailable;
+  ui.decodeButton.disabled = !view.decodeAvailable;
+  if (!view.decodeAvailable) {
     ui.decodeInput.value = "";
   }
   ui.decode.classList.toggle("decode-final", view.hexLocked);
@@ -742,6 +759,22 @@ function render(view: ScreenView): void {
   }
   drawnMessage = view.message;
 
+  // The same announcement again (the same wrong word twice, say): clear it,
+  // then set it on the next frame, so the live region reads it out again.
+  if (freshNotice && view.announcement !== "" && view.announcement === drawnAnnouncement) {
+    const token = ++announcementWrites;
+    ui.announcement.textContent = "";
+    requestAnimationFrame(() => {
+      if (token === announcementWrites) {
+        ui.announcement.textContent = view.announcement;
+      }
+    });
+  } else if (view.announcement !== drawnAnnouncement) {
+    ++announcementWrites;
+    ui.announcement.textContent = view.announcement;
+  }
+  drawnAnnouncement = view.announcement;
+
   const opening = view.howToPlayOpen && !howToPlayWasOpen;
   const closing = !view.howToPlayOpen && howToPlayWasOpen;
   if (opening) {
@@ -757,10 +790,11 @@ function render(view: ScreenView): void {
       // clicked button, so Enter enters the row instead of reopening it.
       ui.backButton.blur();
     }
-    // A scored row's word attempt is due: the decode box takes the keyboard,
-    // unless the Hints button has it, so it can be toggled again from the keyboard.
+    // The hex is locked and the final answer is due: the decode box takes the
+    // keyboard, unless the Hints button has it, so it can be toggled again
+    // from the keyboard. Before that, decoding is optional and focus stays put.
     const keyboardFree = document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton;
-    if (!view.howToPlayOpen && view.wordAttemptDue && keyboardFree) {
+    if (!view.howToPlayOpen && view.hexLocked && keyboardFree) {
       ui.decodeInput.focus();
     }
   }

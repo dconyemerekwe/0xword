@@ -863,7 +863,7 @@ body {
   text-decoration: line-through;
 }
 
-/* Disabled while a word attempt is due or the round is over. Marked keys keep their colours. */
+/* Disabled before the first round and once the hex is locked. Marked keys keep their colours. */
 .key:disabled {
   cursor: default;
 }

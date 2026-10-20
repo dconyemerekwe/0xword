@@ -116,16 +116,15 @@ export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): Host
   }
 }
 
-const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "hintsUsed"] as const;
+const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hintsUsed"] as const;
 
 /**
  * Checks the fields against what a real round can produce (see `Round`):
  * - `rowsUsed` is 1 to `MAX_ROWS`
  * - a failed round used every row and the forced final answer
- *
- * There is no answer-try count: every row is followed by exactly one answer
- * try, so it would always equal `rowsUsed`. A message that still carries
- * `answerTries` has an extra key and is rejected.
+ * - `answerTries` is at least 1, since every round ends with a word attempt
+ *   (the right word, or the wrong final answer). Tries are unlimited and a
+ *   word can be tried again, so any larger safe integer is possible too.
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
   if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
@@ -133,12 +132,18 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
   }
   const solved = fields.get("solved");
   const rowsUsed = fields.get("rowsUsed");
+  const answerTries = fields.get("answerTries");
   const hintsUsed = fields.get("hintsUsed");
-  if (typeof solved !== "boolean" || typeof hintsUsed !== "boolean" || !isIntegerInRange(rowsUsed, 1, MAX_ROWS)) {
+  if (
+    typeof solved !== "boolean" ||
+    typeof hintsUsed !== "boolean" ||
+    !isIntegerInRange(rowsUsed, 1, MAX_ROWS) ||
+    !isIntegerInRange(answerTries, 1, Number.MAX_SAFE_INTEGER)
+  ) {
     return null;
   }
   if (!solved && rowsUsed !== MAX_ROWS) {
     return null;
   }
-  return { type: "roundFinished", solved, rowsUsed, hintsUsed };
+  return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };
 }

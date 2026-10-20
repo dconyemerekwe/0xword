@@ -89,13 +89,16 @@ export interface DecodePanel {
   readonly note: string;
 }
 
-/** The decode panel after rows 1–5 (page 1). */
+/**
+ * The decode panel before the hex is locked (page 1). Page 1's note "1 try
+ * per row" is left out: tries are unlimited and optional (#30).
+ */
 export const DECODE_PANEL: DecodePanel = {
   heading: "Decode the word",
   badge: "",
   placeholder: "Type the English word",
   button: "Decode",
-  note: "1 try per row",
+  note: "",
 };
 
 /** The final-answer card once the hex is locked (page 3). */
@@ -147,7 +150,7 @@ export interface ResultView {
   readonly outcome: string;
   /** "Decoded: BYTE" for a solved round, "The word was BYTE" for a failed one. */
   readonly heading: string;
-  /** E.g. "3 of 6 rows attempted · no hints" or "6 of 6 rows attempted · hints used". */
+  /** E.g. "3 of 6 rows · 2 answer tries · no hints" or "6 of 6 rows · 1 answer try · hints used". */
   readonly line: string;
   /** One tile per byte of the answer, in order. */
   readonly bytes: readonly ResultByte[];
@@ -187,10 +190,13 @@ export interface ScreenView {
   readonly rows: readonly (readonly Tile[])[];
   /** The 16 keypad keys in `HEX_DIGITS` order. */
   readonly keys: readonly Key[];
-  /** The keypad, DEL and ENTER take input: only while a hex row is being typed. */
+  /** The keypad, DEL and ENTER take input: while the round waits for a hex row, so until row 6 is scored. */
   readonly keypadEnabled: boolean;
-  /** A row was scored and its one word attempt is due: the decode box is open. */
-  readonly wordAttemptDue: boolean;
+  /**
+   * The decode box and its button take input: once a row is scored, until
+   * the round is over. Optional until the hex is locked, then forced.
+   */
+  readonly decodeAvailable: boolean;
   /**
    * All `MAX_ROWS` rows are scored and the round isn't over: the hex is
    * locked and the one final answer is due (page 3). The status line shows
@@ -201,7 +207,7 @@ export interface ScreenView {
   readonly panel: DecodePanel;
   /** The Hints button and strip. */
   readonly hints: HintsView;
-  /** The wrong words tried so far, one per finished row. */
+  /** The wrong words tried so far, in order. */
   readonly tried: readonly TriedWord[];
   /**
    * The result card once the round is over, or null while it's in progress
@@ -209,8 +215,14 @@ export interface ScreenView {
    * answer, so the answer is never drawn while it's still hidden.
    */
   readonly result: ResultView | null;
-  /** Plain text: why the last action was rejected, what happened, or how the round ended. */
+  /** Plain text: why the last action was rejected, or how the round ended. */
   readonly message: string;
+  /**
+   * Plain text for screen readers only, in a visually hidden live region:
+   * the scored row's marks ("Row 2: 4 Right spot, …") or a wrong word. The
+   * tile colours and the Tried list show these on screen (owner's decision, #30).
+   */
+  readonly announcement: string;
   /** True if `message` says why an action was rejected. */
   readonly messageIsError: boolean;
   /**
@@ -227,16 +239,22 @@ export interface ScreenView {
   readonly howToPlayOpen: boolean;
 }
 
-/** A message for the player, and whether it reports a rejected action. */
+/** A message for the player, whether it reports a rejected action, and what only screen readers hear. */
 interface Notice {
   readonly text: string;
   readonly error: boolean;
+  readonly announcement: string;
 }
 
-const NO_NOTICE: Notice = { text: "", error: false };
+const NO_NOTICE: Notice = { text: "", error: false, announcement: "" };
 
 function rejected(text: string): Notice {
-  return { text, error: true };
+  return { text, error: true, announcement: "" };
+}
+
+/** Nothing on screen: `announcement` is read out only. */
+function announced(announcement: string): Notice {
+  return { text: "", error: false, announcement };
 }
 
 /**
@@ -299,16 +317,16 @@ export class GameController {
     // Solved and out of rows come from the phase, so they survive a reload.
     const notice: Notice =
       phase === "solved"
-        ? { text: "Solved", error: false }
+        ? { text: "Solved", error: false, announcement: "" }
         : phase === "failed"
-          ? { text: "Out of rows", error: false }
+          ? { text: "Out of rows", error: false, announcement: "" }
           : this.#notice;
     return {
       status: statusLine(phase, rows.length),
       rows: gridTiles(rows, phase === "guess" ? this.#session.draft : ""),
       keys: keypad(rows),
       keypadEnabled: phase === "guess",
-      wordAttemptDue: phase === "answer" || phase === "final",
+      decodeAvailable: round?.canDecode ?? false,
       hexLocked,
       panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
       hints: hintsView(round && !round.isOver ? round : null),
@@ -316,6 +334,7 @@ export class GameController {
       result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
+      announcement: notice.announcement,
       noticeId: this.#noticeId,
       howToPlayOpen: this.#howToPlayOpen,
     };
@@ -363,16 +382,16 @@ export class GameController {
         if (!outcome.ok) {
           return rejected(guessMessage(outcome.error, draft));
         }
-        // Read out by the live region, since focus moves to the decode box.
+        // Read out only: on screen, the tile colours show the marks.
         const rowsUsed = session.round?.rows.length ?? 0;
         const scored = scoredMessage(rowsUsed, outcome.row.marks);
-        return { text: rowsUsed === MAX_ROWS ? `${scored}. ${FINAL_ANSWER_DUE}` : scored, error: false };
+        return announced(rowsUsed === MAX_ROWS ? `${scored}. ${FINAL_ANSWER_DUE}` : scored);
       }
       case "decode":
         return this.#decode(action.word);
       case "toggleHints": {
-        // Any number of times while the round is in progress, word attempt
-        // and final answer included. Ignored before a round and once it's over.
+        // Any number of times while the round is in progress, the final
+        // answer included. Ignored before a round and once it's over.
         const round = session.round;
         if (round && !round.isOver) {
           if (round.hintsShown) {
@@ -393,7 +412,8 @@ export class GameController {
 
   #decode(input: string): Notice {
     const round = this.#session.round;
-    if (!round || (round.phase !== "answer" && round.phase !== "final")) {
+    // Optional once a row is scored; ignored before that and once it's over.
+    if (!round?.canDecode) {
       return NO_NOTICE;
     }
     const outcome = round.submitAnswer(input);
@@ -407,7 +427,8 @@ export class GameController {
     if (round.isOver) {
       return NO_NOTICE;
     }
-    return { text: `${word} isn't the word. On to row ${round.rows.length + 1}.`, error: false };
+    // On screen, the word joins the Tried list, struck through. No row is used.
+    return announced(`${word} isn't the word`);
   }
 }
 
@@ -451,7 +472,7 @@ export function firstNonLetterByte(hex: string): string | null {
  * True once all `MAX_ROWS` rows are scored and the round isn't over: the hex
  * is locked and the final answer is due. The one place this rule lives, so
  * the status line, the card and the keypad always agree. Keyed off the rows,
- * not the phase name, so it holds however rows 1–5 end.
+ * not the phase name.
  */
 export function isHexLocked(phase: Phase | null, rowsUsed: number): boolean {
   return phase !== null && phase !== "solved" && phase !== "failed" && rowsUsed === MAX_ROWS;
@@ -471,17 +492,16 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
       return `${WORD_LENGTH}-letter word · not solved`;
     case "guess":
       return `${WORD_LENGTH}-letter word · row ${rowsUsed + 1} of ${MAX_ROWS}`;
-    case "answer":
     case "final":
-      // The row just scored, whose word attempt is due.
-      return `${WORD_LENGTH}-letter word · row ${rowsUsed} of ${MAX_ROWS}`;
+      // Not reached: `isHexLocked` holds in phase "final".
+      return HEX_LOCKED_STATUS;
   }
 }
 
 /**
  * The result card for a finished round (page 4): the outcome, the word, the
- * rows used and whether hints were used, and each byte with its letter. There
- * is no answer-tries count: it always equals the rows used.
+ * rows used, the answer tries and whether hints were used, and each byte
+ * with its letter.
  */
 export function resultView(result: RoundResult): ResultView {
   const word = result.answer;
@@ -489,7 +509,7 @@ export function resultView(result: RoundResult): ResultView {
   return {
     outcome: result.solved ? SOLVED_OUTCOME : FAILED_OUTCOME,
     heading: result.solved ? `Decoded: ${word}` : `The word was ${word}`,
-    line: `${result.rowsUsed} of ${MAX_ROWS} rows attempted · ${result.hintsUsed ? "hints used" : "no hints"}`,
+    line: `${result.rowsUsed} of ${MAX_ROWS} rows · ${answerTriesText(result.answerTries)} · ${result.hintsUsed ? "hints used" : "no hints"}`,
     bytes: [...word].map((letter, i) => {
       const byte = hex.slice(i * 2, i * 2 + 2);
       return { hex: byte, letter, label: `${byte} is ${letter}` };
@@ -497,6 +517,11 @@ export function resultView(result: RoundResult): ResultView {
     button: NEW_ROUND_BUTTON,
     note: RESULT_NOTE,
   };
+}
+
+/** "1 answer try" or "2 answer tries", as page 4 writes the count. */
+export function answerTriesText(tries: number): string {
+  return tries === 1 ? "1 answer try" : `${tries} answer tries`;
 }
 
 /**
@@ -580,8 +605,8 @@ export interface KeyPress {
  * The action for a physical key, or null to leave the key alone. Hex digits
  * (either case), Backspace and Enter drive the grid, but never while the
  * decode box has focus, and Enter is left to a focused button. Shortcuts with
- * Ctrl, Cmd or Alt are never taken. While a word attempt is due the
- * controller ignores grid actions, so typed hex never reaches the grid.
+ * Ctrl, Cmd or Alt are never taken. Once the hex is locked the controller
+ * ignores grid actions, so typed hex never reaches the grid.
  */
 export function actionForKey(press: KeyPress, focus: KeyFocus): Action | null {
   if (focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {
@@ -613,14 +638,16 @@ export function howToPlayActionForKey(press: KeyPress): Action | null {
 }
 
 /**
- * True if a key typed while a word attempt is due should go to the decode
- * box, which then needs focus first: a single printable character, with no
- * Ctrl, Cmd or Alt, typed outside the box. A space on a focused button is
- * left to press that button. The caller focuses the box and lets the key's
- * default go ahead, so the character lands in the box instead of being lost.
+ * True if a key typed while the final answer is due (the hex is locked)
+ * should go to the decode box, which then needs focus first: a single
+ * printable character, with no Ctrl, Cmd or Alt, typed outside the box. A
+ * space on a focused button is left to press that button. The caller focuses
+ * the box and lets the key's default go ahead, so the character lands in the
+ * box instead of being lost. Before row 6 decoding is optional, so keys
+ * typed outside the box stay with the grid instead (#30).
  */
-export function shouldFocusDecodeBox(press: KeyPress, focus: KeyFocus, wordAttemptDue: boolean): boolean {
-  if (!wordAttemptDue || focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {
+export function shouldFocusDecodeBox(press: KeyPress, focus: KeyFocus, hexLocked: boolean): boolean {
+  if (!hexLocked || focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {
     return false;
   }
   // Named keys ("Enter", "Tab", "F1"…) are longer than one character.
