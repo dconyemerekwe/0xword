@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORDS } from "./fixtures.ts";
 import { hexToWord, wordToHex } from "../../src/game/hex.ts";
-import { parseWordList, pickAnswer } from "../../src/game/words.ts";
+import { WORD_LIST_SIZE, parseWordList, pickAnswer } from "../../src/game/words.ts";
 
 describe("bundled word list", () => {
   it("parses, and every word survives a hex round trip", () => {
@@ -10,6 +10,10 @@ describe("bundled word list", () => {
     for (const word of WORDS) {
       assert.equal(hexToWord(wordToHex(word)), word);
     }
+  });
+
+  it("holds exactly WORD_LIST_SIZE words, the count the host checks answer tries against", () => {
+    assert.equal(WORDS.length, WORD_LIST_SIZE);
   });
 
   it("is sorted, so diffs stay readable", () => {

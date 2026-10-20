@@ -7,6 +7,7 @@
 // freshly built copy of the allowed fields is ever used.
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
+import { WORD_LIST_SIZE } from "./game/words.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 import { isTheme, type Theme } from "./theme.ts";
 
@@ -123,8 +124,12 @@ const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hints
  * - `rowsUsed` is 1 to `MAX_ROWS`
  * - a failed round used every row and the forced final answer
  * - `answerTries` is at least 1, since every round ends with a word attempt
- *   (the right word, or the wrong final answer). Tries are unlimited and a
- *   word can be tried again, so any larger safe integer is possible too.
+ *   (the right word, or the wrong final answer)
+ * - tries are unlimited, but a word already tried is rejected, so each
+ *   listed word counts at most once. A solved round's tries are at most
+ *   every word in the list (all the others wrong, then the answer); a failed
+ *   one's at most every word but the answer. Both are reachable: the wrong
+ *   words can all be tried after row 1.
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
   if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
@@ -138,7 +143,7 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
     typeof solved !== "boolean" ||
     typeof hintsUsed !== "boolean" ||
     !isIntegerInRange(rowsUsed, 1, MAX_ROWS) ||
-    !isIntegerInRange(answerTries, 1, Number.MAX_SAFE_INTEGER)
+    !isIntegerInRange(answerTries, 1, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1)
   ) {
     return null;
   }

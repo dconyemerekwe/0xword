@@ -5,9 +5,16 @@
 // contains the answer, only the letters of bytes the player has fully decoded,
 // while hints are on. The answer joins it only once the round is over, in the
 // result card (`result`).
-import type { GuessError } from "../game/guess.ts";
 import { HEX_LENGTH, WORD_LENGTH, hexToWord, wordToHex } from "../game/hex.ts";
-import { MAX_ROWS, type Phase, type Round, type RoundResult, type Row } from "../game/round.ts";
+import {
+  MAX_ROWS,
+  type AnswerError,
+  type Phase,
+  type Round,
+  type RoundResult,
+  type Row,
+  type RowError,
+} from "../game/round.ts";
 import { Mark } from "../game/score.ts";
 import type { Session, SessionState } from "../game/session.ts";
 import type { RoundFinishedMessage } from "../protocol.ts";
@@ -419,9 +426,7 @@ export class GameController {
     const outcome = round.submitAnswer(input);
     const word = input.trim().toUpperCase();
     if (!outcome.ok) {
-      return rejected(
-        outcome.error === "format" ? `Type a ${WORD_LENGTH}-letter word, A to Z` : `${word} isn't in the word list`,
-      );
+      return rejected(answerMessage(outcome.error, word));
     }
     // Solved and out of rows are shown by `view` from the phase.
     if (round.isOver) {
@@ -433,8 +438,10 @@ export class GameController {
 }
 
 /** Why a full hex row was rejected, in plain text. */
-export function guessMessage(error: GuessError, hex: string): string {
+export function guessMessage(error: RowError, hex: string): string {
   switch (error) {
+    case "repeat":
+      return "You've already tried that row";
     case "length":
       return "Not enough digits";
     case "notHex":
@@ -447,6 +454,18 @@ export function guessMessage(error: GuessError, hex: string): string {
       const word = hexToWord(hex);
       return word ? `${word} isn't in the word list` : "That isn't in the word list";
     }
+  }
+}
+
+/** Why a typed word was rejected, in plain text. `word` is the input trimmed and uppercased. */
+export function answerMessage(error: AnswerError, word: string): string {
+  switch (error) {
+    case "format":
+      return `Type a ${WORD_LENGTH}-letter word, A to Z`;
+    case "notWord":
+      return `${word} isn't in the word list`;
+    case "repeat":
+      return `You've already tried ${word}`;
   }
 }
 

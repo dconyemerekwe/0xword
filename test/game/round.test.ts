@@ -23,12 +23,27 @@ function guessAndMiss(round: Round, word: string): void {
   assert.deepEqual(round.submitAnswer(word), { ok: true, correct: false });
 }
 
+/** Six different listed words that aren't BYTE, one per row: rows and words can't repeat in a round. */
+const SIX = ["TEAM", "BAKE", "BUSY", "LIME", "QUIZ", "ZONE"] as const;
+
+/** The first `n` of SIX, each guessed as a row and then tried as a wrong word. */
+function missRows(round: Round, n: number): void {
+  for (const word of SIX.slice(0, n)) {
+    guessAndMiss(round, word);
+  }
+}
+
+/** Scores the first `n` of SIX as rows, with no word tried. */
+function guessRows(round: Round, n: number): void {
+  for (const word of SIX.slice(0, n)) {
+    guess(round, word);
+  }
+}
+
 /** A round with all six rows scored and no word tried: the final answer is due. */
 function roundAtFinal(): Round {
   const round = newRound();
-  for (const word of ["TEAM", "BAKE", "BUSY", "LIME", "QUIZ", "ZONE"]) {
-    guess(round, word);
-  }
+  guessRows(round, MAX_ROWS);
   return round;
 }
 
@@ -119,9 +134,7 @@ describe("Round", () => {
     for (let rows = 1; rows < MAX_ROWS; rows++) {
       it(`solves with rows left: after row ${rows}`, () => {
         const round = newRound();
-        for (let row = 1; row <= rows; row++) {
-          guess(round, "TEAM");
-        }
+        guessRows(round, rows);
         assert.deepEqual(round.submitAnswer("Byte"), { ok: true, correct: true });
         assert.equal(round.result().rowsUsed, rows);
         assert.equal(round.result().answerTries, 1);
@@ -138,17 +151,61 @@ describe("Round", () => {
       assert.equal(round.rows.length, 2);
     });
 
-    it("takes any number of wrong words between rows, repeats included", () => {
+    it("takes any number of different wrong words between rows", () => {
       const round = newRound();
       guess(round, "TEAM");
-      for (const word of ["TEAM", "CODE", "DATA", "TEAM", "BEAT"]) {
+      for (const word of ["TEAM", "CODE", "DATA", "BEAT"]) {
         assert.deepEqual(round.submitAnswer(word), { ok: true, correct: false });
       }
       assert.equal(round.phase, "guess");
-      assert.deepEqual(round.answers, ["TEAM", "CODE", "DATA", "TEAM", "BEAT"]);
+      assert.deepEqual(round.answers, ["TEAM", "CODE", "DATA", "BEAT"]);
       round.submitAnswer("BYTE");
-      assert.equal(round.result().answerTries, 6);
+      assert.equal(round.result().answerTries, 5);
       assert.equal(round.result().rowsUsed, 1);
+    });
+
+    it("takes every wrong word in the list, then the answer: the most tries a round can have", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      for (const word of WORD_SET) {
+        if (word !== "BYTE") {
+          assert.equal(round.submitAnswer(word).ok, true, word);
+        }
+      }
+      round.submitAnswer("BYTE");
+      assert.equal(round.result().answerTries, WORD_SET.size);
+    });
+
+    it("rejects a word already tried, in any letter case, without counting it or changing the phase", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.submitAnswer("BEAT");
+      const before = round.toState();
+      for (const input of ["BEAT", "beat", " Beat "]) {
+        assert.deepEqual(round.submitAnswer(input), { ok: false, error: "repeat" }, input);
+      }
+      assert.deepEqual(round.toState(), before);
+      assert.deepEqual(round.answers, ["BEAT"]);
+    });
+
+    it("rejects a hex row already scored, without using a row", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      const before = round.toState();
+      for (const input of [wordToHex("TEAM"), wordToHex("TEAM").toLowerCase()]) {
+        assert.deepEqual(round.submitGuess(input), { ok: false, error: "repeat" }, input);
+      }
+      assert.deepEqual(round.toState(), before);
+      assert.equal(round.rows.length, 1);
+    });
+
+    it("keeps hex rows and words apart: a word tried may still be guessed as a row, and back", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.submitAnswer("BEAT");
+      guess(round, "BEAT");
+      assert.deepEqual(round.submitAnswer("TEAM"), { ok: true, correct: false });
+      assert.equal(round.rows.length, 2);
     });
 
     it("rejects a malformed or unlisted answer without counting it or changing the phase", () => {
@@ -225,17 +282,44 @@ describe("Round", () => {
 
     it("counts the earlier wrong words in a failed round's answer tries", () => {
       const round = newRound();
-      for (let row = 1; row <= MAX_ROWS; row++) {
-        guessAndMiss(round, "TEAM");
-      }
+      missRows(round, MAX_ROWS);
       assert.equal(round.phase, "failed");
       assert.equal(round.result().answerTries, MAX_ROWS);
+    });
+
+    it("rejects an earlier wrong word as the final answer instead of failing the round", () => {
+      const round = newRound();
+      missRows(round, MAX_ROWS - 1);
+      guess(round, SIX[5]);
+      assert.equal(round.phase, "final");
+      assert.deepEqual(round.submitAnswer("team"), { ok: false, error: "repeat" });
+      assert.equal(round.phase, "final");
+      assert.equal(round.answers.length, MAX_ROWS - 1);
+      assert.deepEqual(round.submitAnswer("BYTE"), { ok: true, correct: true });
+    });
+
+    it("fails with every word but the answer tried: the most tries a failed round can have", () => {
+      const round = newRound();
+      const wrong = [...WORD_SET].filter((word) => word !== "BYTE");
+      guess(round, SIX[0]);
+      for (const word of wrong.slice(0, -1)) {
+        assert.equal(round.submitAnswer(word).ok, true, word);
+      }
+      for (const word of SIX.slice(1)) {
+        guess(round, word);
+      }
+      assert.equal(round.phase, "final", "nothing ended the round early");
+      round.submitAnswer(wrong.at(-1) ?? "");
+      assert.equal(round.phase, "failed");
+      assert.equal(round.result().answerTries, WORD_SET.size - 1);
     });
   });
 
   describe("every sequence of rows and optional word attempts ends in solved or failed", () => {
-    // Before each of rows 2 to 6 the player tries 0, 1 or 2 wrong words
-    // (3^5 = 243 ways), then gives a right or wrong final answer.
+    // Before each of rows 2 to 6 the player tries 0, 1 or 2 new wrong words
+    // (3^5 = 243 ways), and repeats each one (rejected), then gives a right
+    // or wrong final answer.
+    const pool = [...WORD_SET].filter((word) => word !== "BYTE" && word !== "DATA");
     it("ends every one of 486 rounds, solved or failed as the final answer says", () => {
       let rounds = 0;
       for (let pattern = 0; pattern < 3 ** (MAX_ROWS - 1); pattern++) {
@@ -243,16 +327,18 @@ describe("Round", () => {
           const round = newRound();
           let tries = 0;
           let rest = pattern;
-          guess(round, "TEAM");
+          guess(round, SIX[0]);
           for (let row = 2; row <= MAX_ROWS; row++) {
             const wrong = rest % 3;
             rest = Math.floor(rest / 3);
             for (let i = 0; i < wrong; i++) {
-              assert.deepEqual(round.submitAnswer("CODE"), { ok: true, correct: false });
+              const word = pool[tries] ?? "";
+              assert.deepEqual(round.submitAnswer(word), { ok: true, correct: false });
+              assert.deepEqual(round.submitAnswer(word), { ok: false, error: "repeat" });
               tries++;
             }
             assert.equal(round.phase, "guess");
-            guess(round, "TEAM");
+            guess(round, SIX[row - 1] ?? "");
           }
           assert.equal(round.phase, "final");
           round.submitAnswer(finalRight ? "BYTE" : "DATA");
@@ -367,14 +453,13 @@ describe("Round", () => {
 
     it("toggles at the forced final answer", () => {
       const round = newRound();
-      for (let row = 1; row < MAX_ROWS; row++) {
-        guess(round, "TEAM");
-      }
+      guessRows(round, MAX_ROWS - 1);
       guess(round, "BITE");
       assert.equal(round.phase, "final");
       round.enableHints();
-      // BITE = 42 49 54 45: bytes 1, 3 and 4 match BYTE exactly.
-      assert.deepEqual(round.hintLetters(), ["B", null, "T", "E"]);
+      // BITE = 42 49 54 45: bytes 1, 3 and 4 match BYTE exactly (and BUSY
+      // and LIME, among the earlier rows, find byte 2's 5 and 9).
+      assert.deepEqual(round.hintLetters(), ["B", "Y", "T", "E"]);
       round.disableHints();
       round.enableHints();
       assert.equal(round.phase, "final");
@@ -450,9 +535,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     "final, after wrong words",
     () => {
       const round = newRound();
-      for (let row = 1; row < MAX_ROWS; row++) {
-        guessAndMiss(round, "TEAM");
-      }
+      missRows(round, MAX_ROWS - 1);
       guess(round, "BITE");
       return round;
     },
@@ -470,10 +553,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     "failed, a wrong word after every row",
     () => {
       const round = newRound();
-      for (let row = 1; row <= MAX_ROWS; row++) {
-        guess(round, "TEAM");
-        round.submitAnswer("CODE");
-      }
+      missRows(round, MAX_ROWS);
       return round;
     },
   ],
@@ -496,11 +576,11 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "guess, many wrong words, repeats included, after one row",
+    "guess, many wrong words after one row, with rejected repeats",
     () => {
       const round = newRound();
       guess(round, "TEAM");
-      for (const word of ["CODE", "CODE", "DATA", "TEAM", "BEAT", "BEST", "CODE"]) {
+      for (const word of ["CODE", "CODE", "DATA", "TEAM", "BEAT", "BEST", "SAFE", "MILK", "data"]) {
         round.submitAnswer(word);
       }
       return round;
@@ -560,10 +640,8 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     () => {
       const round = newRound();
       round.enableHints();
-      for (let row = 1; row < MAX_ROWS; row++) {
-        guessAndMiss(round, "BITE");
-      }
-      guess(round, "TEAM");
+      missRows(round, MAX_ROWS - 1);
+      guess(round, "BITE");
       round.submitAnswer("CODE");
       return round;
     },
@@ -582,9 +660,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     "final, with hints on",
     () => {
       const round = newRound();
-      for (let row = 1; row < MAX_ROWS; row++) {
-        guessAndMiss(round, "TEAM");
-      }
+      missRows(round, MAX_ROWS - 1);
       guess(round, "BITE");
       round.enableHints();
       return round;
@@ -649,9 +725,11 @@ describe("Round state", () => {
     }
 
     for (const [name, play] of PHASES) {
-      it(`saves only accepted words, with no try count, in phase ${name}`, () => {
+      it(`saves only accepted words, with no try count and no repeats, in phase ${name}`, () => {
         const state = play().toState();
         assert.ok(state.answers.every((tried) => typeof tried === "string"));
+        assert.equal(new Set(state.answers).size, state.answers.length, "no repeated word");
+        assert.equal(new Set(state.rows.map((row) => row.hex)).size, state.rows.length, "no repeated row");
         assert.equal("answerTries" in state, false);
       });
     }
@@ -812,6 +890,19 @@ describe("Round state", () => {
           return state;
         },
       ],
+      ["a repeated row", () => tampered((s) => (s.rows = [firstRow(s), firstRow(s)]))],
+      ["a repeated word", () => tampered((s) => (s.answers = ["TEAM", "TEAM"]))],
+      ["a repeated word in another letter case", () => tampered((s) => (s.answers = ["TEAM", "team"]))],
+      [
+        "a failed round whose final answer repeats an earlier word",
+        () => {
+          const state = stored(playTo(5));
+          const answers = state.answers as string[];
+          state.answers = [...answers.slice(0, -1), answers[0]];
+          return state;
+        },
+      ],
+      ["more answer tries than listed words", () => tampered((s) => (s.answers = [...WORD_SET, "TEAM"]))],
       [
         "a failed round whose final answer is the right word",
         () => {

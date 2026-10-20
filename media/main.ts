@@ -123,8 +123,6 @@ let messageWrites = 0;
 let drawnNoticeId = -1;
 /** The text the message line shows, or will once a delayed re-announce lands; null before the first draw. */
 let drawnMessage: string | null = null;
-/** Like `messageWrites`, for the hidden announcement region. */
-let announcementWrites = 0;
 /** Like `drawnMessage`, for the hidden announcement region. */
 let drawnAnnouncement: string | null = null;
 /**
@@ -519,10 +517,16 @@ function buildScreen(app: HTMLElement): Screen {
     event.preventDefault();
     const triedBefore = controller.view().tried.length;
     controller.dispatch({ type: "decode", word: decodeInput.value });
-    // A wrong word was taken as a try and joined Tried: empty the box for the
-    // next one. A rejected word stays, so it can be corrected.
+    // A wrong word was taken as a try and joined Tried: empty the box, and
+    // give the keyboard back to the page, where hex keys drive the grid
+    // (`actionForKey`), so the player carries on guessing hex. At the final
+    // answer a wrong word ends the round, and New round takes focus instead.
+    // A rejected word keeps the box's focus and text, so it can be corrected.
     if (controller.view().tried.length !== triedBefore) {
       decodeInput.value = "";
+      if (document.activeElement === decodeInput) {
+        decodeInput.blur();
+      }
     }
   });
 
@@ -759,18 +763,9 @@ function render(view: ScreenView): void {
   }
   drawnMessage = view.message;
 
-  // The same announcement again (the same wrong word twice, say): clear it,
-  // then set it on the next frame, so the live region reads it out again.
-  if (freshNotice && view.announcement !== "" && view.announcement === drawnAnnouncement) {
-    const token = ++announcementWrites;
-    ui.announcement.textContent = "";
-    requestAnimationFrame(() => {
-      if (token === announcementWrites) {
-        ui.announcement.textContent = view.announcement;
-      }
-    });
-  } else if (view.announcement !== drawnAnnouncement) {
-    ++announcementWrites;
+  // Each announcement names a new row or a new word (repeats are rejected),
+  // and every other action clears it, so a plain write is always read out.
+  if (view.announcement !== drawnAnnouncement) {
     ui.announcement.textContent = view.announcement;
   }
   drawnAnnouncement = view.announcement;

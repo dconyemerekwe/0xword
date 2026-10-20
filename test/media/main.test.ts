@@ -1009,16 +1009,44 @@ describe("media/main.ts: optional decoding (#30), run as the bundled webview scr
     assert.equal(byClass(run, "tried")["hidden"], true);
   });
 
-  it("reads the same wrong word out again when it's tried again", () => {
+  it("gives the keyboard back to the hex grid after a wrong word, so hex keys guess hex again", () => {
     const run = runWebview(savedAfter(...guess("TEAM")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
     submitWord(run, "BEAT");
-    const region = announcement(run);
-    const frames = run.frames.length;
-    submitWord(run, "BEAT");
-    assert.equal(region["textContent"], "");
-    assert.equal(run.frames.length, frames + 1);
-    run.frames.at(-1)?.();
-    assert.equal(region["textContent"], "BEAT isn't the word");
+    assert.equal(run.focus.active, null, "focus is back on the page");
+    for (const digit of "4259") {
+      run.press(digit);
+    }
+    assert.equal(allByClass(run, "tile tile-typed").length, 4, "physical hex keys reach the grid");
+  });
+
+  it("keeps a repeated word's text and focus in the box, with a visible plain-text reason", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
+    submitWord(run, "beat");
+    assert.equal(byClass(run, "message")["textContent"], "You've already tried BEAT");
+    assert.equal(input["value"], "beat");
+    assert.equal(run.focus.active, input);
+    assert.deepEqual(triedWords(run).slice(-1), ["BEAT"]);
+  });
+
+  it("keeps a rejected word's focus in the box", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
+    submitWord(run, "QXZJ");
+    assert.equal(run.focus.active, input);
+  });
+
+  it("rejects a repeated hex row from the keyboard with a visible reason, keeping its digits", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const key of [...wordToHex("TEAM"), "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "You've already tried that row");
+    assert.equal(allByClass(run, "tile tile-typed").length, 8);
   });
 
   it("solves the round from the decode box with hex rows left", () => {
@@ -1030,8 +1058,8 @@ describe("media/main.ts: optional decoding (#30), run as the bundled webview scr
   });
 
   it("brings the Tried list back after the panel is hidden and shown", () => {
-    const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT"), decode("BEST"), ...guess("BUSY"), decode("BEAT")));
-    assert.deepEqual(triedWords(run), ["BEAT", "BEST", "BEAT"]);
+    const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT"), decode("BEST"), ...guess("BUSY"), decode("ABLE")));
+    assert.deepEqual(triedWords(run), ["BEAT", "BEST", "ABLE"]);
     assert.equal(byClass(run, "tried")["hidden"], false);
     assert.equal(byClass(run, "decode-input")["disabled"], false);
   });

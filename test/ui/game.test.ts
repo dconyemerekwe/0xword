@@ -92,6 +92,9 @@ function guess(word: string): Action[] {
 
 const decode = (word: string): Action => ({ type: "decode", word });
 
+/** Six different listed words that aren't BYTE, one per row: a row can't be scored twice in a round. */
+const ROW_WORDS = ["TEAM", "BEAT", "BEST", "BUSY", "ABLE", "BITE"];
+
 /** The digits of one grid row as a string, e.g. "4259". */
 function rowDigits(view: ScreenView, row: number): string {
   return (view.rows[row] ?? []).map((tile) => tile.digit).join("");
@@ -250,8 +253,8 @@ describe("GameController: after rows 1 to 5, hex guessing carries on", () => {
     it(`keeps the keypad, DEL and ENTER enabled after row ${rows}, with the decode box available`, () => {
       const { play } = harness();
       let view = play();
-      for (let row = 1; row <= rows; row++) {
-        view = play(...guess("TEAM"));
+      for (const word of ROW_WORDS.slice(0, rows)) {
+        view = play(...guess(word));
       }
       assert.equal(view.keypadEnabled, true);
       assert.equal(view.decodeAvailable, true);
@@ -321,8 +324,8 @@ describe("GameController: decoding the word", () => {
   for (let rows = 1; rows < MAX_ROWS; rows++) {
     it(`solves the round with hex rows left: after row ${rows}`, () => {
       const { play, session } = harness();
-      for (let row = 1; row <= rows; row++) {
-        play(...guess("TEAM"));
+      for (const word of ROW_WORDS.slice(0, rows)) {
+        play(...guess(word));
       }
       const view = play(decode("byte"));
       assert.equal(session.round?.phase, "solved");
@@ -348,16 +351,42 @@ describe("GameController: decoding the word", () => {
       ...guess("TEAM"),
       decode("BEAT"),
       decode("BEST"),
-      decode("BEAT"),
+      decode("ABLE"),
       ...guess("BEST"),
       ...guess("BUSY"),
       decode("BUSY"),
     );
     assert.deepEqual(
       view.tried.map((tried) => tried.word),
-      ["BEAT", "BEST", "BEAT", "BUSY"],
+      ["BEAT", "BEST", "ABLE", "BUSY"],
     );
     assert.equal(view.status, "4-letter word · row 4 of 6");
+  });
+
+  it('rejects a word already tried, in any letter case, with "You\'ve already tried BEAT", not counting it', () => {
+    const { play, session } = harness();
+    play(...guess("TEAM"), decode("BEAT"));
+    const before = session.toState();
+    for (const word of ["BEAT", "beat", " Beat "]) {
+      const view = play(decode(word));
+      assert.equal(view.message, "You've already tried BEAT", word);
+      assert.equal(view.messageIsError, true);
+      assert.equal(view.announcement, "");
+      assert.deepEqual(view.tried.map((tried) => tried.word), ["BEAT"]);
+      assert.equal(view.decodeAvailable, true);
+    }
+    assert.deepEqual(session.toState(), before);
+  });
+
+  it('rejects a hex row already scored with "You\'ve already tried that row", keeping its digits and using no row', () => {
+    const { play, session } = harness();
+    const view = play(...guess("TEAM"), ...guess("TEAM"));
+    assert.equal(view.message, "You've already tried that row");
+    assert.equal(view.messageIsError, true);
+    assert.equal(session.round?.rows.length, 1);
+    assert.equal(rowDigits(view, 1), wordToHex("TEAM"));
+    assert.deepEqual(rowStates(view, 1), new Array(8).fill("typed"));
+    assert.equal(view.keypadEnabled, true);
   });
 
   it("carries on with hex after a wrong word: the next row scores", () => {
@@ -601,6 +630,8 @@ describe("GameController: the final-answer card (page 3)", () => {
       ["B4TE", "Type a 4-letter word, A to Z"],
       ["<b>X</b>", "Type a 4-letter word, A to Z"],
       ["qxzj", "QXZJ isn't in the word list"],
+      // An earlier wrong word is a repeat, not a wrong final answer: the round doesn't fail.
+      ["busy", "You've already tried BUSY"],
     ];
     for (const [word, message] of cases) {
       it(`${JSON.stringify(word)}: "${message}"`, () => {
@@ -639,7 +670,8 @@ describe("GameController: roundFinished is posted exactly once", () => {
 
   it("posts the answer tries apart from the rows: solved on row 1 after three wrong words", () => {
     const { posts, play } = harness();
-    play(...guess("TEAM"), decode("BEAT"), decode("BEST"), decode("QXZJ"), decode("BEAT"), decode("BYTE"));
+    // QXZJ isn't listed and the second BEAT is a repeat: neither counts.
+    play(...guess("TEAM"), decode("BEAT"), decode("BEST"), decode("QXZJ"), decode("beat"), decode("ABLE"), decode("BYTE"));
     assert.deepEqual(posts, [{ type: "roundFinished", solved: true, rowsUsed: 1, answerTries: 4, hintsUsed: false }]);
   });
 
@@ -1394,8 +1426,7 @@ describe("GameController: hiding and showing the panel", () => {
     ["a half-typed row", [...type("4259")]],
     ["a full row not yet entered", [...type("42595445")]],
     ["a scored row, no word tried", [...guess("TEAM")]],
-    ["several wrong words after one row", [...guess("TEAM"), decode("BEAT"), decode("BEST"), decode("BEAT")]],
-    ["Tried words and a half-typed row", [...guess("TEAM"), decode("BEAT"), ...guess("BEST"), decode("BUSY"), ...type("5")]],
+    ["several wrong words after one row", [...guess("TEAM"), decode("BEAT"), decode("BEST"), decode("ABLE")]],    ["Tried words and a half-typed row", [...guess("TEAM"), decode("BEAT"), ...guess("BEST"), decode("BUSY"), ...type("5")]],
     ["six rows and no word tried", [...["TEAM", "BEAT", "BEST", "BUSY", "ABLE", "BITE"].flatMap((w) => guess(w))]],
     ["the last try due", [...["TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((w) => [...guess(w), decode(w)]), ...guess("BITE")]],
   ];

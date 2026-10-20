@@ -124,6 +124,15 @@ describe("Session", () => {
       assert.equal(session.round?.phase, "guess");
     });
 
+    it("keeps the digits of a repeated row, which isn't scored again", () => {
+      const session = sessionAt(1);
+      const row = session.round?.rows[0]?.hex ?? "";
+      session.setDraft(row);
+      assert.deepEqual(session.submitDraft(), { ok: false, error: "repeat" });
+      assert.equal(session.draft, row);
+      assert.equal(session.round?.rows.length, 2);
+    });
+
     it("keeps the digits of a rejected row, without using a row", () => {
       const session = guessing();
       session.setDraft("7B");
@@ -197,22 +206,23 @@ function sessionAt(n: number): Session {
   const round = session.round;
   assert.ok(round);
   // The answer is WORDS[0], because random() is always 0.
-  const other = WORDS[1];
-  assert.ok(other);
-  round.submitGuess(wordToHex(other));
-  assert.deepEqual(round.submitAnswer(other), { ok: true, correct: false });
-  round.submitGuess(wordToHex(other));
+  const [first, second] = WRONG;
+  assert.ok(first && second);
+  round.submitGuess(wordToHex(first));
+  assert.deepEqual(round.submitAnswer(first), { ok: true, correct: false });
+  round.submitGuess(wordToHex(second));
   return session;
 }
+
+/** Six different wrong words: rows and words can't repeat within a round. WORDS[0] is the answer. */
+const WRONG = WORDS.slice(1, 1 + MAX_ROWS);
 
 /** A session whose first round has all six rows scored and no word tried: the hex is locked. */
 function atFinal(): Session {
   const session = new Session(WORDS, () => 0);
-  const other = WORDS[1];
-  assert.ok(other);
   const round = session.newRound();
-  for (let row = 0; row < MAX_ROWS; row++) {
-    round.submitGuess(wordToHex(other));
+  for (const word of WRONG) {
+    round.submitGuess(wordToHex(word));
   }
   assert.equal(round.phase, "final");
   return session;
@@ -231,12 +241,10 @@ function solved(): Session {
 /** A session whose first round failed: six wrong rows and a wrong final answer. */
 function failed(): Session {
   const session = new Session(WORDS, () => 0);
-  const other = WORDS[1];
-  assert.ok(other);
   const round = session.newRound();
-  for (let row = 0; row < MAX_ROWS; row++) {
-    round.submitGuess(wordToHex(other));
-    round.submitAnswer(other);
+  for (const word of WRONG) {
+    round.submitGuess(wordToHex(word));
+    round.submitAnswer(word);
   }
   assert.equal(round.phase, "failed");
   return session;
@@ -475,13 +483,12 @@ describe("Session state", () => {
   });
 
   it("round-trips hex rows and word attempts independently: more tries than rows, or none", () => {
-    const other = WORDS[1];
-    const third = WORDS[2];
-    assert.ok(other && third);
+    const [other, third, fourth] = WRONG;
+    assert.ok(other && third && fourth);
     const many = new Session(WORDS, () => 0);
     const round = many.newRound();
     round.submitGuess(wordToHex(other));
-    for (const word of [other, third, other]) {
+    for (const word of [other, third, fourth]) {
       round.submitAnswer(word);
     }
     const none = atFinal();
@@ -490,7 +497,7 @@ describe("Session state", () => {
       assert.ok(restored);
       assert.deepEqual(restored.toState(), session.toState());
     }
-    assert.deepEqual(many.toState()?.round.answers, [other, third, other]);
+    assert.deepEqual(many.toState()?.round.answers, [other, third, fourth]);
     assert.deepEqual(none.toState()?.round.answers, []);
   });
 
