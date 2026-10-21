@@ -1,6 +1,6 @@
 import { HEX_LENGTH } from "./hex.ts";
 import { hasExactKeys, isIntegerInRange, plainFields } from "./plain.ts";
-import { Round, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
+import { Round, type AnswerOutcome, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
 import { pickAnswer } from "./words.ts";
 
 /**
@@ -10,9 +10,11 @@ import { pickAnswer } from "./words.ts";
  * half-typed hex row (`draft`). Version 4 added `reported`, so a finished
  * round is reported to the host only once. Version 5 added the round's
  * `hintsShown`, the Hints on/off toggle, next to the one-way `hintsUsed`.
+ * Version 6 made word attempts optional (#30): the round's `answers` no
+ * longer follow its rows one for one, and the `answer` phase is gone.
  * Older state is dropped, so the panel starts fresh.
  */
-export const SESSION_STATE_VERSION = 5;
+export const SESSION_STATE_VERSION = 6;
 
 /**
  * A session saved as plain data. It holds the hidden answer, so it must never
@@ -39,7 +41,7 @@ const DRAFT_PATTERN = new RegExp(`^[0-9A-F]{0,${HEX_LENGTH}}$`);
 /**
  * True if `draft` can be the half-typed hex row of a round in `phase`: up to
  * 8 uppercase hex digits, and empty unless the round is waiting for a hex row
- * (so never while a word attempt is due, or once the round is over).
+ * (so never once the hex is locked or the round is over).
  */
 export function isDraft(draft: unknown, phase: Phase): draft is string {
   return typeof draft === "string" && DRAFT_PATTERN.test(draft) && (phase === "guess" || draft === "");
@@ -110,8 +112,8 @@ export class Session {
       return null;
     }
     this.#reported = true;
-    const { solved, rowsUsed, hintsUsed } = round.result();
-    return { solved, rowsUsed, hintsUsed };
+    const { solved, rowsUsed, answerTries, hintsUsed } = round.result();
+    return { solved, rowsUsed, answerTries, hintsUsed };
   }
 
   /**
@@ -136,6 +138,25 @@ export class Session {
     }
     const outcome = this.#round.submitGuess(this.#draft);
     if (outcome.ok) {
+      this.#draft = "";
+    }
+    return outcome;
+  }
+
+  /**
+   * Tries the word in the round, like `Round.submitAnswer`, and clears the
+   * half-typed hex row if that ended the round: a finished round has no
+   * draft (see `isDraft`), or its saved state couldn't be restored (#43).
+   * A wrong or rejected word before row 6 keeps the draft, since the player
+   * carries on typing hex. Throws if there is no round, or the round can't
+   * take an answer now.
+   */
+  submitAnswer(input: string): AnswerOutcome {
+    if (!this.#round) {
+      throw new Error("No round to answer in");
+    }
+    const outcome = this.#round.submitAnswer(input);
+    if (this.#round.isOver) {
       this.#draft = "";
     }
     return outcome;

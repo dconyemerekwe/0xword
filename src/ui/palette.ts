@@ -168,7 +168,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["text", "panel"], // the decode panel and its text box
   ["text", "key"], // unmarked keypad keys, DEL and ENTER
   ["muted", "background"], // status line, legend
-  ["muted", "panel"], // "1 try per row", Tried words, placeholder, disabled decode box
+  ["muted", "panel"], // Tried words, placeholder, disabled decode box
   ["muted", "key"], // disabled unmarked keys
   ["muted", "keyAbsent"], // absent keypad keys, the disabled Decode button
   ["onRight", "right"], // right-spot tiles and keys, the Decode button

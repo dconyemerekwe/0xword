@@ -68,7 +68,7 @@ describe("media/main.ts", () => {
     assert.match(source, /statusBar\.append\(status, hintsButton\)/);
   });
 
-  it("leaves focus on the Hints button while a word attempt is due, so it can be toggled again", () => {
+  it("leaves focus on the Hints button while the final answer is due, so it can be toggled again", () => {
     assert.match(source, /document\.activeElement !== ui\.decodeInput && document\.activeElement !== ui\.hintsButton/);
   });
 
@@ -107,6 +107,21 @@ describe("media/main.ts", () => {
     assert.match(source, /message\.setAttribute\("aria-live", "polite"\)/);
   });
 
+  it("reads scored rows out from a second, visually hidden aria-live region, written with textContent", () => {
+    assert.match(source, /const announcement = element\("p", "sr-only"\);\s*announcement\.setAttribute\("role", "status"\);\s*announcement\.setAttribute\("aria-live", "polite"\)/);
+    assert.match(source, /ui\.announcement\.textContent = view\.announcement/);
+  });
+
+  it("enables the decode box and its button from the view's decodeAvailable", () => {
+    assert.match(source, /ui\.decodeInput\.disabled = !view\.decodeAvailable/);
+    assert.match(source, /ui\.decodeButton\.disabled = !view\.decodeAvailable/);
+  });
+
+  it("moves focus to the decode box only once the hex is locked", () => {
+    assert.match(source, /if \(!view\.howToPlayOpen && view\.hexLocked && keyboardFree\) \{\s*ui\.decodeInput\.focus\(\);/);
+    assert.equal(source.match(/decodeInput\.focus\(\)/g)?.length, 2, "here and in the keydown handler");
+  });
+
   it("gives DEL and ENTER accessible names that start with their visible labels (WCAG 2.5.3)", () => {
     assert.match(source, /actionButton\("[^"]*", "DEL",[\s\S]*?del\.setAttribute\("aria-label", "DEL, /);
     assert.match(source, /actionButton\("[^"]*", "ENTER",[\s\S]*?enter\.setAttribute\("aria-label", "ENTER, /);
@@ -115,7 +130,7 @@ describe("media/main.ts", () => {
   it("focuses the decode box, without blocking the key, when shouldFocusDecodeBox says so", () => {
     assert.match(
       source,
-      /if \(shouldFocusDecodeBox\(event, focus, controller\.view\(\)\.wordAttemptDue\)\) \{\s*decodeInput\.focus\(\);\s*return;\s*\}/,
+      /if \(shouldFocusDecodeBox\(event, focus, controller\.view\(\)\.hexLocked\)\) \{\s*decodeInput\.focus\(\);\s*return;\s*\}/,
     );
   });
 
@@ -166,7 +181,7 @@ describe("media/main.ts", () => {
     assert.match(source, /ui\.legend\.hidden = result !== null/);
     assert.match(source, /ui\.decode\.hidden = result !== null/);
     assert.match(source, /ui\.keypad\.hidden = result !== null/);
-    assert.match(source, /game\.append\([^)]*decode, result, resultNote, message, keypad\)/);
+    assert.match(source, /game\.append\([^)]*decode, result, resultNote, message, announcement, keypad\)/);
   });
 
   it("makes `?` and the back arrow real <button>s that dispatch through the controller", () => {
@@ -557,7 +572,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     assert.equal(byClass(run, "result")["hidden"], false);
     assert.equal(byClass(run, "result-heading")["textContent"], "Decoded: BYTE");
     assert.equal(byClass(run, "result-outcome")["textContent"], "Congrats! You cracked it");
-    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows attempted · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows · 2 answer tries · no hints");
     assert.equal(byClass(run, "result-note")["hidden"], false);
     for (const replaced of ["legend", "decode", "keypad"]) {
       assert.equal(byClass(run, replaced)["hidden"], true, replaced);
@@ -570,7 +585,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     const run = runWebview(savedAfter(...words.flatMap((word) => [...guess(word), decode(word)])));
     assert.equal(byClass(run, "result-heading")["textContent"], "The word was BYTE");
     assert.equal(byClass(run, "result-outcome")["textContent"], "Unlucky!");
-    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows attempted · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows · 6 answer tries · no hints");
     assert.deepEqual(run.posts, [{ type: "ready" }]);
   });
 
@@ -615,7 +630,7 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
   it("doesn't focus New round while a round is in progress", () => {
     const run = runWebview(savedAfter(...guess("TEAM"), decode("TEAM"), ...guess("BEAT")));
     assert.equal(byClass(run, "result-button")["focusCalls"], 0);
-    assert.equal(run.focus.active, byClass(run, "decode-input"), "the word attempt has the keyboard");
+    assert.equal(run.focus.active, null, "the page keeps the keyboard, for the next hex row");
   });
 
   it("doesn't focus New round again on later renders while the card is already showing", () => {
@@ -640,7 +655,10 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
       }
       assert.equal(run.elements.filter((node) => node["className"] === "tile tile-typed").length, 8);
       run.press("Enter");
-      assert.equal(run.focus.active, byClass(run, "decode-input"), "ENTER scored the row and opened the decode box");
+      // The new round's answer is random, so check the row left the typed state rather than its marks.
+      assert.equal(allByClass(run, "tile tile-typed").length, 0, "ENTER scored the row");
+      assert.equal(allByClass(run, "tile tile-empty").length, 40, "only row 1 is filled");
+      assert.equal(run.focus.active, null, "focus stays on the page for the next row");
     });
   }
 });
@@ -650,12 +668,12 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
   const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => [...guess(w), decode(w)]);
   /**
    * Every screen How to play opens from: its saved state (answer BYTE), or
-   * undefined for a fresh panel, and whether a word attempt is due there.
+   * undefined for a fresh panel, and whether the final answer is due there.
    */
   const screens: readonly (readonly [string, () => SessionState | undefined, boolean])[] = [
     ["a fresh panel", () => undefined, false],
     ["a half-typed row", () => savedAfter(...halfTyped), false],
-    ["a word attempt due", () => savedAfter(...guess("TEAM")), true],
+    ["a scored row, no word tried", () => savedAfter(...guess("TEAM")), false],
     ["the final answer", () => savedAfter(...firstFive, ...guess("ABLE")), true],
     ["the result card", () => FINISHED[0]?.[1](), false],
   ];
@@ -811,7 +829,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
   it("shows the game, not How to play, after a reload", () => {
     const run = runWebview(savedAfter(...guess("TEAM")));
     assert.equal(byClass(run, "how-to-play")["hidden"], true);
-    assert.equal(run.focus.active, byClass(run, "decode-input"));
+    assert.equal(run.focus.active, null);
   });
 
   // Regression tests: focus went back to `?` after every close, so the next
@@ -831,7 +849,8 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     assert.equal(run.focus.active, null);
     run.press("Enter");
     assert.equal(byClass(run, "how-to-play")["hidden"], true);
-    assert.equal(run.focus.active, byClass(run, "decode-input"), "ENTER scored the row and opened the decode box");
+    assert.equal(allByClass(run, "tile tile-typed").length, 0, "ENTER scored the row");
+    assert.equal(run.focus.active, null);
   });
 
   it("counts a screen reader's click on a focused ? as a keyboard open: focus goes back to ?", () => {
@@ -849,8 +868,8 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     }
   });
 
-  it("gives the decode box focus back after a mouse open and close during a word attempt", () => {
-    const run = runWebview(savedAfter(...guess("TEAM")));
+  it("gives the decode box focus back after a mouse open and close at the final answer", () => {
+    const run = runWebview(savedAfter(...firstFive, ...guess("ABLE")));
     const decodeInput = byClass(run, "decode-input");
     click(byLabel(run, "How to play"));
     click(byLabel(run, "Back to game"));
@@ -909,6 +928,162 @@ describe("media/main.ts: announcing messages, run as the bundled webview script"
       assert.equal(message["textWrites"], writes, "no write to the live region");
       assert.equal(run.frames.length, frames, "no delayed rewrite");
       assert.equal(message["textContent"], "AAAA isn't in the word list");
+    }
+  });
+});
+
+describe("media/main.ts: optional decoding (#30), run as the bundled webview script", () => {
+  /** The visually hidden live region that reads scored rows and wrong words out. */
+  function announcement(run: WebviewRun): Record<string, unknown> {
+    const found = run.elements.filter(
+      (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+    );
+    assert.equal(found.length, 1, "one announcement region");
+    return found[0] ?? {};
+  }
+
+  /** Types `word` in the decode box and submits the form, as Decode or Enter in the box does. */
+  function submitWord(run: WebviewRun, word: string): void {
+    byClass(run, "decode-input")["value"] = word;
+    const onSubmit = (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"];
+    assert.ok(onSubmit, "a submit listener");
+    onSubmit({ preventDefault() {} });
+  }
+
+  /**
+   * The struck-through Tried words ever drawn, in order. Every render makes
+   * the list's items again, so after several renders compare only the end.
+   */
+  function triedWords(run: WebviewRun): unknown[] {
+    return allByClass(run, "tried-word").map((node) => node["textContent"]);
+  }
+
+  /** Scores TEAM as the next row from the physical keyboard. */
+  function scoreTeam(run: WebviewRun): void {
+    for (const key of [...wordToHex("TEAM"), "Enter"]) {
+      run.press(key);
+    }
+  }
+
+  it("keeps the decode box and Decode disabled until a row is scored", () => {
+    const run = runWebview(savedAfter());
+    assert.equal(byClass(run, "decode-input")["disabled"], true);
+    assert.equal(byClass(run, "decode-button")["disabled"], true);
+  });
+
+  it("scores a row with no visible message, reads its marks out, and leaves the keypad and focus as they were", () => {
+    const run = runWebview(savedAfter());
+    scoreTeam(run);
+    assert.equal(byClass(run, "message")["textContent"], "");
+    assert.equal(announcement(run)["textContent"], "Row 1: 1 Right spot, 4 Wrong spot, 3 Not in word");
+    assert.equal(run.focus.active, null, "no forced move to the decode box");
+    assert.ok(allByClass(run, "key").every((key) => key["disabled"] === false));
+    assert.equal(byClass(run, "decode-input")["disabled"], false, "decoding is now available");
+    assert.equal(byClass(run, "decode-button")["disabled"], false);
+  });
+
+  it("types the next row straight after a scored one, without a word attempt", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const digit of "4259") {
+      run.press(digit);
+    }
+    assert.equal(allByClass(run, "tile tile-typed").length, 4);
+  });
+
+  it("adds a wrong word to Tried and empties the box, keeping the keypad on", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    submitWord(run, "beat");
+    assert.deepEqual(triedWords(run).slice(-1), ["BEAT"]);
+    assert.equal(byClass(run, "decode-input")["value"], "");
+    assert.equal(announcement(run)["textContent"], "BEAT isn't the word");
+    assert.equal(byClass(run, "message")["textContent"], "");
+    assert.equal(byClass(run, "tried")["hidden"], false);
+    assert.ok(allByClass(run, "key").every((key) => key["disabled"] === false));
+  });
+
+  it("keeps a rejected word in the box with a plain-text reason, and adds nothing to Tried", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    submitWord(run, "QXZJ");
+    assert.equal(byClass(run, "decode-input")["value"], "QXZJ");
+    assert.equal(byClass(run, "message")["textContent"], "QXZJ isn't in the word list");
+    assert.equal(byClass(run, "tried")["hidden"], true);
+  });
+
+  it("gives the keyboard back to the hex grid after a wrong word, so hex keys guess hex again", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
+    submitWord(run, "BEAT");
+    assert.equal(run.focus.active, null, "focus is back on the page");
+    for (const digit of "4259") {
+      run.press(digit);
+    }
+    assert.equal(allByClass(run, "tile tile-typed").length, 4, "physical hex keys reach the grid");
+  });
+
+  // Regression test: focus stayed on a clicked Decode button, so the next
+  // ENTER submitted an empty word instead of entering the hex row.
+  it("lets go of a focused Decode button after a wrong word, so ENTER scores the next hex row", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const button = byClass(run, "decode-button");
+    (button["focus"] as () => void)();
+    submitWord(run, "BEAT");
+    assert.equal(run.focus.active, null, "focus is back on the page");
+    for (const key of [...wordToHex("BYTE"), "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "", "no empty word was submitted");
+    assert.equal(allByClass(run, "tile tile-typed").length, 0, "row 2 was scored");
+    // Row 1 (TEAM) has 1 right spot; row 2 (BYTE) has all 8.
+    assert.equal(allByClass(run, "tile tile-right").length, 9, "BYTE's row is all right spot");
+  });
+
+  it("keeps a repeated word's text and focus in the box, with a visible plain-text reason", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
+    submitWord(run, "beat");
+    assert.equal(byClass(run, "message")["textContent"], "You've already tried BEAT");
+    assert.equal(input["value"], "beat");
+    assert.equal(run.focus.active, input);
+    assert.deepEqual(triedWords(run).slice(-1), ["BEAT"]);
+  });
+
+  it("keeps a rejected word's focus in the box", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const input = byClass(run, "decode-input");
+    (input["focus"] as () => void)();
+    submitWord(run, "QXZJ");
+    assert.equal(run.focus.active, input);
+  });
+
+  it("rejects a repeated hex guess typed in lowercase with a visible reason in uppercase byte pairs, keeping its digits", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const key of [..."5445414d", "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "You've already tried 54 45 41 4D");
+    assert.equal(allByClass(run, "tile tile-typed").length, 8);
+  });
+
+  it("solves the round from the decode box with hex rows left", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    submitWord(run, "byte");
+    assert.equal(byClass(run, "result")["hidden"], false);
+    assert.equal(byClass(run, "result-line")["textContent"], "1 of 6 rows · 1 answer try · no hints");
+    assert.deepEqual(run.posts.at(-1), { type: "roundFinished", solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: false });
+  });
+
+  it("brings the Tried list back after the panel is hidden and shown", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), decode("BEAT"), decode("BEST"), ...guess("BUSY"), decode("ABLE")));
+    assert.deepEqual(triedWords(run), ["BEAT", "BEST", "ABLE"]);
+    assert.equal(byClass(run, "tried")["hidden"], false);
+    assert.equal(byClass(run, "decode-input")["disabled"], false);
+  });
+
+  it("shows no \"1 try per row\" text anywhere", () => {
+    for (const saved of [savedAfter(), savedAfter(...guess("TEAM")), savedAfter(...guess("TEAM"), decode("BEAT"))]) {
+      assert.doesNotMatch(domText(runWebview(saved)), /try per row/i);
     }
   });
 });
@@ -984,7 +1159,8 @@ describe("media/main.ts: the theme button (#26), run as the bundled webview scri
   });
 
   it("leaves the decode box's focus alone when pressed with the mouse", () => {
-    const run = runWebview(savedAfter(...guess("TEAM")));
+    const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"];
+    const run = runWebview(savedAfter(...words.flatMap((word) => guess(word))));
     const input = byClass(run, "decode-input");
     assert.equal(run.focus.active, input);
     click(themeButton(run));

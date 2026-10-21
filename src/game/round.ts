@@ -8,13 +8,12 @@ export const MAX_ROWS = 6;
 
 /**
  * Where the round is:
- * - `guess`: waiting for a hex row
- * - `answer`: a row was scored; the player must try the word once before the
- *   next row (a rejected answer doesn't use the try)
+ * - `guess`: waiting for a hex row. Once a row has been scored, the player
+ *   may also try the word, as often as they like (see `canDecode`)
  * - `final`: all rows used; the player must give one last answer
  * - `solved` / `failed`: the round is over
  */
-export type Phase = "guess" | "answer" | "final" | "solved" | "failed";
+export type Phase = "guess" | "final" | "solved" | "failed";
 
 export interface Row {
   readonly hex: string;
@@ -22,18 +21,24 @@ export interface Row {
   readonly marks: readonly Mark[];
 }
 
-/** Why a plain-English answer was rejected. Rejected answers don't use up the try. */
+/** Why a hex row was rejected: `checkGuess`'s reasons, or a row already scored in this round. */
+export type RowError = GuessError | "repeat";
+
+/** Why a plain-English answer was rejected. Rejected answers aren't counted as tries. */
 export type AnswerError =
   | "format" // not four letters A–Z
-  | "notWord"; // not in the word list
+  | "notWord" // not in the word list
+  | "repeat"; // already tried in this round, in any letter case
 
-export type GuessOutcome = { ok: true; row: Row } | { ok: false; error: GuessError };
+export type GuessOutcome = { ok: true; row: Row } | { ok: false; error: RowError };
 export type AnswerOutcome = { ok: true; correct: boolean } | { ok: false; error: AnswerError };
 
 export interface RoundResult {
   readonly solved: boolean;
   readonly answer: string;
   readonly rowsUsed: number;
+  /** The accepted word attempts, the last one included. At least 1: every round ends with one. */
+  readonly answerTries: number;
   /** Hints were turned on at some point in the round, even if turned off again. */
   readonly hintsUsed: boolean;
 }
@@ -46,9 +51,10 @@ export interface RoundState {
   readonly answer: string;
   readonly rows: readonly Row[];
   /**
-   * The word tried for each row whose answer try is done. As long as `rows`,
-   * or one shorter while the last row's try is still to come. Its length is
-   * the number of answer tries; there is no separate count.
+   * The accepted word attempts, in order, kept apart from `rows`: any number
+   * of them once a row is scored, all different, and all wrong but perhaps
+   * the last. Its length is the number of answer tries; there is no
+   * separate count. Rows are all different too.
    */
   readonly answers: readonly string[];
   readonly phase: Phase;
@@ -62,15 +68,16 @@ const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed", "hi
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
 /**
- * One game: a hidden answer, up to 6 hex rows, and one answer try after each
- * row. There is no skipping, so a finished round has as many tries as rows.
+ * One game: a hidden answer and up to 6 hex rows. Once a row is scored, the
+ * player may try the word whenever they like; a wrong try uses no row. After
+ * row 6 the hex is locked and one final answer is forced.
  */
 export class Round {
   readonly #answer: string;
   readonly #answerHex: string;
   readonly #words: ReadonlySet<string>;
   readonly #rows: Row[] = [];
-  /** The accepted answer tries, one per finished row. */
+  /** The accepted answer tries, in order. */
   readonly #answers: string[] = [];
   #phase: Phase = "guess";
   /** One-way: set the first time hints are turned on, and never cleared. */
@@ -95,7 +102,7 @@ export class Round {
     return this.#rows;
   }
 
-  /** The accepted answer tries so far, uppercased, one per finished row. */
+  /** The accepted answer tries so far, uppercased, in order. */
   get answers(): readonly string[] {
     return this.#answers;
   }
@@ -114,26 +121,49 @@ export class Round {
     return this.#phase === "solved" || this.#phase === "failed";
   }
 
-  /** Scores a hex row. An invalid guess is rejected without using up a row. */
+  /**
+   * True while `submitAnswer` is allowed: the round is in progress and at
+   * least one row is scored. Optional before row 6, forced after it.
+   */
+  get canDecode(): boolean {
+    return !this.isOver && this.#rows.length > 0;
+  }
+
+  /**
+   * Scores a hex row. An invalid guess is rejected without using up a row.
+   * The word never has to be tried first. A row already scored in this
+   * round is rejected too, without using a row.
+   */
   submitGuess(input: string): GuessOutcome {
-    this.#requirePhase("guess");
+    if (this.#phase !== "guess") {
+      throw new Error(`Not allowed in phase "${this.#phase}"`);
+    }
     const check = checkGuess(input, this.#words);
     if (!check.ok) {
       return check;
     }
+    if (this.#rows.some((row) => row.hex === check.hex)) {
+      return { ok: false, error: "repeat" };
+    }
     const row: Row = { hex: check.hex, word: check.word, marks: score(check.hex, this.#answerHex) };
     this.#rows.push(row);
-    this.#phase = this.#rows.length === MAX_ROWS ? "final" : "answer";
+    if (this.#rows.length === MAX_ROWS) {
+      this.#phase = "final";
+    }
     return { ok: true, row };
   }
 
   /**
-   * Uses the answer try for this row: the only way past a scored row. A wrong
-   * answer moves on to the next row, or ends the round if it was the forced
-   * final answer.
+   * Tries the word. The right word solves the round, rows left or not. A
+   * wrong word counts as a try but uses no row, and ends the round only if
+   * it was the forced final answer. A rejected word changes nothing: that
+   * includes a word already tried in this round, even as the final answer.
+   * Throws unless `canDecode`.
    */
   submitAnswer(input: string): AnswerOutcome {
-    this.#requirePhase("answer", "final");
+    if (!this.canDecode) {
+      throw new Error(`Not allowed in phase "${this.#phase}" with ${this.#rows.length} rows`);
+    }
     const guess = input.trim().toUpperCase();
     if (!isWord(guess)) {
       return { ok: false, error: "format" };
@@ -141,12 +171,16 @@ export class Round {
     if (!this.#words.has(guess)) {
       return { ok: false, error: "notWord" };
     }
+    // `guess` is uppercased, like every saved answer, so this ignores letter case.
+    if (this.#answers.includes(guess)) {
+      return { ok: false, error: "repeat" };
+    }
     this.#answers.push(guess);
     const correct = guess === this.#answer;
     if (correct) {
       this.#phase = "solved";
-    } else {
-      this.#phase = this.#phase === "final" ? "failed" : "guess";
+    } else if (this.#phase === "final") {
+      this.#phase = "failed";
     }
     return { ok: true, correct };
   }
@@ -204,6 +238,7 @@ export class Round {
       solved: this.#phase === "solved",
       answer: this.#answer,
       rowsUsed: this.#rows.length,
+      answerTries: this.#answers.length,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -240,23 +275,27 @@ export class Round {
       throw new Error("Round is over");
     }
   }
-
-  #requirePhase(...allowed: Phase[]): void {
-    if (!allowed.includes(this.#phase)) {
-      throw new Error(`Not allowed in phase "${this.#phase}"`);
-    }
-  }
 }
 
-/** `Round.fromState` without the safety net: may throw on impossible state. */
+/**
+ * `Round.fromState` without the safety net: may throw on impossible state.
+ *
+ * The saved rows and answers are separate lists, so it replays them in an
+ * order a real round could have taken: the first row, then the answers
+ * (which need a scored row), then the other rows. Once the round is over,
+ * its last answer is the one that ended it, so that one comes after every
+ * row instead. Any other real order ends in the same state.
+ */
 function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const fields = plainFields(raw);
   if (!fields || !hasExactKeys(fields, ROUND_STATE_KEYS)) {
     return null;
   }
   const answer = fields.get("answer");
+  const phase = fields.get("phase");
   const rows = plainItems(fields.get("rows"), MAX_ROWS);
-  const answers = plainItems(fields.get("answers"), MAX_ROWS);
+  // Each listed word can be tried once, so there are never more tries than words.
+  const answers = plainItems(fields.get("answers"), words.size);
   const hintsUsed = fields.get("hintsUsed");
   const hintsShown = fields.get("hintsShown");
   if (
@@ -270,10 +309,6 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   ) {
     return null;
   }
-  // Every row but the last must have had its answer try: there are no skips.
-  if (answers.length !== rows.length && answers.length !== rows.length - 1) {
-    return null;
-  }
 
   const round = new Round(answer, words);
   // Set before the replay, while the round is still in progress. Hints turned
@@ -284,33 +319,45 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
       round.disableHints();
     }
   }
-  for (const [i, savedRow] of rows.entries()) {
-    const row = plainFields(savedRow);
-    const hex = row?.get("hex");
-    if (!row || !hasExactKeys(row, ROW_KEYS) || typeof hex !== "string") {
-      return null;
-    }
-    // The saved row must be exactly what scoring the guess gives now.
-    const outcome = round.submitGuess(hex);
-    if (!outcome.ok || outcome.row.hex !== hex || outcome.row.word !== row.get("word")) {
-      return null;
-    }
-    const expected = outcome.row.marks;
-    const marks = plainItems(row.get("marks"), expected.length);
-    if (!marks || marks.length !== expected.length || marks.some((mark, j) => mark !== expected[j])) {
-      return null;
-    }
-    if (i < answers.length) {
-      const tried = answers[i];
-      // Only accepted answers are saved, already uppercased. Anything else,
-      // such as a skipped (null) try from saved-state version 1, is rejected.
-      if (typeof tried !== "string" || !isWord(tried) || !round.submitAnswer(tried).ok) {
-        return null;
-      }
-    }
+  const over = phase === "solved" || phase === "failed";
+  const during = over ? answers.slice(0, -1) : answers;
+  const ending = over ? answers.slice(-1) : [];
+  const [firstRow, ...laterRows] = rows;
+  if (
+    (firstRow !== undefined && !replayRow(round, firstRow)) ||
+    !during.every((tried) => replayAnswer(round, tried)) ||
+    !laterRows.every((row) => replayRow(round, row)) ||
+    !ending.every((tried) => replayAnswer(round, tried))
+  ) {
+    return null;
   }
-  if (round.phase !== fields.get("phase")) {
+  if (round.phase !== phase) {
     return null;
   }
   return round;
+}
+
+/** Scores a saved row again. False unless it's exactly what scoring the guess gives now. */
+function replayRow(round: Round, savedRow: unknown): boolean {
+  const row = plainFields(savedRow);
+  const hex = row?.get("hex");
+  if (!row || !hasExactKeys(row, ROW_KEYS) || typeof hex !== "string") {
+    return false;
+  }
+  const outcome = round.submitGuess(hex);
+  if (!outcome.ok || outcome.row.hex !== hex || outcome.row.word !== row.get("word")) {
+    return false;
+  }
+  const expected = outcome.row.marks;
+  const marks = plainItems(row.get("marks"), expected.length);
+  return marks !== null && marks.length === expected.length && marks.every((mark, j) => mark === expected[j]);
+}
+
+/**
+ * Tries a saved answer again. Only accepted answers are saved, already
+ * uppercased, so anything else is false. Throws, like `submitAnswer`, if the
+ * round can't take an answer now (no row yet, or already over).
+ */
+function replayAnswer(round: Round, tried: unknown): boolean {
+  return typeof tried === "string" && isWord(tried) && round.submitAnswer(tried).ok;
 }

@@ -1,6 +1,14 @@
 import { isWord } from "./hex.ts";
 
 /**
+ * How many words the bundled list (words.txt) holds. The extension host
+ * doesn't load the list, so it checks `roundFinished`'s answer tries against
+ * this count instead (src/protocol.ts). A unit test keeps it equal to the
+ * file: change both together.
+ */
+export const WORD_LIST_SIZE = 1413;
+
+/**
  * Parses the bundled word list: one word per line, blank lines ignored.
  * Throws if any line isn't four uppercase letters or a word appears twice,
  * since either means the bundled file is broken.

@@ -255,7 +255,7 @@ describe("messagesAfter", () => {
     const view = requests.attach();
     requests.request();
     const handlers = recordingHandlers();
-    const message = { type: "roundFinished", solved: true, rowsUsed: 2, hintsUsed: false };
+    const message = { type: "roundFinished", solved: true, rowsUsed: 2, answerTries: 1, hintsUsed: false };
     assert.deepEqual(messagesAfter(message, handlers, requests, view), []);
     assert.equal(handlers.calls.length, 1);
     assert.equal(requests.pending, 1);

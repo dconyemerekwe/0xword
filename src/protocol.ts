@@ -7,6 +7,7 @@
 // freshly built copy of the allowed fields is ever used.
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
+import { WORD_LIST_SIZE } from "./game/words.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 import { isTheme, type Theme } from "./theme.ts";
 
@@ -116,16 +117,19 @@ export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): Host
   }
 }
 
-const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "hintsUsed"] as const;
+const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hintsUsed"] as const;
 
 /**
  * Checks the fields against what a real round can produce (see `Round`):
  * - `rowsUsed` is 1 to `MAX_ROWS`
  * - a failed round used every row and the forced final answer
- *
- * There is no answer-try count: every row is followed by exactly one answer
- * try, so it would always equal `rowsUsed`. A message that still carries
- * `answerTries` has an extra key and is rejected.
+ * - `answerTries` is at least 1, since every round ends with a word attempt
+ *   (the right word, or the wrong final answer)
+ * - tries are unlimited, but a word already tried is rejected, so each
+ *   listed word counts at most once. A solved round's tries are at most
+ *   every word in the list (all the others wrong, then the answer); a failed
+ *   one's at most every word but the answer. Both are reachable: the wrong
+ *   words can all be tried after row 1.
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
   if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
@@ -133,12 +137,18 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
   }
   const solved = fields.get("solved");
   const rowsUsed = fields.get("rowsUsed");
+  const answerTries = fields.get("answerTries");
   const hintsUsed = fields.get("hintsUsed");
-  if (typeof solved !== "boolean" || typeof hintsUsed !== "boolean" || !isIntegerInRange(rowsUsed, 1, MAX_ROWS)) {
+  if (
+    typeof solved !== "boolean" ||
+    typeof hintsUsed !== "boolean" ||
+    !isIntegerInRange(rowsUsed, 1, MAX_ROWS) ||
+    !isIntegerInRange(answerTries, 1, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1)
+  ) {
     return null;
   }
   if (!solved && rowsUsed !== MAX_ROWS) {
     return null;
   }
-  return { type: "roundFinished", solved, rowsUsed, hintsUsed };
+  return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };
 }

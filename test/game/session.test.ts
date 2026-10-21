@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { SESSION_STATE_VERSION, Session, isDraft, isReported, restoreSession } from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
 import { MAX_ROWS } from "../../src/game/round.ts";
+import { GameController } from "../../src/ui/game.ts";
 import { WORDS } from "./fixtures.ts";
 
 /** A random source that returns these values in turn. */
@@ -99,9 +100,15 @@ describe("Session", () => {
       assert.throws(() => new Session(WORDS).setDraft(""), RangeError);
     });
 
-    it("rejects digits while a word attempt is due", () => {
+    it("takes digits straight after a row is scored, with no word tried", () => {
       const session = sessionAt(1);
-      assert.equal(session.round?.phase, "answer");
+      assert.equal(session.round?.phase, "guess");
+      session.setDraft("4");
+      assert.equal(session.draft, "4");
+    });
+
+    it("rejects digits once the hex is locked", () => {
+      const session = atFinal();
       assert.throws(() => session.setDraft("4"), RangeError);
       session.setDraft("");
       assert.equal(session.draft, "");
@@ -115,7 +122,16 @@ describe("Session", () => {
       const outcome = session.submitDraft();
       assert.equal(outcome.ok, true);
       assert.equal(session.draft, "");
-      assert.equal(session.round?.phase, "answer");
+      assert.equal(session.round?.phase, "guess");
+    });
+
+    it("keeps the digits of a repeated row, which isn't scored again", () => {
+      const session = sessionAt(1);
+      const row = session.round?.rows[0]?.hex ?? "";
+      session.setDraft(row);
+      assert.deepEqual(session.submitDraft(), { ok: false, error: "repeat" });
+      assert.equal(session.draft, row);
+      assert.equal(session.round?.rows.length, 2);
     });
 
     it("keeps the digits of a rejected row, without using a row", () => {
@@ -148,7 +164,7 @@ describe("Session", () => {
     });
 
     it("accepts only an empty draft in every other phase", () => {
-      for (const phase of ["answer", "final", "solved", "failed"] as const) {
+      for (const phase of ["final", "solved", "failed"] as const) {
         assert.equal(isDraft("", phase), true, phase);
         assert.equal(isDraft("4", phase), false, phase);
       }
@@ -181,7 +197,7 @@ describe("Session", () => {
 
 /**
  * A session at round `n`, its round with one row guessed and answered wrongly,
- * then a second row guessed and waiting for its answer try.
+ * then a second row guessed with no word tried after it.
  */
 function sessionAt(n: number): Session {
   const session = new Session(WORDS, () => 0);
@@ -191,11 +207,25 @@ function sessionAt(n: number): Session {
   const round = session.round;
   assert.ok(round);
   // The answer is WORDS[0], because random() is always 0.
-  const other = WORDS[1];
-  assert.ok(other);
-  round.submitGuess(wordToHex(other));
-  assert.deepEqual(round.submitAnswer(other), { ok: true, correct: false });
-  round.submitGuess(wordToHex(other));
+  const [first, second] = WRONG;
+  assert.ok(first && second);
+  round.submitGuess(wordToHex(first));
+  assert.deepEqual(round.submitAnswer(first), { ok: true, correct: false });
+  round.submitGuess(wordToHex(second));
+  return session;
+}
+
+/** Six different wrong words: rows and words can't repeat within a round. WORDS[0] is the answer. */
+const WRONG = WORDS.slice(1, 1 + MAX_ROWS);
+
+/** A session whose first round has all six rows scored and no word tried: the hex is locked. */
+function atFinal(): Session {
+  const session = new Session(WORDS, () => 0);
+  const round = session.newRound();
+  for (const word of WRONG) {
+    round.submitGuess(wordToHex(word));
+  }
+  assert.equal(round.phase, "final");
   return session;
 }
 
@@ -212,12 +242,10 @@ function solved(): Session {
 /** A session whose first round failed: six wrong rows and a wrong final answer. */
 function failed(): Session {
   const session = new Session(WORDS, () => 0);
-  const other = WORDS[1];
-  assert.ok(other);
   const round = session.newRound();
-  for (let row = 0; row < MAX_ROWS; row++) {
-    round.submitGuess(wordToHex(other));
-    round.submitAnswer(other);
+  for (const word of WRONG) {
+    round.submitGuess(wordToHex(word));
+    round.submitAnswer(word);
   }
   assert.equal(round.phase, "failed");
   return session;
@@ -232,35 +260,31 @@ describe("Session.takeResult (roundFinished, once)", () => {
     const session = new Session(WORDS, () => 0);
     session.newRound();
     assert.equal(session.takeResult(), null, "guess");
-    assert.equal(sessionAt(1).takeResult(), null, "answer");
+    assert.equal(sessionAt(1).takeResult(), null, "guess, after rows and a wrong word");
     assert.equal(session.reported, false);
   });
 
   it("gives nothing at the final answer, before it's given", () => {
-    const session = new Session(WORDS, () => 0);
-    const other = WORDS[1];
-    assert.ok(other);
-    const round = session.newRound();
-    for (let row = 0; row < MAX_ROWS - 1; row++) {
-      round.submitGuess(wordToHex(other));
-      round.submitAnswer(other);
-    }
-    round.submitGuess(wordToHex(other));
-    assert.equal(round.phase, "final");
-    assert.equal(session.takeResult(), null);
+    assert.equal(atFinal().takeResult(), null);
   });
 
   it("gives a solved round's result once, without the answer", () => {
     const session = solved();
-    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, hintsUsed: false });
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: false });
     assert.equal(session.reported, true);
     assert.equal(session.takeResult(), null);
   });
 
-  it("gives a failed round's result once, with all 6 rows", () => {
+  it("gives a failed round's result once, with all 6 rows and every answer try", () => {
     const session = failed();
-    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, hintsUsed: false });
+    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS, hintsUsed: false });
     assert.equal(session.takeResult(), null);
+  });
+
+  it("gives a failed round's result with one answer try when only the final answer was tried", () => {
+    const session = atFinal();
+    session.round?.submitAnswer(WORDS[1] ?? "");
+    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: 1, hintsUsed: false });
   });
 
   it("records hints used", () => {
@@ -271,7 +295,7 @@ describe("Session.takeResult (roundFinished, once)", () => {
     round.enableHints();
     round.submitGuess(wordToHex(answer));
     round.submitAnswer(answer);
-    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, hintsUsed: true });
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: true });
   });
 
   it("is reset by a new round, which then reports only once it's over", () => {
@@ -333,9 +357,9 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 5", () => {
-    assert.equal(SESSION_STATE_VERSION, 5);
-    assert.equal(sessionAt(1).toState()?.version, 5);
+  it("saves in format version 6", () => {
+    assert.equal(SESSION_STATE_VERSION, 6);
+    assert.equal(sessionAt(1).toState()?.version, 6);
   });
 
   describe("hints on/off and hints used (version 5)", () => {
@@ -451,10 +475,37 @@ describe("Session state", () => {
     }
   });
 
-  it("round-trips a row that is waiting for its word attempt, with no draft", () => {
-    const restored = Session.fromState(stored(sessionAt(1)), WORDS);
-    assert.equal(restored?.round?.phase, "answer");
-    assert.equal(restored?.draft, "");
+  it("round-trips a half-typed row after scored rows, with no word tried since", () => {
+    const session = sessionAt(1);
+    session.setDraft("4259");
+    const restored = Session.fromState(stored(session), WORDS);
+    assert.equal(restored?.round?.phase, "guess");
+    assert.equal(restored?.draft, "4259");
+  });
+
+  it("round-trips hex rows and word attempts independently: more tries than rows, or none", () => {
+    const [other, third, fourth] = WRONG;
+    assert.ok(other && third && fourth);
+    const many = new Session(WORDS, () => 0);
+    const round = many.newRound();
+    round.submitGuess(wordToHex(other));
+    for (const word of [other, third, fourth]) {
+      round.submitAnswer(word);
+    }
+    const none = atFinal();
+    for (const session of [many, none]) {
+      const restored = Session.fromState(stored(session), WORDS);
+      assert.ok(restored);
+      assert.deepEqual(restored.toState(), session.toState());
+    }
+    assert.deepEqual(many.toState()?.round.answers, [other, third, fourth]);
+    assert.deepEqual(none.toState()?.round.answers, []);
+  });
+
+  it("round-trips the locked hex, still waiting for the final answer", () => {
+    const restored = Session.fromState(stored(atFinal()), WORDS);
+    assert.equal(restored?.round?.phase, "final");
+    assert.equal(restored?.round?.canDecode, true);
   });
 
   it("saves the round's answer tries as words, with no skipped (null) entries", () => {
@@ -471,7 +522,7 @@ describe("Session state", () => {
     assert.ok(restored);
     assert.equal(restored.roundNumber, 4);
     assert.deepEqual(restored.toState(), session.toState());
-    assert.equal(restored.round?.phase, "answer");
+    assert.equal(restored.round?.phase, "guess");
   });
 
   it("round-trips a finished round", () => {
@@ -508,7 +559,7 @@ describe("Session state", () => {
       ["a missing draft", () => ({ version: SESSION_STATE_VERSION, roundNumber: 2, round: valid().round })],
       ["a null draft", () => ({ ...valid(), draft: null })],
       ["a draft as a number", () => ({ ...valid(), draft: 42 })],
-      ["a draft while a word attempt is due", () => ({ ...valid(), draft: "42" })],
+      ["a draft once the hex is locked", () => ({ ...stored(atFinal()), draft: "42" })],
       [
         "a JSON-parsed __proto__ key",
         () => JSON.parse(`{${JSON.stringify(valid()).slice(1, -1)},"__proto__":{"roundNumber":9}}`),
@@ -570,10 +621,8 @@ describe("restoreSession (webview start-up)", () => {
     assert.equal(session.roundNumber, 0);
   });
 
-  describe("starts fresh, without throwing, for state from before the no-skip rule", () => {
+  describe("starts fresh, without throwing, for state from an older format", () => {
     // Version 1 saved an answerTries count with each round.
-    const other = WORDS[1];
-    assert.ok(other);
     const cases: readonly (readonly [string, () => unknown])[] = [
       ["version-1 state", () => withRound({ ...stored(sessionAt(5)), version: 1 }, { answerTries: 1 })],
       [
@@ -582,9 +631,13 @@ describe("restoreSession (webview start-up)", () => {
       ],
       ["a null answer try", () => withRound(stored(sessionAt(5)), { answers: [null] })],
       ["a version-2 round carrying answerTries", () => withRound(stored(sessionAt(5)), { answerTries: 1 })],
-      // sessionAt's round has 2 rows, so a valid answers list has 1 or 2 entries.
-      ["answers 2 shorter than the rows", () => withRound(stored(sessionAt(5)), { answers: [] })],
-      ["answers longer than the rows", () => withRound(stored(sessionAt(5)), { answers: [other, other, other] })],
+      // Version 5 had one compulsory word attempt per row, and an "answer" phase.
+      ["version-5 state", () => ({ ...stored(sessionAt(5)), version: 5 })],
+      [
+        "version-5 state waiting for a word attempt",
+        () => withRound({ ...stored(sessionAt(5)), version: 5 }, { phase: "answer" }),
+      ],
+      ["an answer phase in version-6 state", () => withRound(stored(sessionAt(5)), { phase: "answer" })],
     ];
     for (const [name, make] of cases) {
       it(`for ${name}`, () => {
@@ -613,5 +666,90 @@ describe("restoreSession (webview start-up)", () => {
     session.newRound();
     session.newRound();
     assert.equal(session.roundNumber, 7);
+  });
+});
+
+// Regression tests for #43: a round could end on a decode while the next hex
+// row was half typed, and was saved with that draft, which restore rejects.
+describe("solving with a half-typed hex row", () => {
+  /** A controller over a fresh session (answer WORDS[0]) with row 1 scored and `42` typed for row 2. */
+  function halfTyped(): { session: Session; controller: GameController } {
+    const other = WORDS[1];
+    assert.ok(other);
+    const session = new Session(WORDS, () => 0);
+    const controller = new GameController(session, () => {});
+    controller.dispatch({ type: "init" });
+    for (const digit of wordToHex(other)) {
+      controller.dispatch({ type: "digit", digit });
+    }
+    controller.dispatch({ type: "enter" });
+    // The player starts typing row 2, then decodes the right word instead.
+    controller.dispatch({ type: "digit", digit: "4" });
+    controller.dispatch({ type: "digit", digit: "2" });
+    assert.equal(session.draft, "42");
+    return { session, controller };
+  }
+
+  it("restores the solved round after the panel is hidden and shown", () => {
+    const answer = WORDS[0];
+    assert.ok(answer);
+    const { session, controller } = halfTyped();
+    controller.dispatch({ type: "decode", word: answer });
+    assert.equal(session.round?.phase, "solved");
+
+    const saved = controller.savedState();
+    const restored = Session.fromState(JSON.parse(JSON.stringify(saved)), WORDS);
+    assert.notEqual(
+      restored,
+      null,
+      `saved state rejected: ${JSON.stringify({ phase: saved?.round.phase, draft: saved?.draft })}`,
+    );
+    assert.equal(restored?.round?.phase, "solved");
+  });
+
+  it("clears the draft when a decode solves the round, and keeps it for a wrong or rejected word", () => {
+    const answer = WORDS[0];
+    const wrong = WORDS[2];
+    assert.ok(answer && wrong);
+    const { session } = halfTyped();
+    assert.deepEqual(session.submitAnswer("ZZZZ"), { ok: false, error: "notWord" });
+    assert.equal(session.draft, "42", "a rejected word leaves the half row");
+    assert.deepEqual(session.submitAnswer(wrong), { ok: true, correct: false });
+    assert.equal(session.draft, "42", "a wrong word leaves the half row: the player carries on typing");
+    assert.deepEqual(session.submitAnswer(answer), { ok: true, correct: true });
+    assert.equal(session.draft, "");
+    assert.equal(session.toState()?.draft, "");
+  });
+
+  it("has no draft to lose when a wrong final answer fails the round: the locked keypad takes none", () => {
+    const session = atFinal();
+    assert.throws(() => session.setDraft("4"), RangeError);
+    assert.deepEqual(session.submitAnswer(WORDS[MAX_ROWS + 1] ?? ""), { ok: true, correct: false });
+    assert.equal(session.round?.phase, "failed");
+    assert.equal(session.draft, "");
+    assert.equal(Session.fromState(stored(session), WORDS)?.round?.phase, "failed");
+  });
+
+  it("keeps a finished round free of a draft whatever comes after: digits, DEL, ENTER, Hints, init", () => {
+    const answer = WORDS[0];
+    assert.ok(answer);
+    const { session, controller } = halfTyped();
+    controller.dispatch({ type: "decode", word: answer });
+    for (const action of [
+      { type: "digit", digit: "4" },
+      { type: "delete" },
+      { type: "enter" },
+      { type: "toggleHints" },
+      { type: "init" },
+      { type: "decode", word: answer },
+    ] as const) {
+      controller.dispatch(action);
+      assert.equal(session.draft, "", action.type);
+    }
+    assert.ok(Session.fromState(stored(session), WORDS));
+  });
+
+  it("throws, like Round.submitAnswer, with no round to answer in", () => {
+    assert.throws(() => new Session(WORDS).submitAnswer("BYTE"), /No round/);
   });
 });

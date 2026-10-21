@@ -23,7 +23,8 @@ These protect the developers who install the extension. Check every change again
 - The hidden answer is a 4-letter English word shown as ASCII hex: 2 uppercase digits per letter, 8 digits in total (A–Z = `41`–`5A`).
 - Six hex rows. Each digit is scored Wordle-style, with repeated digits handled correctly: right spot, wrong spot, or not in the word.
 - **Every hex guess must decode to a real 4-letter word.**
-- After each row the player **must** make one try to type the plain-English word before the next hex row opens. There is no skip. Only listed words are accepted: a rejected word doesn't use the try. Fewer rows used means a better score.
+- After each scored row the player keeps guessing hex and may try to type the plain-English word at any time, as many times as they like; a wrong listed word doesn't use a row. Only listed words are accepted: a rejected word doesn't count as a try. Fewer rows used means a better score.
+- A word or a hex row the player has already tried in the round is rejected with a plain-text message: a repeated word (in any letter case) doesn't count as a try, even as the final answer, and a repeated hex row doesn't use a row.
 - After 6 rows the hex grid locks and the player gets one forced final answer.
 - **No modes or difficulty levels.** An optional **Hints** button is an on/off toggle, off at the start of each round, that shows the letter of each fully solved byte under the grid (e.g. `B ? T E`). The player can turn it on and off any number of times while a round is in progress: hints are unlimited and used purely by choice, with no counter and no "hints left" anywhere. The result records "hints used" once Hints has been turned on in the round, even if it was turned off again, and "no hints" otherwise.
 - **How to play** (the `?` icon) shows the rules plus an A–Z ASCII cheatsheet, available to everyone.

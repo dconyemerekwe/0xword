@@ -31,7 +31,7 @@ function round(overrides: Partial<FinishedRound> = {}): FinishedRound {
 
 /** A valid `roundFinished` message, as the webview would send it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, hintsUsed: false, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: false, ...overrides };
 }
 
 /** An in-memory `globalState` that counts writes and can be made to fail. */
@@ -404,7 +404,7 @@ describe("the host's message handling with a stats store", () => {
 
   describe("leaves the stats unchanged for a malformed roundFinished", () => {
     const malformed: readonly (readonly [string, unknown])[] = [
-      ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3 }],
+      ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 1 }],
       ["an extra field", roundFinished({ answer: "BYTE" })],
       ['solved as the string "true"', roundFinished({ solved: "true" })],
       ["hintsUsed as 1", roundFinished({ hintsUsed: 1 })],
@@ -412,7 +412,8 @@ describe("the host's message handling with a stats store", () => {
       ["rowsUsed above MAX_ROWS", roundFinished({ rowsUsed: MAX_ROWS + 1 })],
       ["a fractional rowsUsed", roundFinished({ rowsUsed: 2.5 })],
       ["a huge rowsUsed", roundFinished({ rowsUsed: 1e9 })],
-      ["the removed answerTries field", roundFinished({ answerTries: 3 })],
+      ["no answer tries", roundFinished({ answerTries: 0 })],
+      ["a fractional answerTries", roundFinished({ answerTries: 1.5 })],
       ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: 3 })],
       ["not an object", "roundFinished"],
     ];
