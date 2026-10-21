@@ -80,35 +80,6 @@
   --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;
   --ox-radius: 6px;
-
-  /*
-   * Grid sizing (#33). A tile is never smaller than a scored tile's content:
-   * one 18px digit at line height 1.4, plus its 2px border on each side
-   * (29.2px). A byte pair is two of those and the gap between them. The
-   * three grid gaps are shared by the layout rules and the height limit.
-   */
-  --ox-pair-gap: 3px;
-  --ox-row-gap: 12px;
-  --ox-grid-gap: 6px;
-  --ox-tile-min: calc(18px * 1.4 + 2 * 2px);
-  --ox-pair-min: calc(2 * var(--ox-tile-min) + var(--ox-pair-gap));
-  /*
-   * The height of the game screen outside the grid, mid-game and at the
-   * final answer, measured at a 400px panel: the body's padding (24), the
-   * header (44), the status line (44), the legend (16.8), the decode panel
-   * (124.4), the message line (19.6, less the 16px its margins take back),
-   * the keypad (5 × 44 + 4 × 6) and the 6 gaps of 12px between them. The
-   * grid gets the rest of the panel's height; the hint strip, when it shows,
-   * takes another 40px (`--ox-hint-room`).
-   *
-   * Known limits (owner's decision on #33): this assumes one line each for
-   * the status line, the legend and the decode panel's Tried list. Between
-   * about 306px and 370px wide the status line or legend can wrap, and a
-   * Tried list of about 5 or more words wraps too; each extra line makes the
-   * page scroll by about 20px rather than shrinking the tiles.
-   */
-  --ox-around-grid: 573px;
-  --ox-hint-room: 0px;
 }
 
 /*
@@ -347,49 +318,19 @@ body {
 .grid {
   display: flex;
   flex-direction: column;
-  gap: var(--ox-grid-gap);
+  gap: 6px;
 }
 
-/*
- * Every row has the same columns whatever its tiles hold, so empty tiles are
- * exactly as big as scored ones (#33). A pair never gets narrower than
- * `--ox-pair-min`: in a narrower panel the grid overflows rather than
- * shrinking its tiles further.
- */
 .grid-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
-  gap: var(--ox-row-gap);
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 
-/*
- * Tiles are limited by the panel's height as well as its width: the grid's
- * 6 rows of tiles and 5 row gaps may only take the height left by the rest
- * of the screen (`--ox-around-grid`), so the keypad stays in view. A row is
- * 8 tiles, 4 gaps within pairs and 3 between them wide. Held to that width, the rows and
- * the hint strip under them stay centred and line up; they never go below the
- * grid's narrowest width, and a panel too short for that scrolls.
- */
-.grid-row,
-.hint-strip {
-  width: 100%;
-  max-width: max(
-    4 * var(--ox-pair-min) + 3 * var(--ox-row-gap),
-    (100vh - var(--ox-around-grid) - var(--ox-hint-room) - 5 * var(--ox-grid-gap)) / 6 * 8 + 4 * var(--ox-pair-gap) + 3 * var(--ox-row-gap)
-  );
-  margin-inline: auto;
-}
-
-/* The hint strip takes 40px of the height while it shows: 28px and a 12px gap. */
-.game:has(> .hint-strip:not([hidden])) {
-  --ox-hint-room: 40px;
-}
-
-/* Two equal columns, however wide each tile's digit is. */
 .pair {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--ox-pair-gap);
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
 }
 
 .tile {
@@ -444,8 +385,8 @@ body {
 
 .hint-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
-  gap: var(--ox-row-gap);
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 
 .hint-cell {
@@ -900,14 +841,9 @@ body {
 
 /* Message */
 
-/*
- * One line is always kept for the message, so one showing up never moves the
- * keypad. Its margins take back 8px of the 12px gap on each side: space that
- * was left empty while the line is (#33).
- */
 .message {
   min-height: 1.4em;
-  margin: -8px 0;
+  margin: 0;
   color: var(--ox-text);
   font-weight: 700;
 }
