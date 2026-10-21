@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { MAX_ROWS } from "../../src/game/round.ts";
+import { DECODE_PANEL, FINAL_PANEL } from "../../src/ui/game.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
 import { DARK_PALETTE, LIGHT_PALETTE, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
@@ -239,8 +240,9 @@ describe("media/styles.css page 2: the Hints button and strip", () => {
 
   it("draws one dashed cell per byte, in the same columns as the byte pairs", () => {
     const columns = /grid-template-columns: ([^;]+);/;
-    const gap = /gap: (\d+px);/;
+    const gap = /(?:^|[\s;])gap: ([^;]+);/;
     assert.equal(columns.exec(block(".hint-strip"))?.[1], columns.exec(block(".grid-row"))?.[1]);
+    assert.ok(gap.exec(block(".grid-row"))?.[1], "a gap between byte pairs");
     assert.equal(gap.exec(block(".hint-strip"))?.[1], gap.exec(block(".grid-row"))?.[1]);
     assert.match(block(".hint-cell"), /border: 1px dashed var\(--ox-strip-border\);/);
   });
@@ -395,8 +397,8 @@ describe("media/styles.css layout and accessibility", () => {
   });
 
   it("puts a wider gap between byte pairs than within a pair", () => {
-    const between = Number(/gap: (\d+)px;/.exec(block(".grid-row"))?.[1]);
-    const within = Number(/gap: (\d+)px;/.exec(block(".pair"))?.[1]);
+    const between = px(block(".grid-row"), "gap");
+    const within = px(block(".pair"), "gap");
     assert.ok(between > within, `${between}px between, ${within}px within`);
   });
 
@@ -422,9 +424,18 @@ function ruleFor(selectors: string): string {
   return "";
 }
 
-/** A `px` value from a declaration such as `gap: 12px;`, or NaN. */
+/**
+ * A `px` value from a declaration such as `gap: 12px;`, or from one that names
+ * a custom property declared in :root as a `px` value, such as
+ * `gap: var(--ox-row-gap);`. NaN otherwise.
+ */
 function px(body: string, property: string): number {
-  return Number(new RegExp(`(?:^|[\\s;])${property}: ([\\d.]+)px;`).exec(body)?.[1]);
+  const value = new RegExp(`(?:^|[\\s;])${property}: ([^;]+);`).exec(body)?.[1]?.trim() ?? "";
+  const custom = /^var\((--ox-[a-z-]+)\)$/.exec(value)?.[1];
+  if (custom) {
+    return px(root, custom);
+  }
+  return Number(/^([\d.]+)px$/.exec(value)?.[1]);
 }
 
 describe("media/styles.css panel fit (#33)", () => {
@@ -436,6 +447,10 @@ describe("media/styles.css panel fit (#33)", () => {
   const gameGap = px(ruleFor(".game, .how-to-play"), "gap");
   const aroundGrid = px(root, "--ox-around-grid");
   const messageMargin = Number(/margin: (-\d+)px 0;/.exec(block(".message"))?.[1]);
+  /** The game's parts that take height mid-game and at the final answer, as `buildScreen` appends them. */
+  const IN_FLOW = ["header", "statusBar", "grid", "legend", "decode", "message", "keypad"];
+  /** The game's other parts, which `--ox-around-grid` leaves out (see the test that checks why). */
+  const NOT_IN_FLOW = ["hintStrip", "result", "resultNote", "announcement"];
 
   /** A grid row's widest allowed width, as the `.grid-row, .hint-strip` rule works it out. */
   function rowMaxWidth(panelHeight: number, hintRoom: number): number {
@@ -478,7 +493,7 @@ describe("media/styles.css panel fit (#33)", () => {
     assert.match(block("body"), /line-height: 1\.4;/);
     assert.match(block(".tile"), /border: 2px solid/);
     assert.match(root, /--ox-tile-min: calc\(18px \* 1\.4 \+ 2 \* 2px\);/);
-    assert.match(root, new RegExp(`--ox-pair-min: calc\\(2 \\* var\\(--ox-tile-min\\) \\+ ${pairGap}px\\);`));
+    assert.match(root, /--ox-pair-min: calc\(2 \* var\(--ox-tile-min\) \+ var\(--ox-pair-gap\)\);/);
     // At about 230px the rows overflow, as they did, rather than shrink the tiles.
     assert.equal(tileSize(230, 850).toFixed(1), "29.2");
     assert.equal(tileSize(230, 400).toFixed(1), "29.2");
@@ -516,10 +531,22 @@ describe("media/styles.css panel fit (#33)", () => {
   });
 
   it("hides a focused placeholder, where Chromium shows no ellipsis, only in a row too narrow for it: both placeholders", () => {
-    // Measured in Chromium with the bundled DM Sans at 14px: each placeholder's
-    // text, and the bold button beside it (Decode, or Submit on the final card).
-    const typeTheWord = rowNeeded(142, 85);
-    const decodeTheBytes = rowNeeded(158.9, 81.3);
+    // Widths measured in Chromium with the bundled DM Sans at 14px, by text:
+    // each placeholder, and the bold button beside it. Rewording any of them
+    // fails here until the cut-offs are measured again.
+    const MEASURED: Readonly<Record<string, number>> = {
+      "Type the English word": 142,
+      "Decode": 85,
+      "Decode the bytes above": 158.9,
+      "Submit": 81.3,
+    };
+    const measured = (text: string): number => {
+      const width = MEASURED[text];
+      assert.ok(width !== undefined, `"${text}" has no measured width: re-measure the placeholder cut-off`);
+      return width;
+    };
+    const typeTheWord = rowNeeded(measured(DECODE_PANEL.placeholder), measured(DECODE_PANEL.button));
+    const decodeTheBytes = rowNeeded(measured(FINAL_PANEL.placeholder), measured(FINAL_PANEL.button));
     assert.deepEqual(containerRules, [
       { width: Math.ceil(typeTheWord), selector: ".decode-input:focus::placeholder", body: "color: transparent;" },
       { width: Math.ceil(decodeTheBytes), selector: ".decode-final .decode-input:focus::placeholder", body: "color: transparent;" },
@@ -563,9 +590,33 @@ describe("media/styles.css panel fit (#33)", () => {
     const message = 14 * 1.4 + 2 * messageMargin;
     const keypad = 5 * touch + 4 * px(block(".keypad"), "gap");
     const legend = 12 * 1.4;
-    // Body padding, header, status line, legend, decode panel, message, keypad, and the 6 gaps between those 7.
-    const parts = 2 * px(block("body"), "padding") + touch + touch + legend + decode + message + keypad + 6 * gameGap;
+    // Body padding, header, status line, legend, decode panel, message, keypad, and the gaps between them and the grid.
+    const parts = 2 * px(block("body"), "padding") + touch + touch + legend + decode + message + keypad + (IN_FLOW.length - 1) * gameGap;
     assert.ok(aroundGrid >= parts && aroundGrid - parts < 1, `--ox-around-grid is ${aroundGrid}px for ${parts}px`);
+  });
+
+  it("measures `--ox-around-grid` from the game's in-flow parts: a new one forces a re-measure", () => {
+    const script = readFileSync(new URL("../../media/main.ts", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const appended = /const game = element\("div", "game"\);\s*game\.append\(([^)]*)\);/.exec(script)?.[1]?.split(",").map((name) => name.trim());
+    // In the game's order: the in-flow parts mid-game and at the final answer, and the rest.
+    assert.deepEqual(appended, ["header", "statusBar", "grid", "hintStrip", "legend", "decode", "result", "resultNote", "message", "announcement", "keypad"]);
+    assert.deepEqual(appended?.filter((name) => !NOT_IN_FLOW.includes(name)), IN_FLOW);
+    // Why the others take no height while the keypad shows: the hint strip has its own room,
+    // the result card and its note are hidden until the keypad is, and the announcement is screen-reader only.
+    assert.match(script, /ui\.hintStrip\.hidden = !view\.hints\.on/);
+    assert.match(script, /result\.hidden = true;/);
+    assert.match(script, /resultNote\.hidden = true;/);
+    assert.match(script, /ui\.keypad\.hidden = result !== null;/);
+    assert.match(script, /const announcement = element\("p", "sr-only"\);/);
+    assert.match(block(".sr-only"), /position: absolute;/);
+    // The comment by `--ox-around-grid` names every part it adds up, and the gaps between them.
+    const comment = /\/\*((?:(?!\*\/)[\s\S])*)\*\/\s*--ox-around-grid:/.exec(css)?.[1]?.replace(/\s*\*\s*/g, " ") ?? "";
+    for (const part of ["header", "status line", "legend", "decode panel", "message line", "keypad"]) {
+      assert.match(comment, new RegExp(part), part);
+    }
+    assert.match(comment, new RegExp(`the ${IN_FLOW.length - 1} gaps of ${gameGap}px`));
   });
 
   it("fits the whole game in a panel about 400 × 850: grid, legend, decode panel and the full keypad", () => {
@@ -579,7 +630,7 @@ describe("media/styles.css panel fit (#33)", () => {
     const shared = ruleFor(".grid-row, .hint-strip");
     assert.match(
       shared,
-      /max-width: max\(\s*4 \* var\(--ox-pair-min\) \+ 3 \* 12px,\s*\(100vh - var\(--ox-around-grid\) - var\(--ox-hint-room\) - 5 \* 6px\) \/ 6 \* 8 \+ 4 \* 3px \+ 3 \* 12px\s*\);/,
+      /max-width: max\(\s*4 \* var\(--ox-pair-min\) \+ 3 \* var\(--ox-row-gap\),\s*\(100vh - var\(--ox-around-grid\) - var\(--ox-hint-room\) - 5 \* var\(--ox-grid-gap\)\) \/ 6 \* 8 \+ 4 \* var\(--ox-pair-gap\) \+ 3 \* var\(--ox-row-gap\)\s*\);/,
     );
     assert.ok(tileSize(437, 850) < 44, "shorter than 960px: smaller tiles");
     assert.ok(screenHeight(tileSize(437, 850)) <= 850);
@@ -594,7 +645,7 @@ describe("media/styles.css panel fit (#33)", () => {
 
   it("keeps the grid at 6 rows", () => {
     assert.equal(MAX_ROWS, 6);
-    assert.match(ruleFor(".grid-row, .hint-strip"), /- 5 \* 6px\) \/ 6 \*/);
+    assert.match(ruleFor(".grid-row, .hint-strip"), /- 5 \* var\(--ox-grid-gap\)\) \/ 6 \*/);
   });
 
   it("takes the space from the message line's empty margins, without it overlapping the decode panel or keypad", () => {
