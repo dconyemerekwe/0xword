@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { MAX_ROWS } from "../../src/game/round.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
 import { DARK_PALETTE, LIGHT_PALETTE, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
@@ -407,5 +408,174 @@ describe("media/styles.css layout and accessibility", () => {
     assert.doesNotMatch(rules, /@import/i);
     // test/media/fonts.test.ts checks that those URLs are relative and point into media/fonts/.
     assert.doesNotMatch(rules.replace(/@font-face\s*\{[^}]*\}/g, ""), /url\(/i);
+  });
+});
+
+/** The declarations of the rule whose selector list is `selectors`, whitespace aside. */
+function ruleFor(selectors: string): string {
+  const wanted = selectors.replace(/\s+/g, " ").trim();
+  for (const [, selector, body] of rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (selector?.replace(/\s+/g, " ").trim() === wanted) {
+      return body ?? "";
+    }
+  }
+  return "";
+}
+
+/** A `px` value from a declaration such as `gap: 12px;`, or NaN. */
+function px(body: string, property: string): number {
+  return Number(new RegExp(`(?:^|[\\s;])${property}: ([\\d.]+)px;`).exec(body)?.[1]);
+}
+
+describe("media/styles.css panel fit (#33)", () => {
+  const tileMin = 18 * 1.4 + 2 * 2;
+  const pairGap = px(block(".pair"), "gap");
+  const pairMin = 2 * tileMin + pairGap;
+  const rowGap = px(block(".grid-row"), "gap");
+  const gridGap = px(block(".grid"), "gap");
+  const gameGap = px(ruleFor(".game, .how-to-play"), "gap");
+  const aroundGrid = px(root, "--ox-around-grid");
+  const messageMargin = Number(/margin: (-\d+)px 0;/.exec(block(".message"))?.[1]);
+
+  /** A grid row's widest allowed width, as the `.grid-row, .hint-strip` rule works it out. */
+  function rowMaxWidth(panelHeight: number, hintRoom: number): number {
+    const byHeight = ((panelHeight - aroundGrid - hintRoom - 5 * gridGap) / 6) * 8 + 4 * pairGap + 3 * rowGap;
+    return Math.max(4 * pairMin + 3 * rowGap, byHeight);
+  }
+
+  /** A tile's size in a panel: the row takes the game's width, up to its maximum, and never less than its columns' minimum. */
+  function tileSize(panelWidth: number, panelHeight: number, hintRoom = 0): number {
+    const game = Math.min(panelWidth - 2 * px(block("body"), "padding"), px(block("#app"), "max-width"));
+    const row = Math.max(Math.min(game, rowMaxWidth(panelHeight, hintRoom)), 4 * pairMin + 3 * rowGap);
+    return (row - 4 * pairGap - 3 * rowGap) / 8;
+  }
+
+  /** The game screen's height with that tile size: the grid plus everything around it. */
+  function screenHeight(tile: number, hintRoom = 0): number {
+    return aroundGrid + hintRoom + 6 * tile + 5 * gridGap;
+  }
+
+  it("sizes every row's columns the same way, whatever its tiles hold, so empty tiles match scored ones", () => {
+    assert.match(block(".grid-row"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
+    // Two equal columns per pair, not sized from the digit: an empty tile is as wide as a filled one.
+    assert.match(block(".pair"), /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+    // Square: the height follows the width for every tile.
+    assert.match(block(".tile"), /aspect-ratio: 1;/);
+  });
+
+  it("changes only colours between tile states: empty, typed, right, wrong, absent and the dimmed locked tiles", () => {
+    assert.equal(block(".tile-empty"), "", "no rule of its own for empty tiles");
+    for (const selector of [".tile-typed", ".tile-right", ".tile-wrong", ".tile-absent", ".grid-locked .tile-right", ".grid-locked .tile-wrong"]) {
+      const body = block(selector);
+      assert.notEqual(body, "", selector);
+      const properties = [...body.matchAll(/([a-z-]+):/g)].map((match) => match[1] ?? "");
+      assert.deepEqual(properties.filter((name) => !["border-color", "background", "color"].includes(name)), [], selector);
+    }
+  });
+
+  it("never shrinks a tile below a scored tile's content: one 18px digit line and its 2px border on each side", () => {
+    assert.equal(px(block(".tile"), "font-size"), 18);
+    assert.match(block("body"), /line-height: 1\.4;/);
+    assert.match(block(".tile"), /border: 2px solid/);
+    assert.match(root, /--ox-tile-min: calc\(18px \* 1\.4 \+ 2 \* 2px\);/);
+    assert.match(root, new RegExp(`--ox-pair-min: calc\\(2 \\* var\\(--ox-tile-min\\) \\+ ${pairGap}px\\);`));
+    // At about 230px the rows overflow, as they did, rather than shrink the tiles.
+    assert.equal(tileSize(230, 850).toFixed(1), "29.2");
+    assert.equal(tileSize(230, 400).toFixed(1), "29.2");
+  });
+
+  it("keeps the hint strip in the grid's columns, with the same width limits", () => {
+    assert.equal(/grid-template-columns: ([^;]+);/.exec(block(".hint-strip"))?.[1], "repeat(4, minmax(var(--ox-pair-min), 1fr))");
+    const shared = ruleFor(".grid-row, .hint-strip");
+    assert.match(shared, /width: 100%;/);
+    assert.match(shared, /margin-inline: auto;/);
+  });
+
+  it("ends the decode box's placeholder in an ellipsis when it doesn't fit, at the final answer too", () => {
+    // One rule for both placeholders: "Type the English word" and "Decode the bytes above".
+    assert.match(block(".decode-input"), /text-overflow: ellipsis;/);
+    const placeholder = block(".decode-input::placeholder");
+    assert.match(placeholder, /text-overflow: ellipsis;/);
+    assert.match(placeholder, /overflow: hidden;/);
+    assert.match(placeholder, /white-space: nowrap;/);
+    assert.equal(block(".decode-final .decode-input::placeholder"), "", "the final card doesn't override it");
+  });
+
+  it("shows a placeholder that fits in full: the box takes the row's free width, and nothing else cuts it", () => {
+    assert.match(block(".decode-input"), /flex: 1;/);
+    assert.doesNotMatch(block(".decode-input"), /(?:^|[\s;])(max-)?width:/);
+    assert.doesNotMatch(block(".decode-input::placeholder"), /width|max-|content:/);
+  });
+
+  it("keeps the 400px panel's tiles, gaps and keys as they were", () => {
+    assert.deepEqual([rowGap, pairGap, gridGap, px(block(".keypad"), "gap")], [12, 3, 6, 6]);
+    // 41px tiles at 400px wide, as before, from 850px tall up.
+    assert.equal(tileSize(400, 850), 41);
+    assert.equal(tileSize(400, 1200), 41);
+    // The widest tiles, in the 400px-wide game of a wider panel, stay 44px when there's room.
+    assert.equal(tileSize(437, 960), 44);
+  });
+
+  it("adds up the height outside the grid from the stylesheet's own sizes", () => {
+    const touch = px(root, "--ox-touch");
+    const decode = 2 * 2 + 2 * px(block(".decode"), "padding") + 14 * 1.4 + 2 * px(block(".decode"), "gap") + touch + 12 * 1.4;
+    const message = 14 * 1.4 + 2 * messageMargin;
+    const keypad = 5 * touch + 4 * px(block(".keypad"), "gap");
+    const legend = 12 * 1.4;
+    // Body padding, header, status line, legend, decode panel, message, keypad, and the 6 gaps between those 7.
+    const parts = 2 * px(block("body"), "padding") + touch + touch + legend + decode + message + keypad + 6 * gameGap;
+    assert.ok(aroundGrid >= parts && aroundGrid - parts < 1, `--ox-around-grid is ${aroundGrid}px for ${parts}px`);
+  });
+
+  it("fits the whole game in a panel about 400 × 850: grid, legend, decode panel and the full keypad", () => {
+    for (const [width, height] of [[400, 850], [437, 850], [400, 900], [437, 960]] as const) {
+      const used = screenHeight(tileSize(width, height));
+      assert.ok(used <= height, `${width} × ${height}: ${used}px`);
+    }
+  });
+
+  it("limits tile size by the panel's height as well as its width, in a wider panel too", () => {
+    const shared = ruleFor(".grid-row, .hint-strip");
+    assert.match(
+      shared,
+      /max-width: max\(\s*4 \* var\(--ox-pair-min\) \+ 3 \* 12px,\s*\(100vh - var\(--ox-around-grid\) - var\(--ox-hint-room\) - 5 \* 6px\) \/ 6 \* 8 \+ 4 \* 3px \+ 3 \* 12px\s*\);/,
+    );
+    assert.ok(tileSize(437, 850) < 44, "shorter than 960px: smaller tiles");
+    assert.ok(screenHeight(tileSize(437, 850)) <= 850);
+  });
+
+  it("makes room for the hint strip while it shows: its 28px cell and a 12px gap", () => {
+    assert.match(root, /--ox-hint-room: 0px;/);
+    const room = px(ruleFor(".game:has(> .hint-strip:not([hidden]))"), "--ox-hint-room");
+    assert.equal(room, px(block(".hint-cell"), "min-height") + gameGap);
+    assert.ok(screenHeight(tileSize(400, 850, room), room) <= 850);
+  });
+
+  it("keeps the grid at 6 rows", () => {
+    assert.equal(MAX_ROWS, 6);
+    assert.match(ruleFor(".grid-row, .hint-strip"), /- 5 \* 6px\) \/ 6 \*/);
+  });
+
+  it("takes the space from the message line's empty margins, without it overlapping the decode panel or keypad", () => {
+    assert.ok(messageMargin < 0 && -messageMargin < gameGap, `${messageMargin}px inside a ${gameGap}px gap`);
+    // One line is still kept, so a message showing up doesn't move the keypad.
+    assert.match(block(".message"), /min-height: 1\.4em;/);
+  });
+
+  it("keeps keys at least 44px tall", () => {
+    assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
+    assert.equal(px(root, "--ox-touch"), 44);
+  });
+
+  it("lets a panel too short for the game scroll: nothing is fixed to the panel's height or clipped", () => {
+    assert.equal(block("html"), "", "no rule for <html>");
+    for (const selector of ["body", "#app", ".game, .how-to-play", ".grid", ".grid-row", ".grid-row, .hint-strip", ".keypad"]) {
+      const body = ruleFor(selector);
+      assert.notEqual(body, "", selector);
+      assert.doesNotMatch(body, /(?:^|[\s;])(height|max-height):|overflow|position: fixed/, selector);
+    }
+    // The height limit has a floor, so tiles keep their minimum and the page scrolls.
+    assert.equal(tileSize(400, 500).toFixed(1), "29.2");
+    assert.ok(screenHeight(tileSize(400, 500)) > 500);
   });
 });
