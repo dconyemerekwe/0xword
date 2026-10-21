@@ -7,6 +7,7 @@ import {
   isReported,
   readRejection,
   restoreSession,
+  stillApplies,
   type Rejection,
 } from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
@@ -987,13 +988,15 @@ describe("Session: the last rejected move, saved for its message (#34)", () => {
       ["a free-text field", () => changed(row(), { text: "<b>hi</b>" })],
       ["a missing error", () => without(row(), "error")],
       ["a missing hex", () => without(row(), "hex")],
-      ["an error the row doesn't have", () => changed(row(), { error: "notWord" })],
       ["an unknown error", () => changed(row(), { error: "tooLong" })],
+      ["a word error on a row", () => changed(row(), { error: "format" })],
+      ["a row error on a word", () => changed(word(), { error: "notLetter" })],
+      ["an error as a number", () => changed(row(), { error: 1 })],
+      ["a row rejection once the hex is locked", () => ({ ...stored(atFinal()), rejection: { kind: "row", error: "length", hex: "" } })],
       ["a hex that isn't the typed row", () => changed(row(), { hex: wordToHex(WRONG[1] ?? "") })],
       ["a hex in lowercase", () => changed(row(), { hex: field(row(), "hex").toLowerCase() })],
       ["a row rejection with a word key", () => changed(row(), { word: WRONG[0] })],
       ["a word rejection with a hex key", () => changed(word(), { hex: "" })],
-      ["a word not tried yet", () => changed(word(), { word: WORDS[MAX_ROWS + 1] })],
       ["a word in lowercase", () => changed(word(), { word: field(word(), "word").toLowerCase() })],
       ["a word as a number", () => changed(word(), { word: 42 })],
       ["a format error naming text", () => changed(word(), { error: "format", word: "<img>" })],
@@ -1006,6 +1009,57 @@ describe("Session: the last rejected move, saved for its message (#34)", () => {
         assert.equal(restoreSession(make(), WORDS).round, null, "starts fresh");
       });
     }
+  });
+
+  describe("keeps the round, with no rejection, when a well-formed one no longer applies", () => {
+    /** A newer word list that also holds ZZZZ, as a later release might. */
+    const withZzzz = [...WORDS, "ZZZZ"];
+
+    it("an unlisted word the word list now holds", () => {
+      const session = rejectWord(sessionAt(1), "ZZZZ", "notWord");
+      const restored = Session.fromState(stored(session), withZzzz);
+      assert.ok(restored, "the round in progress isn't lost");
+      assert.equal(restored.rejection, null);
+      assert.deepEqual(restored.toState(), { ...session.toState(), rejection: null });
+      const view = new GameController(restored, () => {}).view();
+      assert.equal(view.message, "");
+      assert.equal(view.messageIsError, false);
+    });
+
+    it("an unlisted hex row the word list now holds, keeping its typed digits", () => {
+      const session = rejectRow(sessionAt(1), wordToHex("ZZZZ"), "notWord");
+      const restored = Session.fromState(stored(session), withZzzz);
+      assert.ok(restored);
+      assert.equal(restored.rejection, null);
+      assert.equal(restored.draft, wordToHex("ZZZZ"));
+    });
+
+    const cases: readonly (readonly [string, () => Record<string, unknown>])[] = [
+      ["a known error the row doesn't have", () => {
+        const state = stored(withRejectedRow());
+        return { ...state, rejection: { ...(state["rejection"] as object), error: "notWord" } };
+      }],
+      ["a repeat of a word not tried yet", () => {
+        const state = stored(withRejectedWord());
+        return { ...state, rejection: { kind: "word", error: "repeat", word: WORDS[MAX_ROWS + 1] } };
+      }],
+    ];
+    for (const [name, make] of cases) {
+      it(name, () => {
+        const restored = Session.fromState(make(), WORDS);
+        assert.ok(restored);
+        assert.equal(restored.rejection, null);
+        assert.equal(restored.roundNumber, 1);
+      });
+    }
+
+    it("stillApplies says whether the round still rejects it", () => {
+      const session = withRejectedWord();
+      const { round, rejection } = session;
+      assert.ok(round && rejection);
+      assert.equal(stillApplies(rejection, round), true);
+      assert.equal(stillApplies({ kind: "word", error: "notWord", word: rejection.kind === "word" ? rejection.word : "" }, round), false);
+    });
   });
 
   describe("version-6 state, saved before the rejection was", () => {

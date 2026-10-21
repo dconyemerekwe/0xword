@@ -89,33 +89,56 @@ export function isReported(reported: unknown, round: Round): reported is boolean
   return reported === false || (reported === true && round.isOver);
 }
 
+/** Every `RowError`: the compiler fails here if one is missing or unknown. */
+const ROW_ERRORS: Readonly<Record<RowError, true>> = { length: true, notHex: true, notLetter: true, notWord: true, repeat: true };
+
+/** Every `AnswerError`, likewise. */
+const ANSWER_ERRORS: Readonly<Record<AnswerError, true>> = { format: true, notWord: true, repeat: true };
+
+function isRowError(error: unknown): error is RowError {
+  return typeof error === "string" && Object.hasOwn(ROW_ERRORS, error);
+}
+
+function isAnswerError(error: unknown): error is AnswerError {
+  return typeof error === "string" && Object.hasOwn(ANSWER_ERRORS, error);
+}
+
 /**
- * `raw` as a fresh `Rejection` if it's exactly what the round, with `draft`
- * typed, rejects now, or else null. The error is worked out again by the
- * round, not taken on trust. A row rejection needs the round to be waiting
- * for a hex row and its `hex` to be the draft; a word rejection needs the
- * round to take a word (`canDecode`) and the word to be four letters A–Z, or
- * "" for a `format` error. Anything else, extra fields included, is null.
+ * `raw` as a fresh `Rejection` if it's well formed for the round with `draft`
+ * typed, or else null. Well formed means: exactly the keys of its kind, a
+ * known error code, and, for a row, the round waiting for a hex row with
+ * `hex` equal to the draft; for a word, the round able to take a word
+ * (`canDecode`) and the word four letters A–Z, or "" exactly when the error
+ * is `format`. It doesn't ask whether the round still rejects that input
+ * with that error: see `stillApplies`.
  */
 export function readRejection(raw: unknown, round: Round, draft: string): Rejection | null {
   const fields = plainFields(raw);
   const kind = fields?.get("kind");
-  if (kind === "row" && fields && hasExactKeys(fields, ROW_REJECTION_KEYS)) {
-    const error = round.rowError(draft);
-    if (round.phase === "guess" && fields.get("hex") === draft && error !== null && fields.get("error") === error) {
+  const error = fields?.get("error");
+  if (kind === "row" && fields && hasExactKeys(fields, ROW_REJECTION_KEYS) && isRowError(error)) {
+    if (round.phase === "guess" && fields.get("hex") === draft) {
       return { kind, error, hex: draft };
     }
   }
-  if (kind === "word" && fields && hasExactKeys(fields, WORD_REJECTION_KEYS)) {
+  if (kind === "word" && fields && hasExactKeys(fields, WORD_REJECTION_KEYS) && isAnswerError(error)) {
     const word = fields.get("word");
-    if (round.canDecode && typeof word === "string" && (word === "" || isWord(word))) {
-      const error = round.answerError(word);
-      if (error !== null && fields.get("error") === error && (error === "format") === (word === "")) {
-        return { kind, error, word };
-      }
+    if (round.canDecode && typeof word === "string" && (word === "" ? error === "format" : isWord(word) && error !== "format")) {
+      return { kind, error, word };
     }
   }
   return null;
+}
+
+/**
+ * True if the round still rejects the rejection's input with its error,
+ * worked out again by the round rather than taken on trust. A well-formed
+ * saved rejection can stop applying without any tampering, for example when
+ * a later release adds the rejected word to the word list.
+ */
+export function stillApplies(rejection: Rejection, round: Round): boolean {
+  const error = rejection.kind === "row" ? round.rowError(rejection.hex) : round.answerError(rejection.word);
+  return error === rejection.error;
 }
 
 /**
@@ -172,8 +195,9 @@ export class Session {
 
   /**
    * Records the last move's rejection, or clears it with null. Throws if it
-   * isn't what the round rejects now (see `readRejection`): the caller sets
-   * it straight after the rejected move.
+   * isn't well formed or isn't what the round rejects now (see
+   * `readRejection` and `stillApplies`): the caller sets it straight after
+   * the rejected move.
    */
   setRejection(rejection: Rejection | null): void {
     if (rejection === null) {
@@ -181,7 +205,7 @@ export class Session {
       return;
     }
     const checked = this.#round ? readRejection(rejection, this.#round, this.#draft) : null;
-    if (!checked) {
+    if (!checked || !this.#round || !stillApplies(checked, this.#round)) {
       throw new RangeError(`Not a rejection now: ${JSON.stringify(rejection)}`);
     }
     this.#rejection = checked;
@@ -296,8 +320,10 @@ export class Session {
 
   /**
    * Rebuilds a session from untrusted saved state, or returns null if it isn't
-   * exactly what `toState` gives (see `Round.fromState`). Version-6 state,
-   * which has no `rejection`, is restored with none. Never throws.
+   * exactly what `toState` gives (see `Round.fromState`). A malformed
+   * `rejection` drops the state; a well-formed one the round no longer
+   * rejects is restored as none. Version-6 state, which has no `rejection`,
+   * is restored with none. Never throws.
    */
   static fromState(raw: unknown, words: readonly string[], random: () => number = Math.random): Session | null {
     const fields = plainFields(raw);
@@ -320,10 +346,14 @@ export class Session {
     }
     // Version-6 state has no rejection to restore.
     const savedRejection = version === SESSION_STATE_VERSION ? fields.get("rejection") : null;
-    const rejection = savedRejection === null ? null : readRejection(savedRejection, round, draft);
-    if (savedRejection !== null && rejection === null) {
+    const parsed = savedRejection === null ? null : readRejection(savedRejection, round, draft);
+    if (savedRejection !== null && parsed === null) {
+      // Malformed: the state was tampered with or corrupted, so drop it all.
       return null;
     }
+    // Well formed but no longer true (the word list changed, say): the round
+    // is fine, so keep it, with no message.
+    const rejection = parsed && stillApplies(parsed, round) ? parsed : null;
     session.#round = round;
     session.#roundNumber = roundNumber;
     session.#draft = draft;

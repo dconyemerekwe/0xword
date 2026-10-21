@@ -20,6 +20,7 @@ export {
   isDraft,
   readRejection,
   restoreSession,
+  stillApplies,
   type Rejection,
   type SessionState,
 } from "./session.ts";

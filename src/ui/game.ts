@@ -321,6 +321,11 @@ export class GameController {
     }
     this.#notice = notice;
     // Saved by `changed`, so the message survives the panel being hidden.
+    // `setRejection` throws only for a rejection the round doesn't reject
+    // now, which can't happen here: a new rejection comes straight from the
+    // move the round just rejected, and an action that keeps the old notice
+    // changes nothing in the session (every session method that does clears
+    // the rejection, and those actions always return a new notice).
     this.#session.setRejection(notice.rejection);
     const result = this.#session.takeResult();
     this.#changed(result ? { type: "roundFinished", ...result } : null);
