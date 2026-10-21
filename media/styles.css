@@ -157,6 +157,11 @@ body[data-ox-theme="light"] {
   display: none !important;
 }
 
+/*
+ * VS Code puts its own defaults before this stylesheet (`body` padding of
+ * 20px at the sides, the workbench font, size and weight). Every one that
+ * changes a size is set again here, so the panel doesn't depend on them.
+ */
 body {
   margin: 0;
   padding: 12px;
@@ -164,6 +169,7 @@ body {
   color: var(--ox-text);
   font-family: var(--ox-sans);
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.4;
 }
 
@@ -515,9 +521,11 @@ body {
   font-weight: 700;
 }
 
+/* A size container, so the placeholder rules below can tell when it fits. */
 .decode-row {
   display: flex;
   gap: 8px;
+  container-type: inline-size;
 }
 
 .decode-input {
@@ -541,6 +549,26 @@ body {
   text-overflow: ellipsis;
   text-transform: none;
   white-space: nowrap;
+}
+
+/*
+ * Chromium shows no ellipsis while the box has focus, so a placeholder that
+ * doesn't fit would be cut mid-letter: hide it then instead (owner's decision
+ * on #33). The widths are the decode row's, measured with the bundled fonts:
+ * "Type the English word" (142px) needs the box's 22px of padding and border,
+ * the 8px gap and Decode (85px); "Decode the bytes above" (158.9px) needs the
+ * same, with Submit (81.3px). Where it fits, it stays visible.
+ */
+@container (width < 257px) {
+  .decode-input:focus::placeholder {
+    color: transparent;
+  }
+}
+
+@container (width < 271px) {
+  .decode-final .decode-input:focus::placeholder {
+    color: transparent;
+  }
 }
 
 .decode-input:disabled {

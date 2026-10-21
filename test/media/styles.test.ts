@@ -501,6 +501,47 @@ describe("media/styles.css panel fit (#33)", () => {
     assert.equal(block(".decode-final .decode-input::placeholder"), "", "the final card doesn't override it");
   });
 
+  /** The `@container (width < Npx)` rules: their width, selector and declarations. */
+  const containerRules = [...rules.matchAll(/@container \(width < (\d+)px\) \{\s*([^{}]+?)\s*\{([^{}]*)\}\s*\}/g)].map(
+    ([, width, selector, body]) => ({ width: Number(width), selector, body: body?.trim() }),
+  );
+  /** The decode row's width a placeholder needs: its text, the box's padding and border, the gap and the button. */
+  function rowNeeded(text: number, button: number): number {
+    const box = 2 * Number(/padding: 0 (\d+)px;/.exec(block(".decode-input"))?.[1]) + 2 * Number(/border: (\d+)px solid/.exec(block(".decode-input"))?.[1]);
+    return text + box + px(block(".decode-row"), "gap") + button;
+  }
+
+  it("makes the decode row a size container, so a rule can tell when the placeholder fits", () => {
+    assert.match(block(".decode-row"), /container-type: inline-size;/);
+  });
+
+  it("hides a focused placeholder, where Chromium shows no ellipsis, only in a row too narrow for it: both placeholders", () => {
+    // Measured in Chromium with the bundled DM Sans at 14px: each placeholder's
+    // text, and the bold button beside it (Decode, or Submit on the final card).
+    const typeTheWord = rowNeeded(142, 85);
+    const decodeTheBytes = rowNeeded(158.9, 81.3);
+    assert.deepEqual(containerRules, [
+      { width: Math.ceil(typeTheWord), selector: ".decode-input:focus::placeholder", body: "color: transparent;" },
+      { width: Math.ceil(decodeTheBytes), selector: ".decode-final .decode-input:focus::placeholder", body: "color: transparent;" },
+    ]);
+  });
+
+  it("keeps a focused placeholder visible where it fits: in a 400px panel's decode row", () => {
+    // The row at 400px: the body's padding, then the decode panel's padding and border.
+    const row = 400 - 2 * px(block("body"), "padding") - 2 * px(block(".decode"), "padding") - 2 * 2;
+    for (const { width } of containerRules) {
+      assert.ok(width <= row, `hidden below ${width}px, the row is ${row}px`);
+    }
+  });
+
+  it("never hides an unfocused placeholder: it ends in an ellipsis instead", () => {
+    for (const [, selector, body] of rules.matchAll(/([^{}]*::placeholder)\s*\{([^{}]*)\}/g)) {
+      if (!selector?.includes(":focus")) {
+        assert.doesNotMatch(body ?? "", /transparent/, selector);
+      }
+    }
+  });
+
   it("shows a placeholder that fits in full: the box takes the row's free width, and nothing else cuts it", () => {
     assert.match(block(".decode-input"), /flex: 1;/);
     assert.doesNotMatch(block(".decode-input"), /(?:^|[\s;])(max-)?width:/);
@@ -560,6 +601,15 @@ describe("media/styles.css panel fit (#33)", () => {
     assert.ok(messageMargin < 0 && -messageMargin < gameGap, `${messageMargin}px inside a ${gameGap}px gap`);
     // One line is still kept, so a message showing up doesn't move the keypad.
     assert.match(block(".message"), /min-height: 1\.4em;/);
+  });
+
+  it("sets again every size VS Code's default webview styles change: body padding and margin, font and line height", () => {
+    const body = block("body");
+    for (const declaration of [/margin: 0;/, /padding: 12px;/, /font-family: var\(--ox-sans\);/, /font-size: 14px;/, /font-weight: 400;/, /line-height: 1\.4;/]) {
+      assert.match(body, declaration);
+    }
+    // Nothing is sized from the root font size, which the stylesheet doesn't set.
+    assert.doesNotMatch(rules, /\d(rem|vw)\b/);
   });
 
   it("keeps keys at least 44px tall", () => {
