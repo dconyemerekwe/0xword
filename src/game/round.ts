@@ -1,4 +1,4 @@
-import { checkGuess, type GuessError } from "./guess.ts";
+import { checkGuess, type GuessCheck, type GuessError } from "./guess.ts";
 import { WORD_LENGTH, isWord, wordToHex } from "./hex.ts";
 import { hasExactKeys, plainFields, plainItems } from "./plain.ts";
 import { Mark, score } from "./score.ts";
@@ -138,12 +138,9 @@ export class Round {
     if (this.#phase !== "guess") {
       throw new Error(`Not allowed in phase "${this.#phase}"`);
     }
-    const check = checkGuess(input, this.#words);
+    const check = this.#checkRow(input);
     if (!check.ok) {
       return check;
-    }
-    if (this.#rows.some((row) => row.hex === check.hex)) {
-      return { ok: false, error: "repeat" };
     }
     const row: Row = { hex: check.hex, word: check.word, marks: score(check.hex, this.#answerHex) };
     this.#rows.push(row);
@@ -164,17 +161,11 @@ export class Round {
     if (!this.canDecode) {
       throw new Error(`Not allowed in phase "${this.#phase}" with ${this.#rows.length} rows`);
     }
+    const error = this.answerError(input);
+    if (error !== null) {
+      return { ok: false, error };
+    }
     const guess = input.trim().toUpperCase();
-    if (!isWord(guess)) {
-      return { ok: false, error: "format" };
-    }
-    if (!this.#words.has(guess)) {
-      return { ok: false, error: "notWord" };
-    }
-    // `guess` is uppercased, like every saved answer, so this ignores letter case.
-    if (this.#answers.includes(guess)) {
-      return { ok: false, error: "repeat" };
-    }
     this.#answers.push(guess);
     const correct = guess === this.#answer;
     if (correct) {
@@ -183,6 +174,36 @@ export class Round {
       this.#phase = "failed";
     }
     return { ok: true, correct };
+  }
+
+  /**
+   * Why `submitGuess(input)` would reject the row now, or null if it would
+   * score it: the invalid-guess checks first, then the repeat check. Changes
+   * nothing, and doesn't check the phase.
+   */
+  rowError(input: string): RowError | null {
+    const check = this.#checkRow(input);
+    return check.ok ? null : check.error;
+  }
+
+  /**
+   * Why `submitAnswer(input)` would reject the word now, or null if it would
+   * count it as a try: the format and word-list checks first, then the repeat
+   * check. Changes nothing, and doesn't check the phase.
+   */
+  answerError(input: string): AnswerError | null {
+    const guess = input.trim().toUpperCase();
+    if (!isWord(guess)) {
+      return "format";
+    }
+    if (!this.#words.has(guess)) {
+      return "notWord";
+    }
+    // `guess` is uppercased, like every saved answer, so this ignores letter case.
+    if (this.#answers.includes(guess)) {
+      return "repeat";
+    }
+    return null;
   }
 
   /**
@@ -268,6 +289,15 @@ export class Round {
     } catch {
       return null;
     }
+  }
+
+  /** `checkGuess`, then the repeat check: a row already scored in this round. */
+  #checkRow(input: string): GuessCheck | { ok: false; error: "repeat" } {
+    const check = checkGuess(input, this.#words);
+    if (check.ok && this.#rows.some((row) => row.hex === check.hex)) {
+      return { ok: false, error: "repeat" };
+    }
+    return check;
   }
 
   #requireInProgress(): void {

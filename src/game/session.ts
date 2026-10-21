@@ -1,6 +1,15 @@
-import { HEX_LENGTH } from "./hex.ts";
+import { HEX_LENGTH, isWord } from "./hex.ts";
 import { hasExactKeys, isIntegerInRange, plainFields } from "./plain.ts";
-import { Round, type AnswerOutcome, type GuessOutcome, type Phase, type RoundResult, type RoundState } from "./round.ts";
+import {
+  Round,
+  type AnswerError,
+  type AnswerOutcome,
+  type GuessOutcome,
+  type Phase,
+  type RoundResult,
+  type RoundState,
+  type RowError,
+} from "./round.ts";
 import { pickAnswer } from "./words.ts";
 
 /**
@@ -12,9 +21,28 @@ import { pickAnswer } from "./words.ts";
  * `hintsShown`, the Hints on/off toggle, next to the one-way `hintsUsed`.
  * Version 6 made word attempts optional (#30): the round's `answers` no
  * longer follow its rows one for one, and the `answer` phase is gone.
- * Older state is dropped, so the panel starts fresh.
+ * Version 7 added `rejection`, so the message for a rejected move survives a
+ * hide and show (#34). Version-6 state is still restored, with no rejection:
+ * its fields are checked exactly as before and it can't hold anything
+ * version 7 rejects. Older state is dropped, so the panel starts fresh.
  */
-export const SESSION_STATE_VERSION = 6;
+export const SESSION_STATE_VERSION = 7;
+
+/** The last version `fromState` still restores: the same as `SESSION_STATE_VERSION` but without `rejection`. */
+const PREVIOUS_STATE_VERSION = 6;
+
+/**
+ * The player's last rejected move, as data rather than text: the error, and
+ * what the message names. The screen rebuilds the message from it, so a
+ * restored message is never text read back from saved state.
+ * - `row`: the hex row ENTER rejected. The rejected digits stay typed, so
+ *   `hex` is always the session's draft (empty, short or full).
+ * - `word`: the word the decode box rejected, trimmed and uppercased, or ""
+ *   for a `format` error, whose message doesn't name it.
+ */
+export type Rejection =
+  | { readonly kind: "row"; readonly error: RowError; readonly hex: string }
+  | { readonly kind: "word"; readonly error: AnswerError; readonly word: string };
 
 /**
  * A session saved as plain data. It holds the hidden answer, so it must never
@@ -28,12 +56,17 @@ export interface SessionState {
   readonly draft: string;
   /** The round's result has been handed out by `takeResult`: see `isReported`. */
   readonly reported: boolean;
+  /** The last move's rejection, or null if the last move wasn't rejected: see `readRejection`. */
+  readonly rejection: Rejection | null;
 }
 
 /** A finished round's result as the host gets it: without the hidden answer. */
 export type RoundReport = Omit<RoundResult, "answer">;
 
-const SESSION_STATE_KEYS = ["version", "roundNumber", "round", "draft", "reported"] as const;
+const PREVIOUS_STATE_KEYS = ["version", "roundNumber", "round", "draft", "reported"] as const;
+const SESSION_STATE_KEYS = [...PREVIOUS_STATE_KEYS, "rejection"] as const;
+const ROW_REJECTION_KEYS = ["kind", "error", "hex"] as const;
+const WORD_REJECTION_KEYS = ["kind", "error", "word"] as const;
 
 /** Up to 8 uppercase hex digits. */
 const DRAFT_PATTERN = new RegExp(`^[0-9A-F]{0,${HEX_LENGTH}}$`);
@@ -57,6 +90,35 @@ export function isReported(reported: unknown, round: Round): reported is boolean
 }
 
 /**
+ * `raw` as a fresh `Rejection` if it's exactly what the round, with `draft`
+ * typed, rejects now, or else null. The error is worked out again by the
+ * round, not taken on trust. A row rejection needs the round to be waiting
+ * for a hex row and its `hex` to be the draft; a word rejection needs the
+ * round to take a word (`canDecode`) and the word to be four letters A–Z, or
+ * "" for a `format` error. Anything else, extra fields included, is null.
+ */
+export function readRejection(raw: unknown, round: Round, draft: string): Rejection | null {
+  const fields = plainFields(raw);
+  const kind = fields?.get("kind");
+  if (kind === "row" && fields && hasExactKeys(fields, ROW_REJECTION_KEYS)) {
+    const error = round.rowError(draft);
+    if (round.phase === "guess" && fields.get("hex") === draft && error !== null && fields.get("error") === error) {
+      return { kind, error, hex: draft };
+    }
+  }
+  if (kind === "word" && fields && hasExactKeys(fields, WORD_REJECTION_KEYS)) {
+    const word = fields.get("word");
+    if (round.canDecode && typeof word === "string" && (word === "" || isWord(word))) {
+      const error = round.answerError(word);
+      if (error !== null && fields.get("error") === error && (error === "format") === (word === "")) {
+        return { kind, error, word };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * A run of rounds in one panel: starts each new round with a fresh random
  * answer and counts them. The answer stays inside the `Round`.
  */
@@ -68,6 +130,7 @@ export class Session {
   #roundNumber = 0;
   #draft = "";
   #reported = false;
+  #rejection: Rejection | null = null;
 
   /** `random` works like `Math.random`; tests pass a fixed one. */
   constructor(words: readonly string[], random: () => number = Math.random) {
@@ -100,6 +163,31 @@ export class Session {
   }
 
   /**
+   * The last move's rejection, saved with the session so its message survives
+   * a reload, or null. Every other change to the session clears it.
+   */
+  get rejection(): Rejection | null {
+    return this.#rejection;
+  }
+
+  /**
+   * Records the last move's rejection, or clears it with null. Throws if it
+   * isn't what the round rejects now (see `readRejection`): the caller sets
+   * it straight after the rejected move.
+   */
+  setRejection(rejection: Rejection | null): void {
+    if (rejection === null) {
+      this.#rejection = null;
+      return;
+    }
+    const checked = this.#round ? readRejection(rejection, this.#round, this.#draft) : null;
+    if (!checked) {
+      throw new RangeError(`Not a rejection now: ${JSON.stringify(rejection)}`);
+    }
+    this.#rejection = checked;
+  }
+
+  /**
    * The current round's result the first time it's asked for after the round
    * ends, and null every other time: before the round ends, and once it has
    * been taken. The webview sends it to the host as `roundFinished`, so each
@@ -125,6 +213,7 @@ export class Session {
       throw new RangeError(`Not a valid draft now: "${draft}"`);
     }
     this.#draft = draft;
+    this.#rejection = null;
   }
 
   /**
@@ -137,6 +226,7 @@ export class Session {
       throw new Error("No round to guess in");
     }
     const outcome = this.#round.submitGuess(this.#draft);
+    this.#rejection = null;
     if (outcome.ok) {
       this.#draft = "";
     }
@@ -156,6 +246,7 @@ export class Session {
       throw new Error("No round to answer in");
     }
     const outcome = this.#round.submitAnswer(input);
+    this.#rejection = null;
     if (this.#round.isOver) {
       this.#draft = "";
     }
@@ -172,6 +263,7 @@ export class Session {
     this.#roundNumber++;
     this.#draft = "";
     this.#reported = false;
+    this.#rejection = null;
     return round;
   }
 
@@ -198,16 +290,21 @@ export class Session {
       round: this.#round.toState(),
       draft: this.#draft,
       reported: this.#reported,
+      rejection: this.#rejection && { ...this.#rejection },
     };
   }
 
   /**
    * Rebuilds a session from untrusted saved state, or returns null if it isn't
-   * exactly what `toState` gives (see `Round.fromState`). Never throws.
+   * exactly what `toState` gives (see `Round.fromState`). Version-6 state,
+   * which has no `rejection`, is restored with none. Never throws.
    */
   static fromState(raw: unknown, words: readonly string[], random: () => number = Math.random): Session | null {
     const fields = plainFields(raw);
-    if (!fields || !hasExactKeys(fields, SESSION_STATE_KEYS) || fields.get("version") !== SESSION_STATE_VERSION) {
+    const version = fields?.get("version");
+    const keys =
+      version === SESSION_STATE_VERSION ? SESSION_STATE_KEYS : version === PREVIOUS_STATE_VERSION ? PREVIOUS_STATE_KEYS : null;
+    if (!fields || !keys || !hasExactKeys(fields, keys)) {
       return null;
     }
     const roundNumber = fields.get("roundNumber");
@@ -221,10 +318,17 @@ export class Session {
     if (!round || !isDraft(draft, round.phase) || !isReported(reported, round)) {
       return null;
     }
+    // Version-6 state has no rejection to restore.
+    const savedRejection = version === SESSION_STATE_VERSION ? fields.get("rejection") : null;
+    const rejection = savedRejection === null ? null : readRejection(savedRejection, round, draft);
+    if (savedRejection !== null && rejection === null) {
+      return null;
+    }
     session.#round = round;
     session.#roundNumber = roundNumber;
     session.#draft = draft;
     session.#reported = reported;
+    session.#rejection = rejection;
     return session;
   }
 }

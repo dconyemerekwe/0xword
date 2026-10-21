@@ -14,4 +14,12 @@ export {
   type Row,
   type RowError,
 } from "./round.ts";
-export { SESSION_STATE_VERSION, Session, isDraft, restoreSession, type SessionState } from "./session.ts";
+export {
+  SESSION_STATE_VERSION,
+  Session,
+  isDraft,
+  readRejection,
+  restoreSession,
+  type Rejection,
+  type SessionState,
+} from "./session.ts";

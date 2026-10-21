@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SESSION_STATE_VERSION, Session, isDraft, isReported, restoreSession } from "../../src/game/session.ts";
+import {
+  SESSION_STATE_VERSION,
+  Session,
+  isDraft,
+  isReported,
+  readRejection,
+  restoreSession,
+  type Rejection,
+} from "../../src/game/session.ts";
 import { wordToHex } from "../../src/game/hex.ts";
-import { MAX_ROWS } from "../../src/game/round.ts";
+import { MAX_ROWS, type AnswerError, type RowError } from "../../src/game/round.ts";
 import { GameController } from "../../src/ui/game.ts";
 import { WORDS } from "./fixtures.ts";
 
@@ -357,9 +365,9 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 6", () => {
-    assert.equal(SESSION_STATE_VERSION, 6);
-    assert.equal(sessionAt(1).toState()?.version, 6);
+  it("saves in format version 7", () => {
+    assert.equal(SESSION_STATE_VERSION, 7);
+    assert.equal(sessionAt(1).toState()?.version, 7);
   });
 
   describe("hints on/off and hints used (version 5)", () => {
@@ -637,7 +645,17 @@ describe("restoreSession (webview start-up)", () => {
         "version-5 state waiting for a word attempt",
         () => withRound({ ...stored(sessionAt(5)), version: 5 }, { phase: "answer" }),
       ],
-      ["an answer phase in version-6 state", () => withRound(stored(sessionAt(5)), { phase: "answer" })],
+      ["an answer phase in version-6 state", () => withRound(asVersion6(stored(sessionAt(5))), { phase: "answer" })],
+      ["an answer phase in version-7 state", () => withRound(stored(sessionAt(5)), { phase: "answer" })],
+      // Version 5 allowed a repeated row: dropped by its version alone.
+      [
+        "version-5 state with a repeated row",
+        () => {
+          const state: Record<string, unknown> = { ...asVersion6(stored(sessionAt(5))), version: 5 };
+          const round = state["round"] as { rows: unknown[] };
+          return withRound(state, { rows: [round.rows[0], round.rows[0]] });
+        },
+      ],
     ];
     for (const [name, make] of cases) {
       it(`for ${name}`, () => {
@@ -751,5 +769,272 @@ describe("solving with a half-typed hex row", () => {
 
   it("throws, like Round.submitAnswer, with no round to answer in", () => {
     assert.throws(() => new Session(WORDS).submitAnswer("BYTE"), /No round/);
+  });
+});
+
+describe("Session: a new round starts with nothing tried (#34)", () => {
+  it("accepts the earlier round's hex rows and words again", () => {
+    // random() is always 0, so both rounds have the same answer, WORDS[0].
+    const session = sessionAt(1);
+    const [first, second] = WRONG;
+    assert.ok(first && second);
+    const round = session.newRound();
+    assert.equal(session.roundNumber, 2);
+    assert.deepEqual(round.rows, []);
+    assert.deepEqual(round.answers, []);
+    assert.equal(round.submitGuess(wordToHex(first)).ok, true, "round 1's first row");
+    assert.equal(round.submitGuess(wordToHex(second)).ok, true, "round 1's second row");
+    assert.deepEqual(round.submitAnswer(first), { ok: true, correct: false }, "round 1's tried word");
+  });
+
+  it("clears the last rejection", () => {
+    const session = withRejectedRow();
+    session.newRound();
+    assert.equal(session.rejection, null);
+    assert.equal(session.toState()?.rejection, null);
+  });
+});
+
+/** Types `hex` as the draft, rejects it with ENTER (expecting `error`) and records the rejection. */
+function rejectRow(session: Session, hex: string, error: RowError): Session {
+  session.setDraft(hex);
+  assert.deepEqual(session.submitDraft(), { ok: false, error });
+  session.setRejection({ kind: "row", error, hex });
+  return session;
+}
+
+/** Tries `word`, expecting `error`, and records the rejection, with `saved` as the word it names. */
+function rejectWord(session: Session, word: string, error: AnswerError, saved = word): Session {
+  assert.deepEqual(session.submitAnswer(word), { ok: false, error });
+  session.setRejection({ kind: "word", error, word: saved });
+  return session;
+}
+
+/** `sessionAt(1)` with its first row typed again and rejected by ENTER as a repeat. */
+function withRejectedRow(): Session {
+  const session = sessionAt(1);
+  return rejectRow(session, session.round?.rows[0]?.hex ?? "", "repeat");
+}
+
+/** `sessionAt(1)` with its tried word typed again, in lowercase, and rejected as a repeat. */
+function withRejectedWord(): Session {
+  const word = WRONG[0] ?? "";
+  return rejectWord(sessionAt(1), ` ${word.toLowerCase()} `, "repeat", word);
+}
+
+/** A session at the final answer, with `WRONG[0]` tried after row 1. */
+function atFinalWithTriedWord(): Session {
+  const session = new Session(WORDS, () => 0);
+  const round = session.newRound();
+  for (const [i, word] of WRONG.entries()) {
+    assert.equal(round.submitGuess(wordToHex(word)).ok, true);
+    if (i === 0) {
+      assert.deepEqual(round.submitAnswer(word), { ok: true, correct: false });
+    }
+  }
+  assert.equal(round.phase, "final");
+  return session;
+}
+
+/** A session whose round was solved on its first row. */
+function solvedSession(): Session {
+  const session = new Session(WORDS, () => 0);
+  const answer = WORDS[0] ?? "";
+  session.newRound().submitGuess(wordToHex(answer));
+  session.submitAnswer(answer);
+  return session;
+}
+
+/** Version-6 state: today's state without the rejection. */
+function asVersion6(state: Record<string, unknown>): Record<string, unknown> {
+  const { rejection: _rejection, ...rest } = state;
+  return { ...rest, version: 6 };
+}
+
+describe("Session: the last rejected move, saved for its message (#34)", () => {
+  it("has none at first, and saves null", () => {
+    const session = sessionAt(1);
+    assert.equal(session.rejection, null);
+    assert.equal(session.toState()?.rejection, null);
+  });
+
+  it("saves a repeated row with its error and digits, and restores it with the digits still typed", () => {
+    const session = withRejectedRow();
+    const hex = session.draft;
+    assert.deepEqual(session.toState()?.rejection, { kind: "row", error: "repeat", hex });
+    const restored = Session.fromState(stored(session), WORDS);
+    assert.deepEqual(restored?.rejection, { kind: "row", error: "repeat", hex });
+    assert.equal(restored?.draft, hex);
+    assert.deepEqual(restored?.toState(), session.toState());
+  });
+
+  it("saves a repeated word, trimmed and uppercased, and restores it", () => {
+    const restored = Session.fromState(stored(withRejectedWord()), WORDS);
+    assert.deepEqual(restored?.rejection, { kind: "word", error: "repeat", word: WRONG[0] });
+  });
+
+  describe("restores every kind of rejection the screen can show", () => {
+    const cases: readonly (readonly [string, () => Session])[] = [
+      ["an empty row", () => rejectRow(sessionAt(1), "", "length")],
+      ["a short row", () => rejectRow(sessionAt(1), "4A", "length")],
+      ["a byte that isn't a letter", () => rejectRow(sessionAt(1), "7B7B7B7B", "notLetter")],
+      ["an unlisted word in hex", () => rejectRow(sessionAt(1), wordToHex("ZZZZ"), "notWord")],
+      ['a malformed word, saved as ""', () => rejectWord(sessionAt(1), "B4TE", "format", "")],
+      ["an unlisted word", () => rejectWord(sessionAt(1), "zzzz", "notWord", "ZZZZ")],
+      ["a repeated word as the final answer", () => rejectWord(atFinalWithTriedWord(), WRONG[0] ?? "", "repeat")],
+    ];
+    for (const [name, make] of cases) {
+      it(name, () => {
+        const session = make();
+        assert.notEqual(session.rejection, null);
+        const restored = Session.fromState(stored(session), WORDS);
+        assert.ok(restored, "restored");
+        assert.deepEqual(restored.rejection, session.rejection);
+      });
+    }
+  });
+
+  it("is cleared by every other change to the session: typing, ENTER, a word, a new round", () => {
+    const changes: readonly (readonly [string, (session: Session) => void])[] = [
+      ["setDraft", (session) => session.setDraft("4")],
+      ["submitDraft", (session) => session.submitDraft()],
+      ["submitAnswer", (session) => session.submitAnswer("ZZZZ")],
+      ["newRound", (session) => session.newRound()],
+    ];
+    for (const [name, change] of changes) {
+      const session = withRejectedRow();
+      change(session);
+      assert.equal(session.rejection, null, name);
+    }
+  });
+
+  it("can be cleared with null", () => {
+    const session = withRejectedRow();
+    session.setRejection(null);
+    assert.equal(session.toState()?.rejection, null);
+  });
+
+  describe("setRejection throws for one the round doesn't reject now", () => {
+    const hexOf = (word: string | undefined): string => wordToHex(word ?? "");
+    const cases: readonly (readonly [string, () => Session, Rejection])[] = [
+      ["an empty row with the wrong error", () => sessionAt(1), { kind: "row", error: "repeat", hex: "" }],
+      ["a repeat that isn't the typed row", () => sessionAt(1), { kind: "row", error: "repeat", hex: hexOf(WRONG[0]) }],
+      ["the wrong error for the typed row", () => withRejectedRow(), { kind: "row", error: "notWord", hex: hexOf(WRONG[0]) }],
+      ["a row once the hex is locked", () => atFinal(), { kind: "row", error: "length", hex: "" }],
+      ["a word that would be counted", () => sessionAt(1), { kind: "word", error: "repeat", word: WORDS[MAX_ROWS + 1] ?? "" }],
+      ["the answer, which would solve the round", () => sessionAt(1), { kind: "word", error: "notWord", word: WORDS[0] ?? "" }],
+      ["a word in lowercase", () => sessionAt(1), { kind: "word", error: "repeat", word: (WRONG[0] ?? "").toLowerCase() }],
+      ["a format error that names text", () => sessionAt(1), { kind: "word", error: "format", word: "B4TE" }],
+      [
+        "a word before any row is scored",
+        () => {
+          const session = new Session(WORDS, () => 0);
+          session.newRound();
+          return session;
+        },
+        { kind: "word", error: "format", word: "" },
+      ],
+    ];
+    for (const [name, make, rejection] of cases) {
+      it(name, () => {
+        const session = make();
+        const before = session.rejection;
+        assert.throws(() => session.setRejection(rejection), RangeError);
+        assert.equal(session.rejection, before, "unchanged");
+      });
+    }
+
+    it("with no round", () => {
+      assert.throws(() => new Session(WORDS).setRejection({ kind: "word", error: "format", word: "" }), RangeError);
+    });
+  });
+
+  it("readRejection returns a fresh copy, not the object it was given", () => {
+    const session = withRejectedRow();
+    const saved = { kind: "row", error: "repeat", hex: session.draft };
+    const round = session.round;
+    assert.ok(round);
+    const read = readRejection(saved, round, session.draft);
+    assert.deepEqual(read, saved);
+    assert.notEqual(read, saved);
+  });
+
+  describe("drops tampered state with a rejection, without throwing", () => {
+    const row = (): Record<string, unknown> => stored(withRejectedRow());
+    const word = (): Record<string, unknown> => stored(withRejectedWord());
+    const field = (state: Record<string, unknown>, key: string): string =>
+      String((state["rejection"] as Record<string, unknown>)[key]);
+    const changed = (state: Record<string, unknown>, changes: Record<string, unknown>): Record<string, unknown> => ({
+      ...state,
+      rejection: { ...(state["rejection"] as object), ...changes },
+    });
+    const without = (state: Record<string, unknown>, key: string): Record<string, unknown> => {
+      const rejection = { ...(state["rejection"] as Record<string, unknown>) };
+      delete rejection[key];
+      return { ...state, rejection };
+    };
+    const cases: readonly (readonly [string, () => unknown])[] = [
+      [
+        "no rejection key",
+        () => {
+          const { rejection: _rejection, ...rest } = row();
+          return rest;
+        },
+      ],
+      ["a rejection as text", () => ({ ...row(), rejection: "You've already tried 41 42 4C 45" })],
+      ["a rejection as an array", () => ({ ...row(), rejection: ["row", "repeat"] })],
+      ["an unknown kind", () => changed(row(), { kind: "hint" })],
+      ["a free-text field", () => changed(row(), { text: "<b>hi</b>" })],
+      ["a missing error", () => without(row(), "error")],
+      ["a missing hex", () => without(row(), "hex")],
+      ["an error the row doesn't have", () => changed(row(), { error: "notWord" })],
+      ["an unknown error", () => changed(row(), { error: "tooLong" })],
+      ["a hex that isn't the typed row", () => changed(row(), { hex: wordToHex(WRONG[1] ?? "") })],
+      ["a hex in lowercase", () => changed(row(), { hex: field(row(), "hex").toLowerCase() })],
+      ["a row rejection with a word key", () => changed(row(), { word: WRONG[0] })],
+      ["a word rejection with a hex key", () => changed(word(), { hex: "" })],
+      ["a word not tried yet", () => changed(word(), { word: WORDS[MAX_ROWS + 1] })],
+      ["a word in lowercase", () => changed(word(), { word: field(word(), "word").toLowerCase() })],
+      ["a word as a number", () => changed(word(), { word: 42 })],
+      ["a format error naming text", () => changed(word(), { error: "format", word: "<img>" })],
+      ["a long format error", () => changed(word(), { error: "format", word: "A".repeat(10_000) })],
+      ["a word rejection in a finished round", () => ({ ...stored(solvedSession()), rejection: { kind: "word", error: "format", word: "" } })],
+    ];
+    for (const [name, make] of cases) {
+      it(`for ${name}`, () => {
+        assert.equal(Session.fromState(make(), WORDS), null);
+        assert.equal(restoreSession(make(), WORDS).round, null, "starts fresh");
+      });
+    }
+  });
+
+  describe("version-6 state, saved before the rejection was", () => {
+    it("is restored with no rejection, so no message", () => {
+      const session = sessionAt(3);
+      const restored = Session.fromState(asVersion6(stored(session)), WORDS);
+      assert.ok(restored);
+      assert.equal(restored.rejection, null);
+      assert.deepEqual(restored.toState(), session.toState(), "and saved again as version 7");
+    });
+
+    it("is dropped if it carries a rejection key", () => {
+      assert.equal(Session.fromState({ ...asVersion6(stored(withRejectedRow())), rejection: null }, WORDS), null);
+    });
+
+    it("is dropped with an extra key", () => {
+      assert.equal(Session.fromState({ ...asVersion6(stored(sessionAt(1))), extra: true }, WORDS), null);
+    });
+
+    it("is dropped, without throwing, if it holds a repeated row or word", () => {
+      const state = asVersion6(stored(sessionAt(1)));
+      const round = state["round"] as { rows: unknown[]; answers: unknown[] };
+      for (const tampered of [
+        { ...state, round: { ...round, rows: [round.rows[0], round.rows[0]] } },
+        { ...state, round: { ...round, answers: [...round.answers, ...round.answers] } },
+      ]) {
+        assert.equal(Session.fromState(tampered, WORDS), null);
+        assert.equal(restoreSession(tampered, WORDS).round, null);
+      }
+    });
   });
 });
