@@ -199,6 +199,53 @@ describe("Round", () => {
       assert.equal(round.rows.length, 1);
     });
 
+    it("runs the invalid-guess checks before the repeat check, for rows and words (#34)", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.submitAnswer("BEAT");
+      const hex = wordToHex("TEAM");
+      // Each is the repeat with something wrong added, so the existing error wins.
+      assert.deepEqual(round.submitGuess(hex.slice(0, -1)), { ok: false, error: "length" });
+      assert.deepEqual(round.submitGuess(`${hex.slice(0, -1)}G`), { ok: false, error: "notHex" });
+      assert.deepEqual(round.submitAnswer("BEATS"), { ok: false, error: "format" });
+      assert.deepEqual(round.submitAnswer("BE4T"), { ok: false, error: "format" });
+      assert.equal(round.rows.length, 1);
+      assert.deepEqual(round.answers, ["BEAT"]);
+    });
+
+    it("says why a row or word would be rejected, without changing anything (#34)", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.submitAnswer("BEAT");
+      const before = round.toState();
+      assert.equal(round.rowError(wordToHex("TEAM")), "repeat");
+      assert.equal(round.rowError(wordToHex("TEAM").toLowerCase()), "repeat");
+      assert.equal(round.rowError(""), "length");
+      assert.equal(round.rowError("7B7B7B7B"), "notLetter");
+      assert.equal(round.rowError(wordToHex("ZZZZ")), "notWord");
+      assert.equal(round.rowError(wordToHex("BEAT")), null, "a word tried may still be a row");
+      assert.equal(round.answerError(" beat "), "repeat");
+      assert.equal(round.answerError(""), "format");
+      assert.equal(round.answerError("ZZZZ"), "notWord");
+      assert.equal(round.answerError("TEAM"), null, "a row may still be tried as a word");
+      assert.equal(round.answerError("BYTE"), null);
+      assert.deepEqual(round.toState(), before);
+    });
+
+    it("agrees with submitGuess and submitAnswer at the final answer and once the round is over (#34)", () => {
+      const round = newRound();
+      missRows(round, 1);
+      for (const word of SIX.slice(1)) {
+        guess(round, word);
+      }
+      assert.equal(round.phase, "final");
+      assert.equal(round.answerError("team"), "repeat");
+      assert.deepEqual(round.submitAnswer("team"), { ok: false, error: "repeat" });
+      assert.equal(round.rowError(wordToHex("BAKE")), "repeat", "doesn't check the phase");
+      round.submitAnswer("BYTE");
+      assert.equal(round.answerError("TEAM"), "repeat", "doesn't check the phase");
+    });
+
     it("keeps hex rows and words apart: a word tried may still be guessed as a row, and back", () => {
       const round = newRound();
       guess(round, "TEAM");

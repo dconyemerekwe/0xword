@@ -16,7 +16,7 @@ import {
   type RowError,
 } from "../game/round.ts";
 import { Mark } from "../game/score.ts";
-import type { Session, SessionState } from "../game/session.ts";
+import type { Rejection, Session, SessionState } from "../game/session.ts";
 import type { RoundFinishedMessage } from "../protocol.ts";
 
 /** Everything a player (or the host) can do to the game screen. */
@@ -222,7 +222,11 @@ export interface ScreenView {
    * answer, so the answer is never drawn while it's still hidden.
    */
   readonly result: ResultView | null;
-  /** Plain text: why the last action was rejected, or how the round ended. */
+  /**
+   * Plain text: why the last action was rejected, or how the round ended.
+   * Both come back after the panel is hidden and shown: a rejection is
+   * rebuilt from the session's saved `rejection`, the ending from the phase.
+   */
   readonly message: string;
   /**
    * Plain text for screen readers only, in a visually hidden live region:
@@ -246,22 +250,29 @@ export interface ScreenView {
   readonly howToPlayOpen: boolean;
 }
 
-/** A message for the player, whether it reports a rejected action, and what only screen readers hear. */
+/**
+ * A message for the player, whether it reports a rejected action, and what
+ * only screen readers hear. The only on-screen text a notice holds is a
+ * rejection's message, so `rejection` is all of it that needs saving.
+ */
 interface Notice {
   readonly text: string;
   readonly error: boolean;
   readonly announcement: string;
+  /** The rejected move the text describes, saved with the session; null for none. */
+  readonly rejection: Rejection | null;
 }
 
-const NO_NOTICE: Notice = { text: "", error: false, announcement: "" };
+const NO_NOTICE: Notice = { text: "", error: false, announcement: "", rejection: null };
 
-function rejected(text: string): Notice {
-  return { text, error: true, announcement: "" };
+/** The error message for a rejected move, rebuilt from its data alone. */
+function rejected(rejection: Rejection): Notice {
+  return { text: rejectionMessage(rejection), error: true, announcement: "", rejection };
 }
 
 /** Nothing on screen: `announcement` is read out only. */
 function announced(announcement: string): Notice {
-  return { text: "", error: false, announcement };
+  return { text: "", error: false, announcement, rejection: null };
 }
 
 /**
@@ -278,8 +289,12 @@ export type Changed = (finished: RoundFinishedMessage | null) => void;
 export class GameController {
   readonly #session: Session;
   readonly #changed: Changed;
-  /** The last action's message. Not saved: it's gone after a reload. */
-  #notice = NO_NOTICE;
+  /**
+   * The last action's message. Its rejection is saved with the session, so
+   * an error message comes back after a reload; a screen-reader-only
+   * announcement doesn't.
+   */
+  #notice: Notice;
   /** Counts the actions that set a new notice: see `ScreenView.noticeId`. */
   #noticeId = 0;
   /** How to play is open. Not saved: a reload shows the game. */
@@ -288,6 +303,8 @@ export class GameController {
   constructor(session: Session, changed: Changed) {
     this.#session = session;
     this.#changed = changed;
+    // A restored session brings back the message of its last rejected move.
+    this.#notice = session.rejection ? rejected(session.rejection) : NO_NOTICE;
   }
 
   /**
@@ -303,6 +320,13 @@ export class GameController {
       this.#noticeId++;
     }
     this.#notice = notice;
+    // Saved by `changed`, so the message survives the panel being hidden.
+    // `setRejection` throws only for a rejection the round doesn't reject
+    // now, which can't happen here: a new rejection comes straight from the
+    // move the round just rejected, and an action that keeps the old notice
+    // changes nothing in the session (every session method that does clears
+    // the rejection, and those actions always return a new notice).
+    this.#session.setRejection(notice.rejection);
     const result = this.#session.takeResult();
     this.#changed(result ? { type: "roundFinished", ...result } : null);
   }
@@ -324,9 +348,9 @@ export class GameController {
     // Solved and out of rows come from the phase, so they survive a reload.
     const notice: Notice =
       phase === "solved"
-        ? { text: "Solved", error: false, announcement: "" }
+        ? { text: "Solved", error: false, announcement: "", rejection: null }
         : phase === "failed"
-          ? { text: "Out of rows", error: false, announcement: "" }
+          ? { text: "Out of rows", error: false, announcement: "", rejection: null }
           : this.#notice;
     return {
       status: statusLine(phase, rows.length),
@@ -363,8 +387,8 @@ export class GameController {
         this.#howToPlayOpen = false;
         return this.#notice;
       case "init":
-        session.ensureRound();
-        return NO_NOTICE;
+        // A restored round keeps its restored message, which isn't new.
+        return session.ensureRound() ? NO_NOTICE : this.#notice;
       case "newRound":
         session.newRound();
         return NO_NOTICE;
@@ -387,7 +411,8 @@ export class GameController {
         const draft = session.draft;
         const outcome = session.submitDraft();
         if (!outcome.ok) {
-          return rejected(guessMessage(outcome.error, draft));
+          // The digits stay typed, so the draft is the rejected row.
+          return rejected({ kind: "row", error: outcome.error, hex: draft });
         }
         // Read out only: on screen, the tile colours show the marks.
         const rowsUsed = session.round?.rows.length ?? 0;
@@ -427,7 +452,8 @@ export class GameController {
     const outcome = this.#session.submitAnswer(input);
     const word = input.trim().toUpperCase();
     if (!outcome.ok) {
-      return rejected(answerMessage(outcome.error, word));
+      // The format message doesn't name the input, so none of it is kept.
+      return rejected({ kind: "word", error: outcome.error, word: outcome.error === "format" ? "" : word });
     }
     // Solved and out of rows are shown by `view` from the phase.
     if (round.isOver) {
@@ -436,6 +462,11 @@ export class GameController {
     // On screen, the word joins the Tried list, struck through. No row is used.
     return announced(`${word} isn't the word`);
   }
+}
+
+/** A rejected move's message, in plain text. */
+export function rejectionMessage(rejection: Rejection): string {
+  return rejection.kind === "row" ? guessMessage(rejection.error, rejection.hex) : answerMessage(rejection.error, rejection.word);
 }
 
 /** Why a full hex row was rejected, in plain text. */
