@@ -698,7 +698,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     assert.deepEqual(byClass(run, "how-to-play")["attributes"], { "aria-labelledby": "how-to-play-heading" });
   });
 
-  it("draws the RULES and ASCII CHEATSHEET headings, the six rules and the rule 3 chips", () => {
+  it("draws the RULES and ASCII CHEATSHEET headings, the seven rules and the rule 3 chips", () => {
     const run = runWebview(undefined);
     assert.deepEqual(
       allByClass(run, "section-heading").map((node) => node["textContent"]),
@@ -915,6 +915,36 @@ describe("media/main.ts: announcing messages, run as the bundled webview script"
       assert.equal(message["textContent"], "", "the stale error stays gone");
     });
   }
+
+  it("reads a repeated hex row's message out again when the same repeat is entered twice (#34)", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const key of [...wordToHex("TEAM"), "Enter"]) {
+      run.press(key);
+    }
+    const message = byClass(run, "message");
+    assert.equal(message["textContent"], "You've already tried 54 45 41 4D");
+    run.press("Enter");
+    assert.equal(message["textContent"], "", "cleared");
+    run.frames.at(-1)?.();
+    assert.equal(message["textContent"], "You've already tried 54 45 41 4D", "then set again");
+  });
+
+  it("draws a restored error once after a hide and show, with no re-announce, and keeps it through init (#34)", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), ...guess("TEAM")));
+    const message = byClass(run, "message");
+    assert.equal(message["textContent"], "You've already tried 54 45 41 4D");
+    assert.equal(message["textWrites"], 1, "one plain write, in the first render");
+    assert.equal(run.frames.length, 0, "no clear-and-rewrite queued");
+    run.send(JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" }));
+    assert.equal(message["textContent"], "You've already tried 54 45 41 4D");
+    assert.equal(message["textWrites"], 1, "init doesn't write it again");
+    assert.equal(allByClass(run, "tile tile-typed").length, 8, "the typed digits are back too");
+    // The same repeat again is a new notice, read out again.
+    run.press("Enter");
+    assert.equal(message["textContent"], "");
+    run.frames.at(-1)?.();
+    assert.equal(message["textContent"], "You've already tried 54 45 41 4D");
+  });
 
   it("doesn't clear and rewrite a standing error when How to play opens and closes", () => {
     const closes = [(run: WebviewRun) => run.press("Escape"), (run: WebviewRun) => click(byLabel(run, "Back to game"))];

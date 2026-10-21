@@ -338,7 +338,7 @@ function appendStyled(parent: HTMLElement, text: StyledText): void {
 }
 
 /**
- * Builds How to play (page 5): a back arrow and heading, the six rules, and
+ * Builds How to play (page 5): a back arrow and heading, the seven rules, and
  * the A–Z cheatsheet. Its text never changes, so it's all set here.
  */
 function buildHowToPlay(): { readonly section: HTMLElement; readonly back: HTMLButtonElement } {
@@ -746,6 +746,11 @@ function render(view: ScreenView): void {
   drawResult(view.result);
 
   ui.message.classList.toggle("message-error", view.messageIsError);
+  // A message restored with the round (#34) is written by the first render,
+  // in the same task that puts the live region on the page, so like the
+  // rest of the restored screen it's page content rather than a change, and
+  // isn't read out as new. `init` keeps it with the same `noticeId`, so it
+  // isn't written again either.
   // A new notice from this dispatch, rather than a redraw that left it alone
   // (opening or closing How to play, say).
   const freshNotice = view.noticeId !== drawnNoticeId;

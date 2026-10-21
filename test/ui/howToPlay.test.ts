@@ -26,12 +26,13 @@ describe("How to play: names and headings", () => {
 });
 
 describe("How to play: RULES", () => {
-  it("shows the six numbered rules as on page 5, with the owner's revised rules 4 and 5", () => {
+  it("shows the seven numbered rules: page 5's, with the owner's revised rules 4 and 6 and the repeat rule 5 (#34)", () => {
     assert.deepEqual(RULES.map(plainText), [
       "The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.",
       "Guess 8 hex digits that spell a real 4-letter word.",
       "Each digit turns blue right spot, orange wrong spot, or grey not in the word.",
       "You can decode the English word at any time. A wrong guess doesn't use up a row.",
+      "You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.",
       "After 6 rows, the hex keypad locks and you get one final try to decode the English word.",
       "Stuck? Turn on Hints to see the letters you have fully decoded so far.",
     ]);
@@ -46,12 +47,12 @@ describe("How to play: RULES", () => {
     ]);
   });
 
-  it('shows "Hints" in rule 6 in bold, and every other rule as plain text', () => {
+  it('shows "Hints" in rule 7 in bold, and every other rule as plain text', () => {
     assert.deepEqual(
-      (RULES[5] ?? []).filter((part) => part.style !== "plain"),
+      (RULES[6] ?? []).filter((part) => part.style !== "plain"),
       [{ text: "Hints", style: "strong" }],
     );
-    for (const i of [0, 1, 3, 4]) {
+    for (const i of [0, 1, 3, 4, 5]) {
       assert.ok(RULES[i]?.every((part) => part.style === "plain"), `rule ${i + 1}`);
     }
   });

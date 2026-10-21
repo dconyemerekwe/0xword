@@ -376,7 +376,8 @@ describe("GameController: decoding the word", () => {
       assert.deepEqual(view.tried.map((tried) => tried.word), ["BEAT"]);
       assert.equal(view.decodeAvailable, true);
     }
-    assert.deepEqual(session.toState(), before);
+    // Only the saved rejection, which brings the message back after a reload (#34), is new.
+    assert.deepEqual(session.toState(), { ...before, rejection: { kind: "word", error: "repeat", word: "BEAT" } });
   });
 
   it('rejects a hex guess already scored with "You\'ve already tried 54 45 41 4D", keeping its digits and using no row', () => {
@@ -1438,9 +1439,16 @@ describe("GameController: hiding and showing the panel", () => {
     return harness(restoreSession(saved, WORDS), true);
   }
 
-  /** The view without the transient message, announcement and count, which aren't saved. */
-  function lasting(view: ScreenView): Omit<ScreenView, "message" | "announcement" | "noticeId"> {
-    const { message: _message, announcement: _announcement, noticeId: _noticeId, ...rest } = view;
+  /** A harness (answer BYTE) after `actions`. */
+  function after(...actions: Action[]): Harness {
+    const h = harness();
+    h.play(...actions);
+    return h;
+  }
+
+  /** The view without the screen-reader announcement and the notice count, which aren't saved. */
+  function lasting(view: ScreenView): Omit<ScreenView, "announcement" | "noticeId"> {
+    const { announcement: _announcement, noticeId: _noticeId, ...rest } = view;
     return rest;
   }
 
@@ -1464,6 +1472,143 @@ describe("GameController: hiding and showing the panel", () => {
     const solved = harness();
     solved.play(...guess("TEAM"), decode("BYTE"));
     assert.equal(reload(solved).controller.view().message, "Solved");
+  });
+
+  describe("brings back the message of a rejected move, as an error (#34)", () => {
+    const cases: readonly (readonly [string, () => Harness, string])[] = [
+      ["a repeated hex row", () => after(...guess("TEAM"), ...guess("TEAM")), "You've already tried 54 45 41 4D"],
+      ["a repeated hex row typed in lowercase", () => after(...guess("TEAM"), ...type("5445414d"), { type: "enter" }), "You've already tried 54 45 41 4D"],
+      ["a repeated word in another case", () => after(...guess("TEAM"), decode("BEAT"), decode(" beat ")), "You've already tried BEAT"],
+      [
+        "a repeated word as the final answer",
+        () => {
+          const h = atRowSix();
+          h.play(decode("busy"));
+          return h;
+        },
+        "You've already tried BUSY",
+      ],
+      ["an empty row", () => after({ type: "enter" }), "Not enough digits"],
+      ["a short row", () => after(...type("42"), { type: "enter" }), "Not enough digits"],
+      ["a byte that isn't a letter", () => after(...type("7B7B7B7B"), { type: "enter" }), "7B isn't a letter"],
+      ["an unlisted word in hex", () => after(...guess("AAAA")), "AAAA isn't in the word list"],
+      ["a malformed word", () => after(...guess("TEAM"), decode("<b>X</b>")), "Type a 4-letter word, A to Z"],
+      ["an unlisted word", () => after(...guess("TEAM"), decode("qxzj")), "QXZJ isn't in the word list"],
+    ];
+    for (const [name, make, message] of cases) {
+      it(`${name}: "${message}"`, () => {
+        const before = make();
+        const view = before.controller.view();
+        assert.equal(view.message, message);
+        assert.equal(view.messageIsError, true);
+        const restored = reload(before).controller.view();
+        assert.equal(restored.message, message);
+        assert.equal(restored.messageIsError, true);
+        assert.equal(restored.announcement, "");
+        assert.deepEqual(lasting(restored), lasting(view), "and the rest of the screen, typed digits included");
+      });
+    }
+  });
+
+  it("saves the rejected move as data, never the message text or what was typed in the decode box", () => {
+    const saved = JSON.stringify(after(...guess("TEAM"), decode("<b>X</b>")).saves.at(-1));
+    assert.match(saved, /"rejection":\{"kind":"word","error":"format","word":""\}/);
+    assert.doesNotMatch(saved, /<b>|4-letter word/);
+    const repeat = JSON.stringify(after(...guess("TEAM"), ...guess("TEAM")).saves.at(-1));
+    assert.match(repeat, /"rejection":\{"kind":"row","error":"repeat","hex":"5445414D"\}/);
+    assert.doesNotMatch(repeat, /already tried/);
+  });
+
+  it("doesn't bring back a screen-reader announcement: a scored row or a wrong word", () => {
+    for (const h of [after(...guess("TEAM")), after(...guess("TEAM"), decode("BEAT"))]) {
+      assert.notEqual(h.controller.view().announcement, "");
+      const view = reload(h).controller.view();
+      assert.equal(view.announcement, "");
+      assert.equal(view.message, "");
+    }
+  });
+
+  it("keeps the restored message through init without counting it as new, so it isn't read out again", () => {
+    const before = after(...guess("TEAM"), ...guess("TEAM"));
+    const restored = harness(restoreSession(before.saves.at(-1), WORDS), false);
+    const { noticeId } = restored.controller.view();
+    const view = restored.play({ type: "init" });
+    assert.equal(view.message, "You've already tried 54 45 41 4D");
+    assert.equal(view.noticeId, noticeId);
+    assert.equal(restored.play({ type: "enter" }).noticeId, noticeId + 1, "the same repeat again is new");
+  });
+
+  it("clears the restored message on the next move, as before a reload", () => {
+    const restored = reload(after(...guess("TEAM"), decode("BEAT"), decode("BEAT")));
+    const view = restored.play({ type: "toggleHints" });
+    assert.equal(view.message, "");
+    assert.equal((restored.saves.at(-1) as SessionState).rejection, null);
+  });
+});
+
+describe("GameController: repeats (#34)", () => {
+  it("leaves the keypad exactly as it was for a repeated hex row", () => {
+    const { play } = harness();
+    const before = play(...guess("TEAM"), decode("BEAT"));
+    const view = play(...guess("TEAM"));
+    assert.deepEqual(view.keys, before.keys);
+    assert.equal(view.keypadEnabled, true);
+    assert.deepEqual(view.tried, before.tried);
+  });
+
+  it("checks for a repeat after the existing checks: the invalid guess's own message shows", () => {
+    const { play } = harness();
+    play(...guess("TEAM"), decode("BEAT"));
+    assert.equal(play(...type("5445414"), { type: "enter" }).message, "Not enough digits");
+    assert.equal(play(decode("BEATS")).message, "Type a 4-letter word, A to Z");
+  });
+
+  it("counts the same repeat twice in a row as a new notice each time, for hex rows and words", () => {
+    const { play } = harness();
+    play(...guess("TEAM"), decode("BEAT"));
+    const first = play({ type: "enter" }, ...type("5445414D"), { type: "enter" });
+    assert.equal(first.message, "You've already tried 54 45 41 4D");
+    const second = play({ type: "enter" });
+    assert.equal(second.message, first.message);
+    assert.equal(second.noticeId, first.noticeId + 1);
+    const word = play(decode("BEAT"));
+    const again = play(decode("beat"));
+    assert.equal(again.message, "You've already tried BEAT");
+    assert.equal(again.noticeId, word.noticeId + 1);
+  });
+
+  it("saves every rejected repeat through changed(), with its rejection and the typed digits", () => {
+    const { play, saves } = harness();
+    play(...guess("TEAM"), decode("BEAT"), ...type("5445414D"));
+    for (const [action, rejection] of [
+      [{ type: "enter" }, { kind: "row", error: "repeat", hex: "5445414D" }],
+      [decode("beat"), { kind: "word", error: "repeat", word: "BEAT" }],
+    ] as const) {
+      const before = saves.length;
+      play(action);
+      assert.equal(saves.length, before + 1, "changed() ran exactly once");
+      const saved = saves.at(-1) as SessionState;
+      assert.deepEqual(saved.rejection, rejection);
+      assert.equal(saved.draft, "5445414D");
+    }
+  });
+
+  it("starts a new round with nothing tried: the last round's rows and words are accepted again", () => {
+    const { play, session } = harness();
+    play(...guess("TEAM"), decode("BEAT"), { type: "newRound" });
+    const view = play(...guess("TEAM"), decode("BEAT"));
+    assert.equal(session.roundNumber, 2);
+    assert.equal(session.round?.rows.length, 1);
+    assert.deepEqual(view.tried.map((tried) => tried.word), ["BEAT"]);
+    assert.equal(view.message, "");
+  });
+
+  it("clears a standing repeat message on New round", () => {
+    const { play, saves } = harness();
+    const view = play(...guess("TEAM"), ...guess("TEAM"), { type: "newRound" });
+    assert.equal(view.message, "");
+    assert.equal(view.messageIsError, false);
+    assert.equal((saves.at(-1) as SessionState).rejection, null);
   });
 });
 
