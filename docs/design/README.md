@@ -181,10 +181,11 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   2. Guess 8 hex digits that spell a real 4-letter word.
   3. Each digit turns **blue** right spot, **orange** wrong spot, or **grey** not in the word. Each colour word is shown as a chip in that colour.
   4. You can decode the English word at any time. A wrong guess doesn't use up a row.
-  5. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
-  6. Stuck? Turn on **Hints** to see the letters you have fully decoded so far.
+  5. You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.
+  6. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
+  7. Stuck? Turn on **Hints** to see the letters you have fully decoded so far.
 
-  Rules 4 and 5 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6.
+  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34).
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
@@ -205,5 +206,6 @@ Since #30 the game plays as the draft does: the player guesses hex rows freely a
 - **No "1 try per row" note.** Word tries are unlimited and optional until all 6 rows are used, so page 1's note is left out.
 - **Decoding opens after the first scored row.** Before row 1 is scored, the decode box and its button are disabled (owner's decision on #30).
 - **The "Tried:" list** holds every wrong listed word, in order, however many there are. Rejected words (malformed, not in the list, or already tried in this round in any letter case, which shows "You've already tried BEAT") are never added and don't count as tries. A hex guess already scored is rejected too ("You've already tried 42 41 52 4E", the guess in uppercase byte pairs) and uses no row (owner's decision on #30).
+- **Messages survive a hide and show.** Whatever error message was showing (a repeat, an invalid row, an invalid word) is still there, in the error style, after the panel is hidden and shown, along with the typed hex digits (owner's decision on #34). Text typed in the decode box isn't kept. Screen-reader-only announcements aren't brought back.
 - **After a wrong word, focus goes back to the page**, where the physical keyboard drives the hex grid, so the player carries on guessing hex. A rejected word keeps its text and focus in the box.
 - **Scored rows show no message.** The tile colours show the result; screen readers hear the row's marks ("Row 2: 4 Right spot, …") from a visually hidden live region (owner's decision on #30).
