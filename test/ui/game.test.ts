@@ -20,6 +20,7 @@ import {
   SOLVED_OUTCOME,
   actionForKey,
   answerTriesText,
+  bytePairs,
   firstNonLetterByte,
   guessMessage,
   hintsView,
@@ -378,15 +379,22 @@ describe("GameController: decoding the word", () => {
     assert.deepEqual(session.toState(), before);
   });
 
-  it('rejects a hex row already scored with "You\'ve already tried that row", keeping its digits and using no row', () => {
+  it('rejects a hex guess already scored with "You\'ve already tried 54 45 41 4D", keeping its digits and using no row', () => {
     const { play, session } = harness();
     const view = play(...guess("TEAM"), ...guess("TEAM"));
-    assert.equal(view.message, "You've already tried that row");
+    assert.equal(view.message, "You've already tried 54 45 41 4D");
     assert.equal(view.messageIsError, true);
     assert.equal(session.round?.rows.length, 1);
     assert.equal(rowDigits(view, 1), wordToHex("TEAM"));
     assert.deepEqual(rowStates(view, 1), new Array(8).fill("typed"));
     assert.equal(view.keypadEnabled, true);
+  });
+
+  it("names a repeat typed in lowercase in uppercase byte pairs", () => {
+    const { play, session } = harness();
+    const view = play(...guess("TEAM"), ...type("5445414d"), { type: "enter" });
+    assert.equal(view.message, "You've already tried 54 45 41 4D");
+    assert.equal(session.round?.rows.length, 1);
   });
 
   it("carries on with hex after a wrong word: the next row scores", () => {
@@ -1592,6 +1600,13 @@ describe("messages", () => {
     assert.equal(guessMessage("notHex", "4259544G"), "Use only the digits 0–9 and A–F");
     assert.equal(guessMessage("notLetter", "4259547B"), "7B isn't a letter");
     assert.equal(guessMessage("notWord", wordToHex("QXZJ")), "QXZJ isn't in the word list");
+    assert.equal(guessMessage("repeat", "4241524e"), "You've already tried 42 41 52 4E");
+  });
+
+  it("splits hex into uppercase byte pairs with single spaces", () => {
+    assert.equal(bytePairs("4241524e"), "42 41 52 4E");
+    assert.equal(bytePairs("5A"), "5A");
+    assert.equal(bytePairs(""), "");
   });
 
   it("counts every mark in a scored row, zeros included", () => {

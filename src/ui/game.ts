@@ -442,7 +442,9 @@ export class GameController {
 export function guessMessage(error: RowError, hex: string): string {
   switch (error) {
     case "repeat":
-      return "You've already tried that row";
+      // Like the word message ("You've already tried BEAT"), with the guess
+      // in byte pairs as the grid groups them: "42 41 52 4E".
+      return `You've already tried ${bytePairs(hex)}`;
     case "length":
       return "Not enough digits";
     case "notHex":
@@ -456,6 +458,15 @@ export function guessMessage(error: RowError, hex: string): string {
       return word ? `${word} isn't in the word list` : "That isn't in the word list";
     }
   }
+}
+
+/** Hex digits uppercased and split into byte pairs with single spaces: "4241524e" → "42 41 52 4E". */
+export function bytePairs(hex: string): string {
+  const pairs: string[] = [];
+  for (let i = 0; i < hex.length; i += 2) {
+    pairs.push(hex.slice(i, i + 2).toUpperCase());
+  }
+  return pairs.join(" ");
 }
 
 /** Why a typed word was rejected, in plain text. `word` is the input trimmed and uppercased. */

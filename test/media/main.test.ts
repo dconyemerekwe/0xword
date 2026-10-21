@@ -1057,12 +1057,12 @@ describe("media/main.ts: optional decoding (#30), run as the bundled webview scr
     assert.equal(run.focus.active, input);
   });
 
-  it("rejects a repeated hex row from the keyboard with a visible reason, keeping its digits", () => {
+  it("rejects a repeated hex guess typed in lowercase with a visible reason in uppercase byte pairs, keeping its digits", () => {
     const run = runWebview(savedAfter(...guess("TEAM")));
-    for (const key of [...wordToHex("TEAM"), "Enter"]) {
+    for (const key of [..."5445414d", "Enter"]) {
       run.press(key);
     }
-    assert.equal(byClass(run, "message")["textContent"], "You've already tried that row");
+    assert.equal(byClass(run, "message")["textContent"], "You've already tried 54 45 41 4D");
     assert.equal(allByClass(run, "tile tile-typed").length, 8);
   });
 
