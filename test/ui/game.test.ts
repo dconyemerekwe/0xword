@@ -1274,7 +1274,7 @@ describe("GameController: Hints (page 2)", () => {
   });
 });
 
-describe("GameController: Hints switches off after each scored row (#38)", () => {
+describe("GameController: Hints switches off after each scored row or wrong word (#38)", () => {
   it("is off for the first hex row of every round", () => {
     const { play, saves } = harness();
     const view = play(...type("4259"));
@@ -1330,10 +1330,49 @@ describe("GameController: Hints switches off after each scored row (#38)", () =>
     assert.equal(view.hints.on, true);
   });
 
-  it("stays on after a word attempt, which isn't a hex row", () => {
+  it("turns off after a wrong word, hiding the strip", () => {
     const { play } = harness();
-    const view = play(...guess("TEAM"), toggleHints, decode("BEAT"));
-    assert.equal(view.hints.on, true);
+    assert.equal(play(...guess("TEAM"), toggleHints).hints.on, true);
+    const view = play(decode("BEAT"));
+    assert.deepEqual(view.tried.map((tried) => tried.word), ["BEAT"]);
+    assert.deepEqual(view.hints, { available: true, on: false, cells: [], label: "" });
+  });
+
+  it("saves the switch-off after a wrong word through changed(), with the decode", () => {
+    const { controller, play, saves } = harness();
+    play(...guess("TEAM"), toggleHints);
+    const before = saves.length;
+    controller.dispatch(decode("BEAT"));
+    assert.equal(saves.length, before + 1, "changed() ran exactly once");
+    const saved = saves.at(-1) as SessionState;
+    assert.deepEqual(saved.round.answers, ["BEAT"]);
+    assert.equal(saved.round.hintsShown, false);
+    assert.equal(saved.round.rowHinted, true);
+  });
+
+  const rejectedWords: readonly (readonly [string, string])[] = [
+    ["malformed", "B4"],
+    ["not listed", "QXZJ"],
+    ["a repeat", "TEAM"],
+  ];
+  for (const [name, word] of rejectedWords) {
+    it(`stays on, with the strip, after a rejected word (${name})`, () => {
+      const { play } = harness();
+      const view = play(...guess("TEAM"), decode("TEAM"), toggleHints, decode(word));
+      assert.equal(view.messageIsError, true);
+      assert.equal(view.hints.on, true);
+      assert.equal(strip(view), "? ? ? ?");
+    });
+  }
+
+  it("at the final answer, stays on after a repeated or unlisted word; a wrong final answer ends the round", () => {
+    const { play, posts } = atRowSix();
+    assert.equal(play(toggleHints, decode("TEAM")).hints.on, true);
+    assert.equal(play(decode("QXZJ")).hints.on, true);
+    const view = play(decode("CODE"));
+    assert.equal(view.status, "4-letter word · not solved");
+    assert.equal(view.hints.available, false);
+    assert.equal(posts[0]?.hintsUsed, 1);
   });
 
   it("stays on at the forced final answer until the round ends: there is no row left to score", () => {
@@ -1384,6 +1423,12 @@ describe("GameController: the hint count in the result (#38)", () => {
   it("doesn't count again after a rejected row, which leaves Hints on", () => {
     const h = harness();
     h.play(toggleHints, ...guess("QXZJ"), toggleHints, toggleHints, ...CLEAR_ROW, ...guess("TEAM"), decode("BYTE"));
+    assert.equal(posted(h), 1);
+  });
+
+  it("counts once for Hints on, a wrong word, Hints on again, then ENTER", () => {
+    const h = harness();
+    h.play(...guess("TEAM"), toggleHints, decode("BEAT"), toggleHints, ...guess("BEST"), decode("BYTE"));
     assert.equal(posted(h), 1);
   });
 
@@ -1470,6 +1515,15 @@ describe("GameController: hints across a hide and show", () => {
     assert.equal(after.controller.view().hints.on, false);
     after.play(toggleHints, ...guess("BEAT"), decode("BYTE"));
     assert.equal(after.posts[0]?.hintsUsed, 2);
+  });
+
+  it("brings back Hints off after a wrong word mid-row, without counting it again when turned back on", () => {
+    const before = harness();
+    before.play(...guess("TEAM"), toggleHints, decode("BEAT"));
+    const after = reload(before);
+    assert.equal(after.controller.view().hints.on, false);
+    after.play(toggleHints, ...guess("BEST"), decode("BYTE"));
+    assert.equal(after.posts[0]?.hintsUsed, 1);
   });
 
   it("brings back Hints on after a rejected row, without counting it again", () => {

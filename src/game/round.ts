@@ -97,7 +97,7 @@ export class Round {
   #phase: Phase = "guess";
   /** The hint count: one per stretch in which hints were turned on. Only ever grows. */
   #hintsUsed = 0;
-  /** The player's on/off toggle. Unlimited; a scored row turns it off. */
+  /** The player's on/off toggle. Unlimited; a scored row or a wrong word turns it off. */
   #hintsShown = false;
   /** Hints were turned on in the current stretch: see `RoundState.rowHinted`. */
   #rowHinted = false;
@@ -177,9 +177,11 @@ export class Round {
   /**
    * Tries the word. The right word solves the round, rows left or not. A
    * wrong word counts as a try but uses no row, and ends the round only if
-   * it was the forced final answer. A rejected word changes nothing: that
-   * includes a word already tried in this round, even as the final answer.
-   * Throws unless `canDecode`.
+   * it was the forced final answer. A wrong word also turns hints off, but
+   * doesn't start a new stretch for the hint count: turning them on again
+   * before the next row counts nothing more (see `enableHints`). A rejected
+   * word changes nothing: that includes a word already tried in this round,
+   * even as the final answer. Throws unless `canDecode`.
    */
   submitAnswer(input: string): AnswerOutcome {
     if (!this.canDecode) {
@@ -194,8 +196,11 @@ export class Round {
     const correct = guess === this.#answer;
     if (correct) {
       this.#phase = "solved";
-    } else if (this.#phase === "final") {
-      this.#phase = "failed";
+    } else {
+      this.#hintsShown = false;
+      if (this.#phase === "final") {
+        this.#phase = "failed";
+      }
     }
     return { ok: true, correct };
   }
@@ -236,8 +241,9 @@ export class Round {
    * each row, and one after the last row until the round ends (the final
    * answer, or a decode that solves it). A stretch counts once however often
    * hints are turned on and off in it, so a round counts at most `MAX_HINTS`.
-   * A rejected row doesn't end a stretch. Allowed any number of times while
-   * the round is in progress; throws once it's over.
+   * A rejected row doesn't end a stretch, and nor does a word attempt, even
+   * a wrong one that turns hints off. Allowed any number of times while the
+   * round is in progress; throws once it's over.
    */
   enableHints(): void {
     this.#requireInProgress();
@@ -415,7 +421,9 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   if (!ending.every((tried) => replayAnswer(round, tried))) {
     return null;
   }
-  if (round.phase !== phase) {
+  // A wrong ending answer turns hints off, so a saved toggle it would have
+  // cleared doesn't match. The count can't differ, but is checked anyway.
+  if (round.phase !== phase || round.hintsShown !== hintsShown || round.hintsUsed !== hintsUsed) {
     return null;
   }
   return round;

@@ -425,7 +425,8 @@ export class GameController {
       case "toggleHints": {
         // Any number of times while the round is in progress, the final
         // answer included. Ignored before a round and once it's over. The
-        // automatic switch-off comes with a scored row, in `enter`.
+        // automatic switch-off comes with a scored row (`enter`) or a wrong
+        // word (`decode`).
         const round = session.round;
         if (round && !round.isOver) {
           if (round.hintsShown) {
