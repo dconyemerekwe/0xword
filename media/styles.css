@@ -90,9 +90,13 @@
   --ox-pair-min: calc(2 * var(--ox-tile-min) + 3px);
   /*
    * Keypad keys (#33) keep their size in a 400px panel at every width: the
-   * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px).
+   * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px). When
+   * the page scrolls, VS Code's 10px scrollbar narrows that column to 366px,
+   * so keys may shrink to (366 - 3 × 6) / 4 = 87px to fit it (owner's
+   * decision), and no further.
    */
   --ox-key-width: 89.5px;
+  --ox-key-min-width: 87px;
 }
 
 /*
@@ -874,13 +878,20 @@ body {
 /* Keypad: 4 rows of 4 keys, then DEL and ENTER. */
 
 /*
- * Keys never grow or shrink (owner's decision on #33). In a wider panel the
- * keypad is centred; in a narrower one its auto margins drop to 0, so it
- * starts at the left and overflows to the right, where the panel scrolls.
+ * Keys never grow, and shrink only from 89.5px to 87px (owner's decisions on
+ * #33). With auto margins the keypad takes the width it needs, up to the
+ * column: in a wider panel it is centred; in a column narrower than 366px its
+ * margins drop to 0, so it starts at the left and overflows to the right,
+ * where the panel scrolls.
+ *
+ * Known limits: below about 366px, with the page scrolled fully right, the
+ * right-hand keys' focus ring can be cut at the scroll edge. From about 424px
+ * wide, the 376px keypad is narrower than the 400px grid and centred, so
+ * their edges no longer line up.
  */
 .keypad {
   display: grid;
-  grid-template-columns: repeat(4, var(--ox-key-width));
+  grid-template-columns: repeat(4, minmax(var(--ox-key-min-width), var(--ox-key-width)));
   gap: 6px;
   margin-inline: auto;
 }

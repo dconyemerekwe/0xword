@@ -460,12 +460,17 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
     assert.match(block(".hint-strip"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
   });
 
-  it("makes every key a fixed size, its size in a 400px panel: no fr, percentage or viewport widths", () => {
-    assert.match(block(".keypad"), /grid-template-columns: repeat\(4, var\(--ox-key-width\)\);/);
+  it("keeps every key at its 400px size, shrinking only to fit the column a scrollbar narrows: no fr, percentage or viewport widths", () => {
+    // Exactly this range and nothing else: 89.5px at most, 87px at least.
+    const columns = "minmax(var(--ox-key-min-width), var(--ox-key-width))";
+    assert.match(block(".keypad"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-key-min-width\), var\(--ox-key-width\)\)\);/);
     assert.equal(px(root, "--ox-key-width"), (column400 - 3 * keyGap) / 4);
+    // VS Code's 10px scrollbar takes the 400px panel's column from 376px to 366px.
+    assert.equal(px(root, "--ox-key-min-width"), (column400 - 10 - 3 * keyGap) / 4);
     assert.match(block(".key-wide"), /grid-column: span 2;/);
     for (const selector of [".keypad", ".key", ".key-wide"]) {
-      assert.doesNotMatch(block(selector), /\dfr\b|%|\dv[wh]\b|minmax|(?:^|[\s;])(max-)?width:/, selector);
+      const body = block(selector).replace(columns, "");
+      assert.doesNotMatch(body, /\dfr\b|%|\dv[wh]\b|minmax|(?:^|[\s;])(max-)?width:/, selector);
     }
     // Still at least 44px tall.
     assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
@@ -486,7 +491,11 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
   it("keeps the 400px panel's sizes: 41px tiles and the keys' 1fr width there", () => {
     assert.deepEqual([rowGap, pairGap, keyGap], [12, 3, 6]);
     assert.equal((column400 - 3 * rowGap - 4 * pairGap) / 8, 41);
+    // The grid's narrowest width fits the 400px column, so the tile minimum doesn't change 41px tiles.
+    const pairMin = 2 * 29.2 + pairGap;
+    assert.ok(4 * pairMin + 3 * rowGap <= column400, `${4 * pairMin + 3 * rowGap}px in ${column400}px`);
     assert.equal(px(root, "--ox-key-width"), 89.5);
+    assert.equal(px(root, "--ox-key-min-width"), 87);
   });
 });
 
