@@ -6,7 +6,7 @@
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
-import { MAX_ROWS, type RoundResult } from "./game/round.ts";
+import { MAX_HINTS, MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { WORD_LIST_SIZE } from "./game/words.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 import { isTheme, type Theme } from "./theme.ts";
@@ -130,6 +130,10 @@ const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hints
  *   every word in the list (all the others wrong, then the answer); a failed
  *   one's at most every word but the answer. Both are reachable: the wrong
  *   words can all be tried after row 1.
+ * - `hintsUsed` counts one hint per stretch with hints on: one stretch
+ *   before each row and one after the last, so 0 to `rowsUsed + 1` (at most
+ *   `MAX_HINTS`). Every count in that range is reachable. The one-way
+ *   boolean sent before #38 is rejected.
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
   if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
@@ -141,9 +145,9 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
   const hintsUsed = fields.get("hintsUsed");
   if (
     typeof solved !== "boolean" ||
-    typeof hintsUsed !== "boolean" ||
     !isIntegerInRange(rowsUsed, 1, MAX_ROWS) ||
-    !isIntegerInRange(answerTries, 1, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1)
+    !isIntegerInRange(answerTries, 1, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1) ||
+    !isIntegerInRange(hintsUsed, 0, Math.min(rowsUsed + 1, MAX_HINTS))
   ) {
     return null;
   }

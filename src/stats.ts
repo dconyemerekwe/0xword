@@ -18,7 +18,11 @@ export interface Stats {
   readonly solved: number;
   /** Hex rows used, added up over solved rounds only. */
   readonly solvedRowsTotal: number;
-  /** Rounds in which hints were turned on. */
+  /**
+   * Rounds that counted at least one hint. Since #38 a round counts each hint
+   * it used; stats still count the rounds, so the hints-used rate means what
+   * it did and stored stats keep working.
+   */
   readonly hintsUsedCount: number;
 }
 
@@ -63,7 +67,7 @@ export function recordResult(stats: Stats, round: FinishedRound): Stats {
     played: stats.played + 1,
     solved: stats.solved + (round.solved ? 1 : 0),
     solvedRowsTotal: stats.solvedRowsTotal + (round.solved ? round.rowsUsed : 0),
-    hintsUsedCount: stats.hintsUsedCount + (round.hintsUsed ? 1 : 0),
+    hintsUsedCount: stats.hintsUsedCount + (round.hintsUsed > 0 ? 1 : 0),
   };
 }
 

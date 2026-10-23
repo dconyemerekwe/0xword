@@ -279,24 +279,24 @@ describe("Session.takeResult (roundFinished, once)", () => {
 
   it("gives a solved round's result once, without the answer", () => {
     const session = solved();
-    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: false });
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: 0 });
     assert.equal(session.reported, true);
     assert.equal(session.takeResult(), null);
   });
 
   it("gives a failed round's result once, with all 6 rows and every answer try", () => {
     const session = failed();
-    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS, hintsUsed: false });
+    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS, hintsUsed: 0 });
     assert.equal(session.takeResult(), null);
   });
 
   it("gives a failed round's result with one answer try when only the final answer was tried", () => {
     const session = atFinal();
     session.round?.submitAnswer(WORDS[1] ?? "");
-    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: 1, hintsUsed: false });
+    assert.deepEqual(session.takeResult(), { solved: false, rowsUsed: MAX_ROWS, answerTries: 1, hintsUsed: 0 });
   });
 
-  it("records hints used", () => {
+  it("records the hint count", () => {
     const session = new Session(WORDS, () => 0);
     const answer = WORDS[0];
     assert.ok(answer);
@@ -304,7 +304,7 @@ describe("Session.takeResult (roundFinished, once)", () => {
     round.enableHints();
     round.submitGuess(wordToHex(answer));
     round.submitAnswer(answer);
-    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: true });
+    assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: 1 });
   });
 
   it("is reset by a new round, which then reports only once it's over", () => {
@@ -366,13 +366,13 @@ describe("Session state", () => {
     assert.deepEqual(state.round, session.round?.toState());
   });
 
-  it("saves in format version 7", () => {
-    assert.equal(SESSION_STATE_VERSION, 7);
-    assert.equal(sessionAt(1).toState()?.version, 7);
+  it("saves in format version 8", () => {
+    assert.equal(SESSION_STATE_VERSION, 8);
+    assert.equal(sessionAt(1).toState()?.version, 8);
   });
 
-  describe("hints on/off and hints used (version 5)", () => {
-    /** A session at round 1 with hints turned on, and then off again if `off`. */
+  describe("the hint count and Hints on/off (version 8, #38)", () => {
+    /** A session at round 1 (2 rows) with Hints turned on, and then off again if `off`. */
     function withHints(off: boolean): Session {
       const session = sessionAt(1);
       session.round?.enableHints();
@@ -382,30 +382,65 @@ describe("Session state", () => {
       return session;
     }
 
-    it("saves a new round with hints off and unused", () => {
+    it("saves a new round with Hints off and no hints counted", () => {
       const state = sessionAt(1).toState();
       assert.equal(state?.round.hintsShown, false);
-      assert.equal(state?.round.hintsUsed, false);
+      assert.equal(state?.round.hintsUsed, 0);
+      assert.equal(state?.round.rowHinted, false);
     });
 
-    it("round-trips hints on", () => {
+    it("round-trips Hints on, with the count", () => {
       const restored = Session.fromState(stored(withHints(false)), WORDS);
       assert.equal(restored?.round?.hintsShown, true);
-      assert.equal(restored?.round?.hintsUsed, true);
+      assert.equal(restored?.round?.hintsUsed, 1);
+      assert.equal(restored?.round?.toState().rowHinted, true);
     });
 
-    it("round-trips hints turned on and off again as off, but used", () => {
+    it("round-trips Hints turned on and off again as off, with the row still counted", () => {
       const restored = Session.fromState(stored(withHints(true)), WORDS);
       assert.equal(restored?.round?.hintsShown, false);
-      assert.equal(restored?.round?.hintsUsed, true);
+      assert.equal(restored?.round?.hintsUsed, 1);
+      restored?.round?.enableHints();
+      assert.equal(restored?.round?.hintsUsed, 1);
     });
 
-    it("starts a new round with hints off and unused, after a round with hints on", () => {
+    it("starts a new round with Hints off and no hints counted, after a round with hints", () => {
       const session = withHints(false);
       const round = session.newRound();
       assert.equal(round.hintsShown, false);
-      assert.equal(round.hintsUsed, false);
+      assert.equal(round.hintsUsed, 0);
     });
+
+    it("reports the count in the result", () => {
+      const session = new Session(WORDS, () => 0);
+      const [answer] = WORDS;
+      const [first, second] = WRONG;
+      assert.ok(answer && first && second);
+      const round = session.newRound();
+      round.enableHints();
+      round.submitGuess(wordToHex(first));
+      round.submitGuess(wordToHex(second));
+      round.enableHints();
+      session.submitAnswer(answer);
+      assert.deepEqual(session.takeResult(), { solved: true, rowsUsed: 2, answerTries: 1, hintsUsed: 2 });
+    });
+
+    const tampered: readonly (readonly [string, Record<string, unknown>])[] = [
+      ["a hint count as a string", { hintsUsed: "1", rowHinted: true }],
+      ["a negative hint count", { hintsUsed: -1 }],
+      ["a fractional hint count", { hintsUsed: 0.5 }],
+      ["more hints than its 2 rows + 1", { hintsUsed: 4, rowHinted: true }],
+      ["Hints on with the current row not counted", { hintsUsed: 1, hintsShown: true }],
+      ["the current row counted with no hints counted", { rowHinted: true }],
+      ["the one-way flag of version 7", { hintsUsed: true }],
+    ];
+    for (const [name, changes] of tampered) {
+      it(`drops the state, without throwing, for ${name}`, () => {
+        const state = withRound(stored(sessionAt(1)), changes);
+        assert.equal(Session.fromState(state, WORDS), null);
+        assert.equal(restoreSession(state, WORDS).round, null);
+      });
+    }
 
     it("drops version-4 state, which had no hints on/off flag", () => {
       const state = stored(sessionAt(1));
@@ -647,7 +682,7 @@ describe("restoreSession (webview start-up)", () => {
         () => withRound({ ...stored(sessionAt(5)), version: 5 }, { phase: "answer" }),
       ],
       ["an answer phase in version-6 state", () => withRound(asVersion6(stored(sessionAt(5))), { phase: "answer" })],
-      ["an answer phase in version-7 state", () => withRound(stored(sessionAt(5)), { phase: "answer" })],
+      ["an answer phase in version-8 state", () => withRound(stored(sessionAt(5)), { phase: "answer" })],
       // Version 5 allowed a repeated row: dropped by its version alone.
       [
         "version-5 state with a repeated row",
@@ -846,9 +881,18 @@ function solvedSession(): Session {
   return session;
 }
 
-/** Version-6 state: today's state without the rejection. */
+/**
+ * Version-7 state: today's state with the round's hints as version 7 saved
+ * them, a one-way `hintsUsed` flag and no `rowHinted`.
+ */
+function asVersion7(state: Record<string, unknown>): Record<string, unknown> {
+  const { rowHinted: _rowHinted, hintsUsed, ...round } = state.round as Record<string, unknown>;
+  return { ...state, version: 7, round: { ...round, hintsUsed: typeof hintsUsed === "number" && hintsUsed > 0 } };
+}
+
+/** Version-6 state: version-7 state without the rejection. */
 function asVersion6(state: Record<string, unknown>): Record<string, unknown> {
-  const { rejection: _rejection, ...rest } = state;
+  const { rejection: _rejection, ...rest } = asVersion7(state);
   return { ...rest, version: 6 };
 }
 
@@ -1062,33 +1106,39 @@ describe("Session: the last rejected move, saved for its message (#34)", () => {
     });
   });
 
-  describe("version-6 state, saved before the rejection was", () => {
-    it("is restored with no rejection, so no message", () => {
-      const session = sessionAt(3);
-      const restored = Session.fromState(asVersion6(stored(session)), WORDS);
-      assert.ok(restored);
-      assert.equal(restored.rejection, null);
-      assert.deepEqual(restored.toState(), session.toState(), "and saved again as version 7");
-    });
+  describe("version-6 and version-7 state, saved before hints were counted (#38)", () => {
+    // A one-way flag can't say how many hints were used, so older state starts fresh.
+    const cases: readonly (readonly [string, () => Record<string, unknown>])[] = [
+      ["version-7 state", () => asVersion7(stored(sessionAt(3)))],
+      ["version-7 state with hints used", () => asVersion7(stored(withHintsOn()))],
+      ["version-7 state with a rejection", () => asVersion7(stored(withRejectedRow()))],
+      ["version-7 state in today's round format", () => ({ ...stored(sessionAt(3)), version: 7 })],
+      ["version-6 state", () => asVersion6(stored(sessionAt(3)))],
+      ["version-6 state with hints used", () => asVersion6(stored(withHintsOn()))],
+      [
+        "version-6 state in today's format but without the rejection",
+        () => {
+          const { rejection: _rejection, ...rest } = stored(sessionAt(3));
+          return { ...rest, version: 6 };
+        },
+      ],
+    ];
+    for (const [name, make] of cases) {
+      it(`starts fresh, without throwing, for ${name}`, () => {
+        const state = make();
+        assert.equal(Session.fromState(state, WORDS), null);
+        const session = restoreSession(state, WORDS);
+        assert.equal(session.round, null);
+        assert.equal(session.ensureRound(), true);
+        assert.equal(session.roundNumber, 1);
+      });
+    }
 
-    it("is dropped if it carries a rejection key", () => {
-      assert.equal(Session.fromState({ ...asVersion6(stored(withRejectedRow())), rejection: null }, WORDS), null);
-    });
-
-    it("is dropped with an extra key", () => {
-      assert.equal(Session.fromState({ ...asVersion6(stored(sessionAt(1))), extra: true }, WORDS), null);
-    });
-
-    it("is dropped, without throwing, if it holds a repeated row or word", () => {
-      const state = asVersion6(stored(sessionAt(1)));
-      const round = state["round"] as { rows: unknown[]; answers: unknown[] };
-      for (const tampered of [
-        { ...state, round: { ...round, rows: [round.rows[0], round.rows[0]] } },
-        { ...state, round: { ...round, answers: [...round.answers, ...round.answers] } },
-      ]) {
-        assert.equal(Session.fromState(tampered, WORDS), null);
-        assert.equal(restoreSession(tampered, WORDS).round, null);
-      }
-    });
+    /** A session at round 1 with Hints on. */
+    function withHintsOn(): Session {
+      const session = sessionAt(1);
+      session.round?.enableHints();
+      return session;
+    }
   });
 });

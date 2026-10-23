@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MAX_ROWS } from "../src/game/index.ts";
+import { MAX_HINTS, MAX_ROWS } from "../src/game/index.ts";
 import { handleWebviewMessage, type HostHandlers } from "../src/protocol.ts";
 import {
   EMPTY_STATS,
@@ -26,12 +26,12 @@ function stats(overrides: Record<string, unknown> = {}): Record<string, unknown>
 }
 
 function round(overrides: Partial<FinishedRound> = {}): FinishedRound {
-  return { solved: true, rowsUsed: 3, hintsUsed: false, ...overrides };
+  return { solved: true, rowsUsed: 3, hintsUsed: 0, ...overrides };
 }
 
 /** A valid `roundFinished` message, as the webview would send it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: false, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: 0, ...overrides };
 }
 
 /** An in-memory `globalState` that counts writes and can be made to fail. */
@@ -196,20 +196,26 @@ describe("recordResult", () => {
     });
   });
 
-  it("counts a round with hints used", () => {
-    assert.equal(recordResult(SOME_STATS, round({ hintsUsed: true })).hintsUsedCount, 2);
+  it("counts a round with one hint used", () => {
+    assert.equal(recordResult(SOME_STATS, round({ hintsUsed: 1 })).hintsUsedCount, 2);
+  });
+
+  it("counts a round with several hints once: hintsUsedCount counts rounds, not hints (#38)", () => {
+    for (let hintsUsed = 1; hintsUsed <= 4; hintsUsed++) {
+      assert.equal(recordResult(SOME_STATS, round({ hintsUsed })).hintsUsedCount, 2, `${hintsUsed} hints`);
+    }
   });
 
   it("counts hints in a failed round too", () => {
-    assert.equal(recordResult(SOME_STATS, round({ solved: false, rowsUsed: MAX_ROWS, hintsUsed: true })).hintsUsedCount, 2);
+    assert.equal(recordResult(SOME_STATS, round({ solved: false, rowsUsed: MAX_ROWS, hintsUsed: MAX_HINTS })).hintsUsedCount, 2);
   });
 
   it("doesn't count hints when none were used", () => {
-    assert.equal(recordResult(SOME_STATS, round({ hintsUsed: false })).hintsUsedCount, 1);
+    assert.equal(recordResult(SOME_STATS, round({ hintsUsed: 0 })).hintsUsedCount, 1);
   });
 
   it("counts a new player's first round from zeros", () => {
-    assert.deepEqual(recordResult(EMPTY_STATS, round({ rowsUsed: 2, hintsUsed: true })), {
+    assert.deepEqual(recordResult(EMPTY_STATS, round({ rowsUsed: 2, hintsUsed: 3 })), {
       played: 1,
       solved: 1,
       solvedRowsTotal: 2,
@@ -235,7 +241,7 @@ describe("recordResult", () => {
   it("always produces stats that parseStats accepts", () => {
     let current: Stats = EMPTY_STATS;
     for (const solved of [true, false]) {
-      for (const hintsUsed of [true, false]) {
+      for (const hintsUsed of [0, 1, 2]) {
         for (let rowsUsed = 1; rowsUsed <= MAX_ROWS; rowsUsed++) {
           current = recordResult(current, { solved, hintsUsed, rowsUsed: solved ? rowsUsed : MAX_ROWS });
           assert.deepEqual(parseStats(current), current);
@@ -344,7 +350,7 @@ describe("StatsStore", () => {
   it("records a round by writing the updated stats to the key", async () => {
     const storage = new FakeStorage();
     storage.values.set(STATS_KEY, stats());
-    await new StatsStore(storage).record(round({ rowsUsed: 2, hintsUsed: true }));
+    await new StatsStore(storage).record(round({ rowsUsed: 2, hintsUsed: 3 }));
     assert.deepEqual(storage.values.get(STATS_KEY), { played: 5, solved: 4, solvedRowsTotal: 11, hintsUsedCount: 2 });
     assert.equal(storage.updates, 1);
   });
@@ -390,7 +396,7 @@ describe("the host's message handling with a stats store", () => {
   it("updates the stored stats for a valid roundFinished", async () => {
     const storage = new FakeStorage();
     const store = new StatsStore(storage);
-    assert.equal(handleWebviewMessage(roundFinished({ rowsUsed: 4, hintsUsed: true }), handlersFor(store)), null);
+    assert.equal(handleWebviewMessage(roundFinished({ rowsUsed: 4, hintsUsed: 2 }), handlersFor(store)), null);
     await settle();
     assert.deepEqual(store.current(), { played: 1, solved: 1, solvedRowsTotal: 4, hintsUsedCount: 1 });
   });
@@ -407,7 +413,8 @@ describe("the host's message handling with a stats store", () => {
       ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 1 }],
       ["an extra field", roundFinished({ answer: "BYTE" })],
       ['solved as the string "true"', roundFinished({ solved: "true" })],
-      ["hintsUsed as 1", roundFinished({ hintsUsed: 1 })],
+      ["hintsUsed as true (the flag sent before #38)", roundFinished({ hintsUsed: true })],
+      ["more hints than rowsUsed + 1", roundFinished({ rowsUsed: 3, hintsUsed: 5 })],
       ["rowsUsed: 0", roundFinished({ rowsUsed: 0 })],
       ["rowsUsed above MAX_ROWS", roundFinished({ rowsUsed: MAX_ROWS + 1 })],
       ["a fractional rowsUsed", roundFinished({ rowsUsed: 2.5 })],
@@ -456,7 +463,7 @@ describe("the host's message handling with a stats store", () => {
     const store = new StatsStore(new FakeStorage());
     const handlers = handlersFor(store);
     handleWebviewMessage(roundFinished({ rowsUsed: 2 }), handlers);
-    handleWebviewMessage(roundFinished({ rowsUsed: 5, hintsUsed: true }), handlers);
+    handleWebviewMessage(roundFinished({ rowsUsed: 5, hintsUsed: 1 }), handlers);
     handleWebviewMessage(roundFinished({ solved: false, rowsUsed: MAX_ROWS }), handlers);
     await settle();
     assert.deepEqual(handleWebviewMessage({ type: "ready" }, handlers), {

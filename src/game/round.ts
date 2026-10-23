@@ -1,10 +1,17 @@
 import { checkGuess, type GuessCheck, type GuessError } from "./guess.ts";
 import { WORD_LENGTH, isWord, wordToHex } from "./hex.ts";
-import { hasExactKeys, plainFields, plainItems } from "./plain.ts";
+import { hasExactKeys, isIntegerInRange, plainFields, plainItems } from "./plain.ts";
 import { Mark, score } from "./score.ts";
 
 /** Hex rows per round. */
 export const MAX_ROWS = 6;
+
+/**
+ * The most hints a round can count: one for each hex row, plus one for the
+ * stretch after the last row (the final answer, or a decode that solves the
+ * round). See `Round.enableHints`.
+ */
+export const MAX_HINTS = MAX_ROWS + 1;
 
 /**
  * Where the round is:
@@ -39,8 +46,11 @@ export interface RoundResult {
   readonly rowsUsed: number;
   /** The accepted word attempts, the last one included. At least 1: every round ends with one. */
   readonly answerTries: number;
-  /** Hints were turned on at some point in the round, even if turned off again. */
-  readonly hintsUsed: boolean;
+  /**
+   * How many hints the round counted: 0 to `rowsUsed + 1`, so at most
+   * `MAX_HINTS`. See `Round.enableHints`.
+   */
+  readonly hintsUsed: number;
 }
 
 /**
@@ -58,13 +68,18 @@ export interface RoundState {
    */
   readonly answers: readonly string[];
   readonly phase: Phase;
-  /** One-way: hints were turned on at some point. Recorded in the result. */
-  readonly hintsUsed: boolean;
-  /** The on/off toggle: hints are shown now. Never true unless `hintsUsed` is. */
+  /** The hint count so far, the current stretch included. Recorded in the result. */
+  readonly hintsUsed: number;
+  /** The on/off toggle: hints are shown now. Never true unless `rowHinted` is. */
   readonly hintsShown: boolean;
+  /**
+   * Hints have been turned on since the last scored row (or since the round
+   * began), so this stretch is already counted in `hintsUsed`.
+   */
+  readonly rowHinted: boolean;
 }
 
-const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed", "hintsShown"] as const;
+const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed", "hintsShown", "rowHinted"] as const;
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
 /**
@@ -80,10 +95,12 @@ export class Round {
   /** The accepted answer tries, in order. */
   readonly #answers: string[] = [];
   #phase: Phase = "guess";
-  /** One-way: set the first time hints are turned on, and never cleared. */
-  #hintsUsed = false;
-  /** The player's on/off toggle. Unlimited: there is no count. */
+  /** The hint count: one per stretch in which hints were turned on. Only ever grows. */
+  #hintsUsed = 0;
+  /** The player's on/off toggle. Unlimited; a scored row turns it off. */
   #hintsShown = false;
+  /** Hints were turned on in the current stretch: see `RoundState.rowHinted`. */
+  #rowHinted = false;
 
   constructor(answer: string, words: ReadonlySet<string>) {
     if (!words.has(answer)) {
@@ -107,8 +124,11 @@ export class Round {
     return this.#answers;
   }
 
-  /** True once hints have been turned on in this round, even if they're off again. */
-  get hintsUsed(): boolean {
+  /**
+   * The hint count so far: see `enableHints`. For the result only: the
+   * screen never shows it while the round is in progress.
+   */
+  get hintsUsed(): number {
     return this.#hintsUsed;
   }
 
@@ -132,7 +152,9 @@ export class Round {
   /**
    * Scores a hex row. An invalid guess is rejected without using up a row.
    * The word never has to be tried first. A row already scored in this
-   * round is rejected too, without using a row.
+   * round is rejected too, without using a row. A rejected row leaves hints
+   * as they were; a scored one turns them off and starts a new stretch for
+   * the hint count (see `enableHints`).
    */
   submitGuess(input: string): GuessOutcome {
     if (this.#phase !== "guess") {
@@ -144,6 +166,8 @@ export class Round {
     }
     const row: Row = { hex: check.hex, word: check.word, marks: score(check.hex, this.#answerHex) };
     this.#rows.push(row);
+    this.#hintsShown = false;
+    this.#rowHinted = false;
     if (this.#rows.length === MAX_ROWS) {
       this.#phase = "final";
     }
@@ -207,19 +231,26 @@ export class Round {
   }
 
   /**
-   * Turns hints on. The result then records that hints were used, even if
-   * they're turned off again. Allowed any number of times while the round is
-   * in progress; throws once it's over.
+   * Turns hints on, and counts a hint unless one is already counted for this
+   * stretch. The round is split into stretches by its scored rows: one before
+   * each row, and one after the last row until the round ends (the final
+   * answer, or a decode that solves it). A stretch counts once however often
+   * hints are turned on and off in it, so a round counts at most `MAX_HINTS`.
+   * A rejected row doesn't end a stretch. Allowed any number of times while
+   * the round is in progress; throws once it's over.
    */
   enableHints(): void {
     this.#requireInProgress();
     this.#hintsShown = true;
-    this.#hintsUsed = true;
+    if (!this.#rowHinted) {
+      this.#rowHinted = true;
+      this.#hintsUsed++;
+    }
   }
 
   /**
-   * Turns hints off. The result still records that hints were used if they
-   * were ever on. Throws once the round is over.
+   * Turns hints off. A hint already counted for this stretch stays counted.
+   * Throws once the round is over.
    */
   disableHints(): void {
     this.#requireInProgress();
@@ -273,6 +304,7 @@ export class Round {
       phase: this.#phase,
       hintsUsed: this.#hintsUsed,
       hintsShown: this.#hintsShown,
+      rowHinted: this.#rowHinted,
     };
   }
 
@@ -315,6 +347,12 @@ export class Round {
  * (which need a scored row), then the other rows. Once the round is over,
  * its last answer is the one that ended it, so that one comes after every
  * row instead. Any other real order ends in the same state.
+ *
+ * Only the hint count is saved, not which stretches had hints, so hints are
+ * turned on before the first rows, one for each counted stretch a scored row
+ * has ended, and then for the current stretch after the last row (before the
+ * answer that ended the round, if it's over). The count and the toggle come
+ * out the same as in any real order.
  */
 function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const fields = plainFields(raw);
@@ -328,37 +366,53 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const answers = plainItems(fields.get("answers"), words.size);
   const hintsUsed = fields.get("hintsUsed");
   const hintsShown = fields.get("hintsShown");
+  const rowHinted = fields.get("rowHinted");
   if (
     typeof answer !== "string" ||
     !words.has(answer) ||
     !rows ||
     !answers ||
-    typeof hintsUsed !== "boolean" ||
+    !isIntegerInRange(hintsUsed, 0, MAX_HINTS) ||
     typeof hintsShown !== "boolean" ||
-    (hintsShown && !hintsUsed)
+    typeof rowHinted !== "boolean" ||
+    (hintsShown && !rowHinted)
   ) {
+    return null;
+  }
+  // The counted stretches that a scored row ended: at most one per row.
+  const hintedRows = hintsUsed - (rowHinted ? 1 : 0);
+  if (hintedRows < 0 || hintedRows > rows.length) {
     return null;
   }
 
   const round = new Round(answer, words);
-  // Set before the replay, while the round is still in progress. Hints turned
-  // on and off again leave "used" set and "shown" off.
-  if (hintsUsed) {
+  const over = phase === "solved" || phase === "failed";
+  const during = over ? answers.slice(0, -1) : answers;
+  const ending = over ? answers.slice(-1) : [];
+  /** Replays row `index` (from 0), turning hints on first if it's one of the first `hintedRows`. */
+  const replayNthRow = (row: unknown, index: number): boolean => {
+    if (index < hintedRows) {
+      round.enableHints();
+    }
+    return replayRow(round, row);
+  };
+  const [firstRow, ...laterRows] = rows;
+  if (
+    (firstRow !== undefined && !replayNthRow(firstRow, 0)) ||
+    !during.every((tried) => replayAnswer(round, tried)) ||
+    !laterRows.every((row, i) => replayNthRow(row, i + 1))
+  ) {
+    return null;
+  }
+  // The current stretch. Throws if the round is already over, which
+  // `fromState` turns into null.
+  if (rowHinted) {
     round.enableHints();
     if (!hintsShown) {
       round.disableHints();
     }
   }
-  const over = phase === "solved" || phase === "failed";
-  const during = over ? answers.slice(0, -1) : answers;
-  const ending = over ? answers.slice(-1) : [];
-  const [firstRow, ...laterRows] = rows;
-  if (
-    (firstRow !== undefined && !replayRow(round, firstRow)) ||
-    !during.every((tried) => replayAnswer(round, tried)) ||
-    !laterRows.every((row) => replayRow(round, row)) ||
-    !ending.every((tried) => replayAnswer(round, tried))
-  ) {
+  if (!ending.every((tried) => replayAnswer(round, tried))) {
     return null;
   }
   if (round.phase !== phase) {

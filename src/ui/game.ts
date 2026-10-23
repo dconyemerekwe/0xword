@@ -157,7 +157,7 @@ export interface ResultView {
   readonly outcome: string;
   /** "Decoded: BYTE" for a solved round, "The word was BYTE" for a failed one. */
   readonly heading: string;
-  /** E.g. "3 of 6 rows · 2 answer tries · no hints" or "6 of 6 rows · 1 answer try · hints used". */
+  /** E.g. "3 of 6 rows attempted · 2 hints used", "1 hint used" or "0 hints used". */
   readonly line: string;
   /** One tile per byte of the answer, in order. */
   readonly bytes: readonly ResultByte[];
@@ -176,7 +176,8 @@ export interface HintCell {
 
 /**
  * The Hints button and the hint strip (page 2). Hints are unlimited and
- * purely the player's choice: there is no count or limit to show.
+ * purely the player's choice. The round counts them for the result, but
+ * there is no count or limit to show while it's in progress (#38).
  */
 export interface HintsView {
   /** The Hints button is shown: only while a round is in progress. */
@@ -423,7 +424,8 @@ export class GameController {
         return this.#decode(action.word);
       case "toggleHints": {
         // Any number of times while the round is in progress, the final
-        // answer included. Ignored before a round and once it's over.
+        // answer included. Ignored before a round and once it's over. The
+        // automatic switch-off comes with a scored row, in `enter`.
         const round = session.round;
         if (round && !round.isOver) {
           if (round.hintsShown) {
@@ -562,8 +564,8 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
 
 /**
  * The result card for a finished round (page 4): the outcome, the word, the
- * rows used, the answer tries and whether hints were used, and each byte
- * with its letter.
+ * rows used and the hint count, and each byte with its letter. Answer tries
+ * stay in the result and `roundFinished` but aren't shown (owner's decision, #38).
  */
 export function resultView(result: RoundResult): ResultView {
   const word = result.answer;
@@ -571,7 +573,7 @@ export function resultView(result: RoundResult): ResultView {
   return {
     outcome: result.solved ? SOLVED_OUTCOME : FAILED_OUTCOME,
     heading: result.solved ? `Decoded: ${word}` : `The word was ${word}`,
-    line: `${result.rowsUsed} of ${MAX_ROWS} rows · ${answerTriesText(result.answerTries)} · ${result.hintsUsed ? "hints used" : "no hints"}`,
+    line: `${result.rowsUsed} of ${MAX_ROWS} rows attempted · ${hintsUsedText(result.hintsUsed)}`,
     bytes: [...word].map((letter, i) => {
       const byte = hex.slice(i * 2, i * 2 + 2);
       return { hex: byte, letter, label: `${byte} is ${letter}` };
@@ -581,9 +583,9 @@ export function resultView(result: RoundResult): ResultView {
   };
 }
 
-/** "1 answer try" or "2 answer tries", as page 4 writes the count. */
-export function answerTriesText(tries: number): string {
-  return tries === 1 ? "1 answer try" : `${tries} answer tries`;
+/** "1 hint used", or "0 hints used", "2 hints used" and so on (owner's wording, #38). */
+export function hintsUsedText(hints: number): string {
+  return hints === 1 ? "1 hint used" : `${hints} hints used`;
 }
 
 /**
