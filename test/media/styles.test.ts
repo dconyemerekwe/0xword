@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { DECODE_PANEL, FINAL_PANEL } from "../../src/ui/game.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
 import { DARK_PALETTE, LIGHT_PALETTE, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
@@ -407,5 +408,166 @@ describe("media/styles.css layout and accessibility", () => {
     assert.doesNotMatch(rules, /@import/i);
     // test/media/fonts.test.ts checks that those URLs are relative and point into media/fonts/.
     assert.doesNotMatch(rules.replace(/@font-face\s*\{[^}]*\}/g, ""), /url\(/i);
+  });
+
+  it("sets again every size VS Code's default webview styles change: body padding and margin, font and line height", () => {
+    const body = block("body");
+    for (const declaration of [/margin: 0;/, /padding: 12px;/, /font-family: var\(--ox-sans\);/, /font-size: 14px;/, /font-weight: 400;/, /line-height: 1\.4;/]) {
+      assert.match(body, declaration);
+    }
+    // Nothing is sized from the root font size, which the stylesheet doesn't set.
+    assert.doesNotMatch(rules, /\d(rem|vw)\b/);
+  });
+});
+
+/** A `px` value from a declaration such as `gap: 8px;`, or NaN. */
+function px(body: string, property: string): number {
+  return Number(new RegExp(`(?:^|[\\s;])${property}: ([\\d.]+)px;`).exec(body)?.[1]);
+}
+
+describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => {
+  /** The game column in a 400px panel: the panel less the body's padding on each side. */
+  const column400 = 400 - 2 * px(block("body"), "padding");
+  const rowGap = px(block(".grid-row"), "gap");
+  const pairGap = px(block(".pair"), "gap");
+  const keyGap = px(block(".keypad"), "gap");
+
+  it("sizes every row's columns the same way, whatever its tiles hold, so empty tiles match scored ones", () => {
+    assert.match(block(".grid-row"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
+    // Two equal columns per pair, not sized from the digit: an empty tile is as wide as a filled one.
+    assert.match(block(".pair"), /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+    // Square: the height follows the width for every tile.
+    assert.match(block(".tile"), /aspect-ratio: 1;/);
+  });
+
+  it("changes only colours between tile states: empty, typed, right, wrong, absent and the dimmed locked tiles", () => {
+    assert.equal(block(".tile-empty"), "", "no rule of its own for empty tiles");
+    for (const selector of [".tile-typed", ".tile-right", ".tile-wrong", ".tile-absent", ".grid-locked .tile-right", ".grid-locked .tile-wrong"]) {
+      const body = block(selector);
+      assert.notEqual(body, "", selector);
+      const properties = [...body.matchAll(/([a-z-]+):/g)].map((match) => match[1] ?? "");
+      assert.deepEqual(properties.filter((name) => !["border-color", "background", "color"].includes(name)), [], selector);
+    }
+  });
+
+  it("never shrinks a tile below a scored tile's content: one 18px digit line and its 2px border on each side", () => {
+    assert.equal(px(block(".tile"), "font-size"), 18);
+    assert.match(block("body"), /line-height: 1\.4;/);
+    assert.match(block(".tile"), /border: 2px solid/);
+    assert.match(root, /--ox-tile-min: calc\(18px \* 1\.4 \+ 2 \* 2px\);/);
+    assert.match(root, new RegExp(`--ox-pair-min: calc\\(2 \\* var\\(--ox-tile-min\\) \\+ ${pairGap}px\\);`));
+    // The hint strip's cells keep the same minimum, so they stay under their byte pairs.
+    assert.match(block(".hint-strip"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
+  });
+
+  it("keeps every key at its 400px size, shrinking only to fit the column a scrollbar narrows: no fr, percentage or viewport widths", () => {
+    // Exactly this range and nothing else: 89.5px at most, 87px at least.
+    const columns = "minmax(var(--ox-key-min-width), var(--ox-key-width))";
+    assert.match(block(".keypad"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-key-min-width\), var\(--ox-key-width\)\)\);/);
+    assert.equal(px(root, "--ox-key-width"), (column400 - 3 * keyGap) / 4);
+    // VS Code's 10px scrollbar takes the 400px panel's column from 376px to 366px.
+    assert.equal(px(root, "--ox-key-min-width"), (column400 - 10 - 3 * keyGap) / 4);
+    assert.match(block(".key-wide"), /grid-column: span 2;/);
+    for (const selector of [".keypad", ".key", ".key-wide"]) {
+      const body = block(selector).replace(columns, "");
+      assert.doesNotMatch(body, /\dfr\b|%|\dv[wh]\b|minmax|(?:^|[\s;])(max-)?width:/, selector);
+    }
+    // Still at least 44px tall.
+    assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
+  });
+
+  it("centres the keypad in a wider panel and lets it overflow to the right in a narrower one, never squashed", () => {
+    // Auto margins centre it, and drop to 0 when it doesn't fit, so it starts at
+    // the left and the panel scrolls sideways; centring with `align-self` or
+    // `justify-content` would push its left side out of reach instead.
+    assert.match(block(".keypad"), /margin-inline: auto;/);
+    const game = /(?:^|\})\s*\.game,\s*\.how-to-play\s*\{([^}]*)\}/.exec(rules)?.[1];
+    assert.ok(game, "the .game rule");
+    for (const [name, body] of [[".keypad", block(".keypad")], [".key", block(".key")], [".game", game], ["#app", block("#app")], ["body", block("body")]]) {
+      assert.doesNotMatch(body ?? "", /overflow|align-self|justify-(content|self): center/, name);
+    }
+  });
+
+  it("keeps the 400px panel's sizes: 41px tiles and the keys' 1fr width there", () => {
+    assert.deepEqual([rowGap, pairGap, keyGap], [12, 3, 6]);
+    assert.equal((column400 - 3 * rowGap - 4 * pairGap) / 8, 41);
+    // The grid's narrowest width fits the 400px column, so the tile minimum doesn't change 41px tiles.
+    const pairMin = 2 * 29.2 + pairGap;
+    assert.ok(4 * pairMin + 3 * rowGap <= column400, `${4 * pairMin + 3 * rowGap}px in ${column400}px`);
+    assert.equal(px(root, "--ox-key-width"), 89.5);
+    assert.equal(px(root, "--ox-key-min-width"), 87);
+  });
+});
+
+describe("media/styles.css decode box placeholder (#33)", () => {
+  /** The `@container (width < Npx)` rules: their width, selector and declarations. */
+  const containerRules = [...rules.matchAll(/@container \(width < (\d+)px\) \{\s*([^{}]+?)\s*\{([^{}]*)\}\s*\}/g)].map(
+    ([, width, selector, body]) => ({ width: Number(width), selector, body: body?.trim() }),
+  );
+
+  /** The decode row's width a placeholder needs: its text, the box's padding and border, the gap and the button. */
+  function rowNeeded(text: number, button: number): number {
+    const input = block(".decode-input");
+    const box = 2 * Number(/padding: 0 (\d+)px;/.exec(input)?.[1]) + 2 * Number(/border: (\d+)px solid/.exec(input)?.[1]);
+    return text + box + px(block(".decode-row"), "gap") + button;
+  }
+
+  it("ends the decode box's placeholder in an ellipsis when it doesn't fit, at the final answer too", () => {
+    // One rule for both placeholders: "Type the English word" and "Decode the bytes above".
+    assert.match(block(".decode-input"), /text-overflow: ellipsis;/);
+    const placeholder = block(".decode-input::placeholder");
+    assert.match(placeholder, /text-overflow: ellipsis;/);
+    assert.match(placeholder, /overflow: hidden;/);
+    assert.match(placeholder, /white-space: nowrap;/);
+    assert.equal(block(".decode-final .decode-input::placeholder"), "", "the final card doesn't override it");
+  });
+
+  it("shows a placeholder that fits in full: the box takes the row's free width, and nothing else cuts it", () => {
+    assert.match(block(".decode-input"), /flex: 1;/);
+    assert.doesNotMatch(block(".decode-input"), /(?:^|[\s;])(max-)?width:/);
+    assert.doesNotMatch(block(".decode-input::placeholder"), /width|max-|content:/);
+  });
+
+  it("makes the decode row a size container, so a rule can tell when the placeholder fits", () => {
+    assert.match(block(".decode-row"), /container-type: inline-size;/);
+  });
+
+  it("hides a focused placeholder, where Chromium shows no ellipsis, only in a row too narrow for it: both placeholders", () => {
+    // Widths measured in Chromium with the bundled DM Sans at 14px, by text:
+    // each placeholder, and the bold button beside it. Rewording any of them
+    // fails here until the cut-offs are measured again.
+    const MEASURED: Readonly<Record<string, number>> = {
+      "Type the English word": 142,
+      "Decode": 85,
+      "Decode the bytes above": 158.9,
+      "Submit": 81.3,
+    };
+    const measured = (text: string): number => {
+      const width = MEASURED[text];
+      assert.ok(width !== undefined, `"${text}" has no measured width: re-measure the placeholder cut-off`);
+      return width;
+    };
+    const typeTheWord = rowNeeded(measured(DECODE_PANEL.placeholder), measured(DECODE_PANEL.button));
+    const decodeTheBytes = rowNeeded(measured(FINAL_PANEL.placeholder), measured(FINAL_PANEL.button));
+    assert.deepEqual(containerRules, [
+      { width: Math.ceil(typeTheWord), selector: ".decode-input:focus::placeholder", body: "color: transparent;" },
+      { width: Math.ceil(decodeTheBytes), selector: ".decode-final .decode-input:focus::placeholder", body: "color: transparent;" },
+    ]);
+  });
+
+  it("keeps a focused placeholder visible where it fits: in a 400px panel's decode row", () => {
+    // The row at 400px: the body's padding, then the decode panel's padding and border.
+    const row = 400 - 2 * px(block("body"), "padding") - 2 * px(block(".decode"), "padding") - 2 * 2;
+    for (const { width } of containerRules) {
+      assert.ok(width <= row, `hidden below ${width}px, the row is ${row}px`);
+    }
+  });
+
+  it("never hides an unfocused placeholder: it ends in an ellipsis instead", () => {
+    for (const [, selector, body] of rules.matchAll(/([^{}]*::placeholder)\s*\{([^{}]*)\}/g)) {
+      if (!selector?.includes(":focus")) {
+        assert.doesNotMatch(body ?? "", /transparent/, selector);
+      }
+    }
   });
 });

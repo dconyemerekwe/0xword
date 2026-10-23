@@ -80,6 +80,23 @@
   --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;
   --ox-radius: 6px;
+
+  /*
+   * Grid tiles (#33): never smaller than a scored tile's content, one 18px
+   * digit at line height 1.4 plus its 2px border on each side (29.2px). A
+   * byte pair is two of those and the 3px gap between them.
+   */
+  --ox-tile-min: calc(18px * 1.4 + 2 * 2px);
+  --ox-pair-min: calc(2 * var(--ox-tile-min) + 3px);
+  /*
+   * Keypad keys (#33) keep their size in a 400px panel at every width: the
+   * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px). When
+   * the page scrolls, VS Code's 10px scrollbar narrows that column to 366px,
+   * so keys may shrink to (366 - 3 × 6) / 4 = 87px to fit it (owner's
+   * decision), and no further.
+   */
+  --ox-key-width: 89.5px;
+  --ox-key-min-width: 87px;
 }
 
 /*
@@ -138,6 +155,11 @@ body[data-ox-theme="light"] {
   display: none !important;
 }
 
+/*
+ * VS Code puts its own defaults before this stylesheet (`body` padding of
+ * 20px at the sides, the workbench font, size and weight). Every one that
+ * changes a size is set again here, so the panel doesn't depend on them.
+ */
 body {
   margin: 0;
   padding: 12px;
@@ -145,6 +167,7 @@ body {
   color: var(--ox-text);
   font-family: var(--ox-sans);
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.4;
 }
 
@@ -315,15 +338,21 @@ body {
   gap: 6px;
 }
 
+/*
+ * Every row has the same columns whatever its tiles hold, so an empty tile is
+ * exactly as big as a scored one (#33). A pair never gets narrower than
+ * `--ox-pair-min`: in a narrower panel the grid overflows instead.
+ */
 .grid-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
   gap: 12px;
 }
 
+/* Two equal columns, however wide each tile's digit is. */
 .pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
 }
 
@@ -379,7 +408,7 @@ body {
 
 .hint-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
   gap: 12px;
 }
 
@@ -466,9 +495,11 @@ body {
   font-weight: 700;
 }
 
+/* A size container, so the placeholder rules below can tell when it fits. */
 .decode-row {
   display: flex;
   gap: 8px;
+  container-type: inline-size;
 }
 
 .decode-input {
@@ -481,12 +512,37 @@ body {
   background: var(--ox-panel);
   color: var(--ox-text);
   font: inherit;
+  text-overflow: ellipsis;
   text-transform: uppercase;
 }
 
+/* A placeholder too long for the box ends in "…" rather than mid-letter (#33). */
 .decode-input::placeholder {
+  overflow: hidden;
   color: var(--ox-muted);
+  text-overflow: ellipsis;
   text-transform: none;
+  white-space: nowrap;
+}
+
+/*
+ * Chromium shows no ellipsis while the box has focus, so a placeholder that
+ * doesn't fit would be cut mid-letter: hide it then instead (owner's decision
+ * on #33). The widths are the decode row's, measured with the bundled fonts:
+ * "Type the English word" (142px) needs the box's 22px of padding and border,
+ * the 8px gap and Decode (85px); "Decode the bytes above" (158.9px) needs the
+ * same, with Submit (81.3px). Where it fits, it stays visible.
+ */
+@container (width < 257px) {
+  .decode-input:focus::placeholder {
+    color: transparent;
+  }
+}
+
+@container (width < 271px) {
+  .decode-final .decode-input:focus::placeholder {
+    color: transparent;
+  }
 }
 
 .decode-input:disabled {
@@ -821,10 +877,23 @@ body {
 
 /* Keypad: 4 rows of 4 keys, then DEL and ENTER. */
 
+/*
+ * Keys never grow, and shrink only from 89.5px to 87px (owner's decisions on
+ * #33). With auto margins the keypad takes the width it needs, up to the
+ * column: in a wider panel it is centred; in a column narrower than 366px its
+ * margins drop to 0, so it starts at the left and overflows to the right,
+ * where the panel scrolls.
+ *
+ * Known limits: below about 366px, with the page scrolled fully right, the
+ * right-hand keys' focus ring can be cut at the scroll edge. From about 424px
+ * wide, the 376px keypad is narrower than the 400px grid and centred, so
+ * their edges no longer line up.
+ */
 .keypad {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(var(--ox-key-min-width), var(--ox-key-width)));
   gap: 6px;
+  margin-inline: auto;
 }
 
 .key {
