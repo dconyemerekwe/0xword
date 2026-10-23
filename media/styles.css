@@ -80,6 +80,19 @@
   --ox-label-font: 700 14px/1.4 var(--ox-sans);
   --ox-touch: 44px;
   --ox-radius: 6px;
+
+  /*
+   * Grid tiles (#33): never smaller than a scored tile's content, one 18px
+   * digit at line height 1.4 plus its 2px border on each side (29.2px). A
+   * byte pair is two of those and the 3px gap between them.
+   */
+  --ox-tile-min: calc(18px * 1.4 + 2 * 2px);
+  --ox-pair-min: calc(2 * var(--ox-tile-min) + 3px);
+  /*
+   * Keypad keys (#33) keep their size in a 400px panel at every width: the
+   * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px).
+   */
+  --ox-key-width: 89.5px;
 }
 
 /*
@@ -321,15 +334,21 @@ body {
   gap: 6px;
 }
 
+/*
+ * Every row has the same columns whatever its tiles hold, so an empty tile is
+ * exactly as big as a scored one (#33). A pair never gets narrower than
+ * `--ox-pair-min`: in a narrower panel the grid overflows instead.
+ */
 .grid-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
   gap: 12px;
 }
 
+/* Two equal columns, however wide each tile's digit is. */
 .pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
 }
 
@@ -385,7 +404,7 @@ body {
 
 .hint-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
   gap: 12px;
 }
 
@@ -854,10 +873,16 @@ body {
 
 /* Keypad: 4 rows of 4 keys, then DEL and ENTER. */
 
+/*
+ * Keys never grow or shrink (owner's decision on #33). In a wider panel the
+ * keypad is centred; in a narrower one its auto margins drop to 0, so it
+ * starts at the left and overflows to the right, where the panel scrolls.
+ */
 .keypad {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, var(--ox-key-width));
   gap: 6px;
+  margin-inline: auto;
 }
 
 .key {

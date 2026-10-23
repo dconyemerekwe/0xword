@@ -425,6 +425,71 @@ function px(body: string, property: string): number {
   return Number(new RegExp(`(?:^|[\\s;])${property}: ([\\d.]+)px;`).exec(body)?.[1]);
 }
 
+describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => {
+  /** The game column in a 400px panel: the panel less the body's padding on each side. */
+  const column400 = 400 - 2 * px(block("body"), "padding");
+  const rowGap = px(block(".grid-row"), "gap");
+  const pairGap = px(block(".pair"), "gap");
+  const keyGap = px(block(".keypad"), "gap");
+
+  it("sizes every row's columns the same way, whatever its tiles hold, so empty tiles match scored ones", () => {
+    assert.match(block(".grid-row"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
+    // Two equal columns per pair, not sized from the digit: an empty tile is as wide as a filled one.
+    assert.match(block(".pair"), /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+    // Square: the height follows the width for every tile.
+    assert.match(block(".tile"), /aspect-ratio: 1;/);
+  });
+
+  it("changes only colours between tile states: empty, typed, right, wrong, absent and the dimmed locked tiles", () => {
+    assert.equal(block(".tile-empty"), "", "no rule of its own for empty tiles");
+    for (const selector of [".tile-typed", ".tile-right", ".tile-wrong", ".tile-absent", ".grid-locked .tile-right", ".grid-locked .tile-wrong"]) {
+      const body = block(selector);
+      assert.notEqual(body, "", selector);
+      const properties = [...body.matchAll(/([a-z-]+):/g)].map((match) => match[1] ?? "");
+      assert.deepEqual(properties.filter((name) => !["border-color", "background", "color"].includes(name)), [], selector);
+    }
+  });
+
+  it("never shrinks a tile below a scored tile's content: one 18px digit line and its 2px border on each side", () => {
+    assert.equal(px(block(".tile"), "font-size"), 18);
+    assert.match(block("body"), /line-height: 1\.4;/);
+    assert.match(block(".tile"), /border: 2px solid/);
+    assert.match(root, /--ox-tile-min: calc\(18px \* 1\.4 \+ 2 \* 2px\);/);
+    assert.match(root, new RegExp(`--ox-pair-min: calc\\(2 \\* var\\(--ox-tile-min\\) \\+ ${pairGap}px\\);`));
+    // The hint strip's cells keep the same minimum, so they stay under their byte pairs.
+    assert.match(block(".hint-strip"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
+  });
+
+  it("makes every key a fixed size, its size in a 400px panel: no fr, percentage or viewport widths", () => {
+    assert.match(block(".keypad"), /grid-template-columns: repeat\(4, var\(--ox-key-width\)\);/);
+    assert.equal(px(root, "--ox-key-width"), (column400 - 3 * keyGap) / 4);
+    assert.match(block(".key-wide"), /grid-column: span 2;/);
+    for (const selector of [".keypad", ".key", ".key-wide"]) {
+      assert.doesNotMatch(block(selector), /\dfr\b|%|\dv[wh]\b|minmax|(?:^|[\s;])(max-)?width:/, selector);
+    }
+    // Still at least 44px tall.
+    assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
+  });
+
+  it("centres the keypad in a wider panel and lets it overflow to the right in a narrower one, never squashed", () => {
+    // Auto margins centre it, and drop to 0 when it doesn't fit, so it starts at
+    // the left and the panel scrolls sideways; centring with `align-self` or
+    // `justify-content` would push its left side out of reach instead.
+    assert.match(block(".keypad"), /margin-inline: auto;/);
+    const game = /(?:^|\})\s*\.game,\s*\.how-to-play\s*\{([^}]*)\}/.exec(rules)?.[1];
+    assert.ok(game, "the .game rule");
+    for (const [name, body] of [[".keypad", block(".keypad")], [".key", block(".key")], [".game", game], ["#app", block("#app")], ["body", block("body")]]) {
+      assert.doesNotMatch(body ?? "", /overflow|align-self|justify-(content|self): center/, name);
+    }
+  });
+
+  it("keeps the 400px panel's sizes: 41px tiles and the keys' 1fr width there", () => {
+    assert.deepEqual([rowGap, pairGap, keyGap], [12, 3, 6]);
+    assert.equal((column400 - 3 * rowGap - 4 * pairGap) / 8, 41);
+    assert.equal(px(root, "--ox-key-width"), 89.5);
+  });
+});
+
 describe("media/styles.css decode box placeholder (#33)", () => {
   /** The `@container (width < Npx)` rules: their width, selector and declarations. */
   const containerRules = [...rules.matchAll(/@container \(width < (\d+)px\) \{\s*([^{}]+?)\s*\{([^{}]*)\}\s*\}/g)].map(
