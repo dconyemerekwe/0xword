@@ -113,7 +113,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
   - solved: "4-letter word · solved"
   - failed (no page; #24): "4-letter word · not solved"
-- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row (#38)**, so the player turns it on again for each row they want help with; a rejected row (invalid, not a listed word, or a repeat) leaves it on. Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, plus one if it's turned on after the last scored row (the final answer, or a decode that solves the round), so at most 7. Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or out of rows).
+- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row or the decode box takes a wrong listed word (#38)**, so the player turns it on again when they want help; a rejected row (invalid, not a listed word, or a repeat) or a rejected word (malformed, not listed, or a repeat) leaves it on. Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, plus one if it's turned on after the last scored row (the final answer, or a decode that solves the round), so at most 7. A wrong word doesn't count again: turning Hints back on before the next row is part of the same row. Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or out of rows).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
   - Digits are in JetBrains Mono, bold.
@@ -144,7 +144,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
 
 ## Page 2: Mid-game with hints on
 
-The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Hints is on for the row being typed: once ENTER scores that row, the button goes back to off and the strip is hidden (#38).
+The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Once ENTER scores the row being typed, or the decode box takes a wrong word, the button goes back to off and the strip is hidden (#38).
 
 ## Page 3: Forced final answer
 
@@ -183,9 +183,9 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   4. You can decode the English word at any time. A wrong guess doesn't use up a row.
   5. You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.
   6. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
-  7. Stuck? Turn on **Hints** to see the letters you have fully decoded so far. It switches off when you enter a hex row. Your result counts one hint for each row you use it on, and one more if you use it after your last row.
+  7. Stuck? Turn on **Hints** to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result.
 
-  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34). Rule 7's last two sentences aren't in the draft either: they describe the hint count (#38).
+  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34). Rule 7 is the owner's wording for the hint count (#38); the draft reads "Stuck? Turn on **Hints** to see the letters you have fully decoded so far."
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
