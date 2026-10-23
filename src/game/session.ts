@@ -22,14 +22,12 @@ import { pickAnswer } from "./words.ts";
  * Version 6 made word attempts optional (#30): the round's `answers` no
  * longer follow its rows one for one, and the `answer` phase is gone.
  * Version 7 added `rejection`, so the message for a rejected move survives a
- * hide and show (#34). Version-6 state is still restored, with no rejection:
- * its fields are checked exactly as before and it can't hold anything
- * version 7 rejects. Older state is dropped, so the panel starts fresh.
+ * hide and show (#34). Version 8 counts hints (#38): the round's `hintsUsed`
+ * is a number instead of a one-way flag, and `rowHinted` says whether the
+ * current stretch is already counted. Older state is dropped, so the panel
+ * starts fresh: its one-way flag can't say how many hints were used.
  */
-export const SESSION_STATE_VERSION = 7;
-
-/** The last version `fromState` still restores: the same as `SESSION_STATE_VERSION` but without `rejection`. */
-const PREVIOUS_STATE_VERSION = 6;
+export const SESSION_STATE_VERSION = 8;
 
 /**
  * The player's last rejected move, as data rather than text: the error, and
@@ -63,8 +61,7 @@ export interface SessionState {
 /** A finished round's result as the host gets it: without the hidden answer. */
 export type RoundReport = Omit<RoundResult, "answer">;
 
-const PREVIOUS_STATE_KEYS = ["version", "roundNumber", "round", "draft", "reported"] as const;
-const SESSION_STATE_KEYS = [...PREVIOUS_STATE_KEYS, "rejection"] as const;
+const SESSION_STATE_KEYS = ["version", "roundNumber", "round", "draft", "reported", "rejection"] as const;
 const ROW_REJECTION_KEYS = ["kind", "error", "hex"] as const;
 const WORD_REJECTION_KEYS = ["kind", "error", "word"] as const;
 
@@ -322,15 +319,11 @@ export class Session {
    * Rebuilds a session from untrusted saved state, or returns null if it isn't
    * exactly what `toState` gives (see `Round.fromState`). A malformed
    * `rejection` drops the state; a well-formed one the round no longer
-   * rejects is restored as none. Version-6 state, which has no `rejection`,
-   * is restored with none. Never throws.
+   * rejects is restored as none. Never throws.
    */
   static fromState(raw: unknown, words: readonly string[], random: () => number = Math.random): Session | null {
     const fields = plainFields(raw);
-    const version = fields?.get("version");
-    const keys =
-      version === SESSION_STATE_VERSION ? SESSION_STATE_KEYS : version === PREVIOUS_STATE_VERSION ? PREVIOUS_STATE_KEYS : null;
-    if (!fields || !keys || !hasExactKeys(fields, keys)) {
+    if (!fields || fields.get("version") !== SESSION_STATE_VERSION || !hasExactKeys(fields, SESSION_STATE_KEYS)) {
       return null;
     }
     const roundNumber = fields.get("roundNumber");
@@ -344,8 +337,7 @@ export class Session {
     if (!round || !isDraft(draft, round.phase) || !isReported(reported, round)) {
       return null;
     }
-    // Version-6 state has no rejection to restore.
-    const savedRejection = version === SESSION_STATE_VERSION ? fields.get("rejection") : null;
+    const savedRejection = fields.get("rejection");
     const parsed = savedRejection === null ? null : readRejection(savedRejection, round, draft);
     if (savedRejection !== null && parsed === null) {
       // Malformed: the state was tampered with or corrupted, so drop it all.

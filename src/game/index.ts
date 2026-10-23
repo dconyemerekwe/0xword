@@ -3,6 +3,7 @@ export { Mark, score } from "./score.ts";
 export { checkGuess, type GuessCheck, type GuessError } from "./guess.ts";
 export { WORD_LIST_SIZE, parseWordList, pickAnswer } from "./words.ts";
 export {
+  MAX_HINTS,
   MAX_ROWS,
   Round,
   type AnswerError,

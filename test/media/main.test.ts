@@ -548,11 +548,9 @@ describe("media/main.ts: the SVG icons, run as the bundled webview script", () =
 describe("media/main.ts: the result card, run as the bundled webview script", () => {
   it("keeps the answer out of the DOM while a round is in progress, hints on at the final answer", () => {
     const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"];
-    const saved = savedAfter(
-      { type: "toggleHints" },
-      ...words.flatMap((word) => [...guess(word), decode(word)]),
-      ...guess("ABLE"),
-    );
+    const saved = savedAfter(...words.flatMap((word) => [...guess(word), decode(word)]), ...guess("ABLE"), {
+      type: "toggleHints",
+    });
     assert.equal(saved.round.phase, "final");
     const run = runWebview(saved);
     // The round really was restored: the hint strip shows its letters.
@@ -572,7 +570,7 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     assert.equal(byClass(run, "result")["hidden"], false);
     assert.equal(byClass(run, "result-heading")["textContent"], "Decoded: BYTE");
     assert.equal(byClass(run, "result-outcome")["textContent"], "Congrats! You cracked it");
-    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows · 2 answer tries · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "2 of 6 rows attempted · 0 hints used");
     assert.equal(byClass(run, "result-note")["hidden"], false);
     for (const replaced of ["legend", "decode", "keypad"]) {
       assert.equal(byClass(run, replaced)["hidden"], true, replaced);
@@ -580,12 +578,18 @@ describe("media/main.ts: the result card, run as the bundled webview script", ()
     assert.deepEqual(run.posts, [{ type: "ready" }]);
   });
 
+  it("shows the hint count on the result card (#38)", () => {
+    const toggle = { type: "toggleHints" } as const;
+    const run = runWebview(savedAfter(toggle, ...guess("TEAM"), toggle, decode("BYTE")));
+    assert.equal(byClass(run, "result-line")["textContent"], "1 of 6 rows attempted · 2 hints used");
+  });
+
   it("brings a restored failed round's card back, without posting roundFinished again", () => {
     const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"];
     const run = runWebview(savedAfter(...words.flatMap((word) => [...guess(word), decode(word)])));
     assert.equal(byClass(run, "result-heading")["textContent"], "The word was BYTE");
     assert.equal(byClass(run, "result-outcome")["textContent"], "Unlucky!");
-    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows · 6 answer tries · no hints");
+    assert.equal(byClass(run, "result-line")["textContent"], "6 of 6 rows attempted · 0 hints used");
     assert.deepEqual(run.posts, [{ type: "ready" }]);
   });
 
@@ -1100,8 +1104,8 @@ describe("media/main.ts: optional decoding (#30), run as the bundled webview scr
     const run = runWebview(savedAfter(...guess("TEAM")));
     submitWord(run, "byte");
     assert.equal(byClass(run, "result")["hidden"], false);
-    assert.equal(byClass(run, "result-line")["textContent"], "1 of 6 rows · 1 answer try · no hints");
-    assert.deepEqual(run.posts.at(-1), { type: "roundFinished", solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: false });
+    assert.equal(byClass(run, "result-line")["textContent"], "1 of 6 rows attempted · 0 hints used");
+    assert.deepEqual(run.posts.at(-1), { type: "roundFinished", solved: true, rowsUsed: 1, answerTries: 1, hintsUsed: 0 });
   });
 
   it("brings the Tried list back after the panel is hidden and shown", () => {

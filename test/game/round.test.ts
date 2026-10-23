@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORD_SET } from "./fixtures.ts";
 import { wordToHex } from "../../src/game/hex.ts";
-import { MAX_ROWS, Round } from "../../src/game/round.ts";
+import { MAX_HINTS, MAX_ROWS, Round } from "../../src/game/round.ts";
 
 /** A round whose answer is BYTE (42 59 54 45). */
 function newRound(): Round {
@@ -127,7 +127,7 @@ describe("Round", () => {
         answer: "BYTE",
         rowsUsed: 1,
         answerTries: 1,
-        hintsUsed: false,
+        hintsUsed: 0,
       });
     });
 
@@ -280,7 +280,7 @@ describe("Round", () => {
         answer: "BYTE",
         rowsUsed: 2,
         answerTries: 2,
-        hintsUsed: false,
+        hintsUsed: 0,
       });
       assert.deepEqual(round.toState().answers, ["TEAM", "BYTE"]);
     });
@@ -323,7 +323,7 @@ describe("Round", () => {
         answer: "BYTE",
         rowsUsed: MAX_ROWS,
         answerTries: 1,
-        hintsUsed: false,
+        hintsUsed: 0,
       });
     });
 
@@ -411,25 +411,27 @@ describe("Round", () => {
       assert.deepEqual(round.hintLetters(), [null, null, null, null]);
       // BAKE = 42 41 4B 45: bytes 1 and 4 match BYTE exactly.
       guess(round, "BAKE");
+      round.enableHints();
       assert.deepEqual(round.hintLetters(), ["B", null, null, "E"]);
     });
 
     it("combines digits found in different rows", () => {
       const round = newRound();
-      round.enableHints();
       // BYTE's 2nd byte is 59. BUSY (55) finds the 5; LIME (49) finds the 9.
       guess(round, "BUSY");
+      round.enableHints();
       assert.equal(round.hintLetters()[1], null);
       guess(round, "LIME");
+      round.enableHints();
       assert.equal(round.hintLetters()[1], "Y");
     });
 
-    it("records hints as used in the result", () => {
+    it("counts hints in the result", () => {
       const round = newRound();
       round.enableHints();
       guess(round, "TEAM");
       round.submitAnswer("BYTE");
-      assert.equal(round.result().hintsUsed, true);
+      assert.equal(round.result().hintsUsed, 1);
     });
 
     it("can't be enabled after the round ends", () => {
@@ -441,25 +443,25 @@ describe("Round", () => {
   });
 
   describe("hints on and off", () => {
-    it("starts off and unused", () => {
+    it("starts off, with no hints counted", () => {
       const round = newRound();
       assert.equal(round.hintsShown, false);
-      assert.equal(round.hintsUsed, false);
+      assert.equal(round.hintsUsed, 0);
     });
 
-    it("turns on, and records hints as used", () => {
+    it("turns on, and counts one hint", () => {
       const round = newRound();
       round.enableHints();
       assert.equal(round.hintsShown, true);
-      assert.equal(round.hintsUsed, true);
+      assert.equal(round.hintsUsed, 1);
     });
 
-    it("turns off again, keeping hints recorded as used", () => {
+    it("turns off again, keeping the hint counted", () => {
       const round = newRound();
       round.enableHints();
       round.disableHints();
       assert.equal(round.hintsShown, false);
-      assert.equal(round.hintsUsed, true);
+      assert.equal(round.hintsUsed, 1);
     });
 
     it("can't be read once turned off again", () => {
@@ -469,11 +471,11 @@ describe("Round", () => {
       assert.throws(() => round.hintLetters(), /not enabled/);
     });
 
-    it("turning off before ever turning on doesn't record hints as used", () => {
+    it("turning off before ever turning on counts no hint", () => {
       const round = newRound();
       round.disableHints();
       assert.equal(round.hintsShown, false);
-      assert.equal(round.hintsUsed, false);
+      assert.equal(round.hintsUsed, 0);
     });
 
     it("toggles any number of times, with no limit", () => {
@@ -520,34 +522,241 @@ describe("Round", () => {
       assert.throws(() => round.disableHints(), /over/);
     });
 
-    it('records "hints used" in the result even if turned off again', () => {
-      const round = newRound();
-      round.enableHints();
-      round.disableHints();
-      guess(round, "TEAM");
-      round.submitAnswer("BYTE");
-      assert.equal(round.result().hintsUsed, true);
-    });
-
-    it('records "no hints" in the result if never turned on', () => {
+    it("counts 0 hints in the result if never turned on", () => {
       const round = newRound();
       guess(round, "TEAM");
       round.submitAnswer("BYTE");
-      assert.equal(round.result().hintsUsed, false);
+      assert.equal(round.result().hintsUsed, 0);
     });
 
-    it("keeps no hint count: only the used flag and the on/off toggle are saved", () => {
+    it("saves the count, the toggle and whether the current row is counted, and nothing else about hints", () => {
       const round = newRound();
       round.enableHints();
       round.disableHints();
       round.enableHints();
       const state = round.toState();
-      assert.equal(state.hintsUsed, true);
+      assert.equal(state.hintsUsed, 1);
       assert.equal(state.hintsShown, true);
+      assert.equal(state.rowHinted, true);
       assert.deepEqual(
         Object.keys(state).filter((key) => /hint/i.test(key)),
-        ["hintsUsed", "hintsShown"],
+        ["hintsUsed", "hintsShown", "rowHinted"],
       );
+    });
+  });
+
+  describe("hint count (#38)", () => {
+    it("starts each round with Hints off for the first row", () => {
+      const round = newRound();
+      assert.equal(round.hintsShown, false);
+      guess(round, "TEAM");
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, 0);
+    });
+
+    it("turns Hints off when a row is scored with Hints on, keeping the count", () => {
+      const round = newRound();
+      round.enableHints();
+      guess(round, "TEAM");
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, 1);
+      assert.throws(() => round.hintLetters(), /not enabled/);
+      assert.equal(round.toState().rowHinted, false);
+    });
+
+    it("turns Hints off after a scored row that is a real word but not the answer, and after an all-right row", () => {
+      const round = newRound();
+      round.enableHints();
+      guess(round, "BAKE");
+      assert.equal(round.hintsShown, false);
+      round.enableHints();
+      guess(round, "BYTE");
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, 2);
+    });
+
+    const rejected: readonly (readonly [string, string])[] = [
+      ["too short", "4259"],
+      ["not hex", "4259544G"],
+      ["not letters", "30313233"],
+      ["not a listed word", "5A5A5A5A"],
+    ];
+    for (const [name, input] of rejected) {
+      it(`keeps Hints on after a rejected row (${name}), and still counts one hint for the row`, () => {
+        const round = newRound();
+        round.enableHints();
+        assert.equal(round.submitGuess(input).ok, false);
+        assert.equal(round.hintsShown, true);
+        assert.equal(round.hintsUsed, 1);
+        guess(round, "TEAM");
+        assert.equal(round.hintsUsed, 1);
+      });
+    }
+
+    it("keeps Hints on after a repeated row, which doesn't end the row's stretch either", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      assert.deepEqual(round.submitGuess(wordToHex("TEAM")), { ok: false, error: "repeat" });
+      assert.equal(round.hintsShown, true);
+      round.disableHints();
+      round.enableHints();
+      assert.equal(round.hintsUsed, 1);
+    });
+
+    it("counts one hint for a row however often Hints is turned on and off before ENTER", () => {
+      const round = newRound();
+      round.enableHints();
+      round.disableHints();
+      round.enableHints();
+      round.enableHints();
+      round.disableHints();
+      round.enableHints();
+      assert.equal(round.hintsUsed, 1);
+      guess(round, "TEAM");
+      assert.equal(round.hintsUsed, 1);
+    });
+
+    it("counts a row whose Hints was turned on and off again before ENTER", () => {
+      const round = newRound();
+      round.enableHints();
+      round.disableHints();
+      guess(round, "TEAM");
+      assert.equal(round.hintsUsed, 1);
+      round.enableHints();
+      assert.equal(round.hintsUsed, 2);
+    });
+
+    it("counts again for the next row, once Hints is pressed again", () => {
+      const round = newRound();
+      round.enableHints();
+      guess(round, "TEAM");
+      assert.equal(round.hintsUsed, 1);
+      guess(round, "BAKE");
+      assert.equal(round.hintsUsed, 1);
+      round.enableHints();
+      assert.equal(round.hintsUsed, 2);
+    });
+
+    it("turns Hints off after a wrong word, keeping the count", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      assert.deepEqual(round.submitAnswer("BEAT"), { ok: true, correct: false });
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, 1);
+      assert.throws(() => round.hintLetters(), /not enabled/);
+      // Still counted for this stretch: the word didn't start a new one.
+      assert.equal(round.toState().rowHinted, true);
+    });
+
+    const rejectedWords: readonly (readonly [string, string])[] = [
+      ["malformed", "B4"],
+      ["not listed", "QXZJ"],
+      ["a repeat", "TEAM"],
+    ];
+    for (const [name, word] of rejectedWords) {
+      it(`keeps Hints on after a rejected word (${name})`, () => {
+        const round = newRound();
+        guess(round, "TEAM");
+        assert.deepEqual(round.submitAnswer("TEAM"), { ok: true, correct: false });
+        round.enableHints();
+        assert.equal(round.submitAnswer(word).ok, false);
+        assert.equal(round.hintsShown, true);
+        assert.equal(round.hintsUsed, 1);
+      });
+    }
+
+    it("counts a word attempt as part of the row's stretch: on, wrong word, on again, then ENTER counts once", () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      round.submitAnswer("BEAT");
+      assert.equal(round.hintsShown, false);
+      round.enableHints();
+      assert.equal(round.hintsShown, true);
+      assert.equal(round.hintsUsed, 1);
+      guess(round, "BAKE");
+      assert.equal(round.hintsShown, false);
+      assert.equal(round.hintsUsed, 1);
+    });
+
+    it("keeps Hints on at the final answer after a repeated or unlisted word, then a wrong final answer ends the round", () => {
+      const round = newRound();
+      missRows(round, MAX_ROWS - 1);
+      guess(round, "BITE");
+      assert.equal(round.phase, "final");
+      round.enableHints();
+      assert.deepEqual(round.submitAnswer("TEAM"), { ok: false, error: "repeat" });
+      assert.deepEqual(round.submitAnswer("QXZJ"), { ok: false, error: "notWord" });
+      assert.equal(round.hintsShown, true);
+      assert.equal(round.phase, "final");
+      assert.deepEqual(round.submitAnswer("CODE"), { ok: true, correct: false });
+      assert.equal(round.phase, "failed");
+      assert.equal(round.result().hintsUsed, 1);
+    });
+
+    it("counts Hints at the forced final answer once, after one per row: 7 at most", () => {
+      const round = newRound();
+      for (const word of SIX) {
+        round.enableHints();
+        guess(round, word);
+      }
+      assert.equal(round.hintsUsed, MAX_ROWS);
+      assert.equal(round.phase, "final");
+      round.enableHints();
+      round.disableHints();
+      round.enableHints();
+      assert.equal(round.hintsUsed, MAX_ROWS + 1);
+      round.submitAnswer("CODE");
+      assert.equal(round.phase, "failed");
+      assert.equal(round.result().hintsUsed, MAX_HINTS);
+      assert.equal(MAX_HINTS, 7);
+    });
+
+    it("counts Hints turned on after the last row and kept on to solve the round", () => {
+      const round = newRound();
+      guess(round, "BAKE");
+      round.enableHints();
+      round.submitAnswer("BYTE");
+      assert.equal(round.result().hintsUsed, 1);
+    });
+
+    it("counts at most rowsUsed + 1 hints when the round is solved early", () => {
+      for (let rows = 1; rows <= MAX_ROWS; rows++) {
+        const round = newRound();
+        for (const word of SIX.slice(0, rows)) {
+          round.enableHints();
+          guess(round, word);
+        }
+        round.enableHints();
+        round.submitAnswer("BYTE");
+        assert.equal(round.result().hintsUsed, rows + 1, `solved after row ${rows}`);
+      }
+    });
+
+    it("only ever grows: no action lowers the count", () => {
+      const round = newRound();
+      let last = 0;
+      const check = (): void => {
+        assert.ok(round.hintsUsed >= last);
+        last = round.hintsUsed;
+      };
+      round.enableHints();
+      check();
+      round.disableHints();
+      check();
+      round.submitGuess("5A5A5A5A");
+      check();
+      guess(round, "TEAM");
+      check();
+      round.submitAnswer("BEAT");
+      check();
+      round.enableHints();
+      check();
+      round.submitAnswer("BYTE");
+      check();
+      assert.equal(last, 2);
     });
   });
 
@@ -664,7 +873,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "guess, with hints on",
+    "guess, Hints on for row 1, so turned off by it",
     () => {
       const round = newRound();
       round.enableHints();
@@ -673,7 +882,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "solved, with hints on",
+    "solved, Hints on for row 1",
     () => {
       const round = newRound();
       round.enableHints();
@@ -683,7 +892,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "failed, with hints on",
+    "failed, Hints on for row 1",
     () => {
       const round = newRound();
       round.enableHints();
@@ -694,7 +903,7 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "guess, with hints turned on and off again",
+    "guess, Hints on for row 1, then turned off again with no effect",
     () => {
       const round = newRound();
       round.enableHints();
@@ -714,12 +923,98 @@ const PHASES: readonly (readonly [string, () => Round])[] = [
     },
   ],
   [
-    "solved, with hints turned on and off again",
+    "solved, Hints turned on and off again before row 1",
     () => {
       const round = newRound();
       round.enableHints();
       round.disableHints();
       guess(round, "BITE");
+      round.submitAnswer("BYTE");
+      return round;
+    },
+  ],
+  [
+    "guess, Hints on now, after a row scored with Hints on (2 hints)",
+    () => {
+      const round = newRound();
+      round.enableHints();
+      guess(round, "TEAM");
+      round.enableHints();
+      return round;
+    },
+  ],
+  [
+    "guess, Hints turned on and off again for the row being typed",
+    () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      round.disableHints();
+      return round;
+    },
+  ],
+  [
+    "guess, Hints on before row 1, kept on by a rejected row",
+    () => {
+      const round = newRound();
+      round.enableHints();
+      assert.equal(round.submitGuess("5A5A5A5A").ok, false);
+      return round;
+    },
+  ],
+  [
+    "guess, Hints for rows 2 and 4 only",
+    () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      guess(round, "BAKE");
+      guess(round, "BUSY");
+      round.enableHints();
+      guess(round, "LIME");
+      return round;
+    },
+  ],
+  [
+    "failed, Hints for every row and the final answer (MAX_HINTS)",
+    () => {
+      const round = newRound();
+      for (const word of SIX) {
+        round.enableHints();
+        guess(round, word);
+      }
+      round.enableHints();
+      round.submitAnswer("CODE");
+      return round;
+    },
+  ],
+  [
+    "solved, Hints on at the decode that solved it",
+    () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.submitAnswer("BEAT");
+      round.enableHints();
+      round.submitAnswer("BYTE");
+      return round;
+    },
+  ],
+  [
+    "guess, Hints turned off by a wrong word, mid-stretch",
+    () => {
+      const round = newRound();
+      guess(round, "TEAM");
+      round.enableHints();
+      round.submitAnswer("BEAT");
+      return round;
+    },
+  ],
+  [
+    "solved at the final answer, Hints turned on and off again after row 6",
+    () => {
+      const round = roundAtFinal();
+      round.enableHints();
+      round.disableHints();
       round.submitAnswer("BYTE");
       return round;
     },
@@ -790,10 +1085,19 @@ describe("Round state", () => {
       );
       assert.deepEqual(state.answers, ["TEAM", "DATA"]);
       assert.equal(state.phase, "guess");
-      assert.equal(state.hintsUsed, false);
+      assert.equal(state.hintsUsed, 0);
       assert.equal(state.hintsShown, false);
+      assert.equal(state.rowHinted, false);
       // No separate try count: it is the length of answers.
-      assert.deepEqual(Object.keys(state).sort(), ["answer", "answers", "hintsShown", "hintsUsed", "phase", "rows"]);
+      assert.deepEqual(Object.keys(state).sort(), [
+        "answer",
+        "answers",
+        "hintsShown",
+        "hintsUsed",
+        "phase",
+        "rowHinted",
+        "rows",
+      ]);
     });
 
     it("saves rows and word attempts independently: more words than rows, or none", () => {
@@ -814,7 +1118,7 @@ describe("Round state", () => {
         answer: "BYTE",
         rowsUsed: MAX_ROWS,
         answerTries: MAX_ROWS,
-        hintsUsed: false,
+        hintsUsed: 0,
       });
     });
 
@@ -825,6 +1129,69 @@ describe("Round state", () => {
       assert.deepEqual(restored.submitAnswer("BEAT"), { ok: true, correct: false });
       assert.deepEqual(restored.answers, ["TEAM", "BEAT"]);
       assert.equal(restored.rows.length, 3);
+    });
+
+    /** Restores the round of the PHASES entry named `name`. */
+    function restoredPhase(name: string): Round {
+      const play = PHASES.find(([phase]) => phase === name)?.[1];
+      assert.ok(play, name);
+      const restored = Round.fromState(stored(play()), WORD_SET);
+      assert.ok(restored);
+      return restored;
+    }
+
+    it("restores Hints on with its row counted: toggling again doesn't count, and the next scored row turns it off", () => {
+      const restored = restoredPhase("guess, Hints on now, after a row scored with Hints on (2 hints)");
+      assert.equal(restored.hintsShown, true);
+      assert.equal(restored.hintsUsed, 2);
+      restored.disableHints();
+      restored.enableHints();
+      assert.equal(restored.hintsUsed, 2);
+      guess(restored, "BAKE");
+      assert.equal(restored.hintsShown, false);
+      assert.equal(restored.hintsUsed, 2);
+    });
+
+    it("restores Hints turned off again in the current row as already counted for that row", () => {
+      const restored = restoredPhase("guess, Hints turned on and off again for the row being typed");
+      assert.equal(restored.hintsShown, false);
+      assert.equal(restored.hintsUsed, 1);
+      restored.enableHints();
+      assert.equal(restored.hintsUsed, 1);
+    });
+
+    it("restores Hints off after a scored row as not yet counted for the next row", () => {
+      const restored = restoredPhase("guess, Hints for rows 2 and 4 only");
+      assert.equal(restored.hintsShown, false);
+      assert.equal(restored.hintsUsed, 2);
+      restored.enableHints();
+      assert.equal(restored.hintsUsed, 3);
+    });
+
+    it("restores Hints kept on by a rejected row, still counted once", () => {
+      const restored = restoredPhase("guess, Hints on before row 1, kept on by a rejected row");
+      assert.equal(restored.hintsShown, true);
+      assert.equal(restored.hintsUsed, 1);
+      guess(restored, "TEAM");
+      assert.equal(restored.hintsUsed, 1);
+      assert.equal(restored.hintsShown, false);
+    });
+
+    it("restores Hints turned off by a wrong word mid-stretch: off, but already counted for the row", () => {
+      const restored = restoredPhase("guess, Hints turned off by a wrong word, mid-stretch");
+      const state = restored.toState();
+      assert.equal(state.hintsShown, false);
+      assert.equal(state.rowHinted, true);
+      assert.equal(state.hintsUsed, 1);
+      restored.enableHints();
+      assert.equal(restored.hintsUsed, 1);
+      guess(restored, "BAKE");
+      assert.equal(restored.hintsUsed, 1);
+    });
+
+    it("restores a finished round with the most hints, MAX_HINTS", () => {
+      const restored = restoredPhase("failed, Hints for every row and the final answer (MAX_HINTS)");
+      assert.equal(restored.result().hintsUsed, MAX_HINTS);
     });
 
     it("gives a copy that later play doesn't change", () => {
@@ -881,12 +1248,63 @@ describe("Round state", () => {
       ["an answerTries field matching the answers", () => tampered((s) => (s.answerTries = 1))],
       ["an answerTries field that doesn't match", () => tampered((s) => (s.answerTries = 0))],
       ["an answerTries field as a string", () => tampered((s) => (s.answerTries = "1"))],
-      ["hintsUsed as a string", () => tampered((s) => (s.hintsUsed = "false"))],
+      ["hintsUsed as a string", () => tampered((s) => (s.hintsUsed = "0"))],
+      ["hintsUsed as false (the version-7 flag)", () => tampered((s) => (s.hintsUsed = false))],
+      [
+        "hintsUsed as true (the version-7 flag)",
+        () =>
+          tampered((s) => {
+            s.hintsUsed = true;
+            s.rowHinted = true;
+          }),
+      ],
+      ["hintsUsed as null", () => tampered((s) => (s.hintsUsed = null))],
+      ["hintsUsed: -1", () => tampered((s) => (s.hintsUsed = -1))],
+      ["hintsUsed: 0.5", () => tampered((s) => (s.hintsUsed = 0.5))],
+      ["hintsUsed: NaN", () => tampered((s) => (s.hintsUsed = Number.NaN))],
+      ["hintsUsed: Infinity", () => tampered((s) => (s.hintsUsed = Number.POSITIVE_INFINITY))],
+      ["more hints than rows, with none for the current row", () => tampered((s) => (s.hintsUsed = 3))],
+      [
+        "more hints than rows + 1",
+        () =>
+          tampered((s) => {
+            s.hintsUsed = 4;
+            s.rowHinted = true;
+          }),
+      ],
+      [
+        "more than MAX_HINTS hints in a full round",
+        () => {
+          const state = stored(playTo(PHASES.findIndex(([name]) => name.includes("(MAX_HINTS)"))));
+          state.hintsUsed = MAX_HINTS + 1;
+          return state;
+        },
+      ],
+      ["the current row counted with no hints counted", () => tampered((s) => (s.rowHinted = true))],
+      [
+        "Hints on after the wrong final answer that turned it off",
+        () => {
+          const state = stored(playTo(PHASES.findIndex(([name]) => name.includes("(MAX_HINTS)"))));
+          state.hintsShown = true;
+          return state;
+        },
+      ],
       ["no hintsShown (version-4 state)", () => tampered((s) => delete s.hintsShown)],
       ["hintsShown as a string", () => tampered((s) => (s.hintsShown = "false"))],
       ["hintsShown as 1", () => tampered((s) => (s.hintsShown = 1))],
       ["hintsShown as null", () => tampered((s) => (s.hintsShown = null))],
-      ["hints shown but not used", () => tampered((s) => (s.hintsShown = true))],
+      [
+        "hints shown but the current row not counted",
+        () =>
+          tampered((s) => {
+            s.hintsUsed = 1;
+            s.hintsShown = true;
+          }),
+      ],
+      ["no rowHinted (version-7 state)", () => tampered((s) => delete s.rowHinted)],
+      ["rowHinted as a string", () => tampered((s) => (s.rowHinted = "false"))],
+      ["rowHinted as 0", () => tampered((s) => (s.rowHinted = 0))],
+      ["rowHinted as null", () => tampered((s) => (s.rowHinted = null))],
       ["a hint counter", () => tampered((s) => (s.hintsLeft = 3))],
       [
         "a word attempt before any row",
@@ -962,6 +1380,24 @@ describe("Round state", () => {
     for (const [name, make] of invalid) {
       it(`returns null for ${name}, without throwing`, () => {
         assert.equal(Round.fromState(make(), WORD_SET), null);
+      });
+    }
+  });
+
+  describe("accepts every hint count a real round could have saved", () => {
+    // PHASES[2] has 2 rows: up to 2 counted rows, plus the current row if `rowHinted`.
+    const valid: readonly (readonly [string, number, boolean, boolean])[] = [
+      ["one hint per row, none for the current row", 2, false, false],
+      ["one hint per row, and Hints on for the current row", 3, true, true],
+      ["one hint per row, and Hints turned on and off for the current row", 3, false, true],
+      ["one hint, for the current row only", 1, true, true],
+    ];
+    for (const [name, hintsUsed, hintsShown, rowHinted] of valid) {
+      it(`restores ${name}`, () => {
+        const state = tampered((s) => Object.assign(s, { hintsUsed, hintsShown, rowHinted }));
+        const restored = Round.fromState(state, WORD_SET);
+        assert.ok(restored);
+        assert.deepEqual(restored.toState(), state);
       });
     }
   });
