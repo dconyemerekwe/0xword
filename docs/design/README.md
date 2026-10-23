@@ -113,7 +113,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
   - solved: "4-letter word · solved"
   - failed (no page; #24): "4-letter word · not solved"
-- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. There is no count or limit to show. It's hidden once the round is over (solved or out of rows).
+- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row (#38)**, so the player turns it on again for each row they want help with; a rejected row (invalid, not a listed word, or a repeat) leaves it on. Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, plus one if it's turned on after the last scored row (the final answer, or a decode that solves the round), so at most 7. Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or out of rows).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
   - Digits are in JetBrains Mono, bold.
@@ -144,7 +144,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
 
 ## Page 2: Mid-game with hints on
 
-The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`).
+The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Hints is on for the row being typed: once ENTER scores that row, the button goes back to off and the strip is hidden (#38).
 
 ## Page 3: Forced final answer
 
@@ -166,11 +166,11 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
 - A **result card** with a blue outline, in place of the decode panel and keypad:
   - above the heading, an outcome line that page 4 doesn't draw (owner's wording, #24): "Congrats! You cracked it", in muted text (`#A3A9B6` in the dark theme) at 14px bold, smaller than the heading. Screen readers hear it first: it starts the card's accessible name, followed by the heading.
   - "Decoded: BYTE" as a large heading
-  - the line "3 of 6 rows · 2 answer tries · no hints" (or "· hints used"), as drawn (#30). One try reads "1 answer try"; any other count is plural.
+  - the line "3 of 6 rows attempted · 2 hints used" (owner's wording, #38): the rows used and the hint count. One hint reads "1 hint used"; any other count is plural, "0 hints used" included. This differs from the draft's "3 of 6 rows · 2 answer tries · no hints": answer tries are still counted and sent to the host, but no longer shown.
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows · 1 answer try · no hints" (with the round's own count of tries), the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · not solved".
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
@@ -183,9 +183,9 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   4. You can decode the English word at any time. A wrong guess doesn't use up a row.
   5. You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.
   6. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
-  7. Stuck? Turn on **Hints** to see the letters you have fully decoded so far.
+  7. Stuck? Turn on **Hints** to see the letters you have fully decoded so far. It switches off when you enter a hex row. Your result counts one hint for each row you use it on, and one more if you use it after your last row.
 
-  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34).
+  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34). Rule 7's last two sentences aren't in the draft either: they describe the hint count (#38).
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
