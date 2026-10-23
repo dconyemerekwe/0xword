@@ -34,7 +34,7 @@ describe("How to play: RULES", () => {
       "You can decode the English word at any time. A wrong guess doesn't use up a row.",
       "You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.",
       "After 6 rows, the hex keypad locks and you get one final try to decode the English word.",
-      "Stuck? Turn on Hints to see the letters you have fully decoded so far. It switches off when you enter a hex row. Your result counts one hint for each row you use it on, and one more if you use it after your last row.",
+      "Stuck? Turn on Hints to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result.",
     ]);
   });
 

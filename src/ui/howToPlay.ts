@@ -66,13 +66,11 @@ export const RULES: readonly StyledText[] = [
   [plain("You can decode the English word at any time. A wrong guess doesn't use up a row.")],
   [plain("You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.")],
   [plain(`After ${MAX_ROWS} rows, the hex keypad locks and you get one final try to decode the English word.`)],
-  // Rule 7's last two sentences describe the hint count (#38).
+  // Rule 7 is the owner's wording for the hint count (#38).
   [
     plain("Stuck? Turn on "),
     strong(HINTS_BUTTON),
-    plain(
-      " to see the letters you have fully decoded so far. It switches off when you enter a hex row. Your result counts one hint for each row you use it on, and one more if you use it after your last row.",
-    ),
+    plain(" to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result."),
   ],
 ];
 
