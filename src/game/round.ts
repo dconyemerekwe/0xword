@@ -7,20 +7,20 @@ import { Mark, score } from "./score.ts";
 export const MAX_ROWS = 6;
 
 /**
- * The most hints a round can count: one for each hex row, plus one for the
- * stretch after the last row (the final answer, or a decode that solves the
- * round). See `Round.enableHints`.
+ * The most hints a round can count: one for each hex row. Hints lock with
+ * the hex at the decode step, so nothing is counted after the last row. See
+ * `Round.enableHints`.
  */
-export const MAX_HINTS = MAX_ROWS + 1;
+export const MAX_HINTS = MAX_ROWS;
 
 /**
  * Where the round is:
- * - `guess`: waiting for a hex row. Once a row has been scored, the player
- *   may also try the word, as often as they like (see `canDecode`)
- * - `final`: all rows used; the player must give one last answer
+ * - `guess`: waiting for a hex row. No word can be tried yet
+ * - `decode`: the hex is locked, after a fully right row or after row 6, and
+ *   the player gets one try at the word (see `canDecode`)
  * - `solved` / `failed`: the round is over
  */
-export type Phase = "guess" | "final" | "solved" | "failed";
+export type Phase = "guess" | "decode" | "solved" | "failed";
 
 export interface Row {
   readonly hex: string;
@@ -31,11 +31,10 @@ export interface Row {
 /** Why a hex row was rejected: `checkGuess`'s reasons, or a row already scored in this round. */
 export type RowError = GuessError | "repeat";
 
-/** Why a plain-English answer was rejected. Rejected answers aren't counted as tries. */
+/** Why a plain-English answer was rejected. A rejected answer isn't the round's one try. */
 export type AnswerError =
   | "format" // not four letters A–Z
-  | "notWord" // not in the word list
-  | "repeat"; // already tried in this round, in any letter case
+  | "notWord"; // not in the word list
 
 export type GuessOutcome = { ok: true; row: Row } | { ok: false; error: RowError };
 export type AnswerOutcome = { ok: true; correct: boolean } | { ok: false; error: AnswerError };
@@ -44,10 +43,10 @@ export interface RoundResult {
   readonly solved: boolean;
   readonly answer: string;
   readonly rowsUsed: number;
-  /** The accepted word attempts, the last one included. At least 1: every round ends with one. */
-  readonly answerTries: number;
+  /** The accepted word attempts: always 1, the one try at the decode step that ended the round. */
+  readonly answerTries: 1;
   /**
-   * How many hints the round counted: 0 to `rowsUsed + 1`, so at most
+   * How many hints the round counted: 0 to `rowsUsed`, so at most
    * `MAX_HINTS`. See `Round.enableHints`.
    */
   readonly hintsUsed: number;
@@ -59,14 +58,11 @@ export interface RoundResult {
  */
 export interface RoundState {
   readonly answer: string;
+  /** The scored rows, all different. */
   readonly rows: readonly Row[];
-  /**
-   * The accepted word attempts, in order, kept apart from `rows`: any number
-   * of them once a row is scored, all different, and all wrong but perhaps
-   * the last. Its length is the number of answer tries; there is no
-   * separate count. Rows are all different too.
-   */
-  readonly answers: readonly string[];
+  /** The one accepted word attempt, uppercased, or null before it. Set only once the round is over. */
+  readonly attempt: string | null;
+  /** `decode` records the decode step, and with it the Hints lock (see `Round.hintsLocked`). */
   readonly phase: Phase;
   /** The hint count so far, the current stretch included. Recorded in the result. */
   readonly hintsUsed: number;
@@ -79,25 +75,25 @@ export interface RoundState {
   readonly rowHinted: boolean;
 }
 
-const ROUND_STATE_KEYS = ["answer", "rows", "answers", "phase", "hintsUsed", "hintsShown", "rowHinted"] as const;
+const ROUND_STATE_KEYS = ["answer", "rows", "attempt", "phase", "hintsUsed", "hintsShown", "rowHinted"] as const;
 const ROW_KEYS = ["hex", "word", "marks"] as const;
 
 /**
- * One game: a hidden answer and up to 6 hex rows. Once a row is scored, the
- * player may try the word whenever they like; a wrong try uses no row. After
- * row 6 the hex is locked and one final answer is forced.
+ * One game: a hidden answer and up to 6 hex rows. A fully right row, or row
+ * 6, locks the hex and opens the decode step, where the player gets one try
+ * at the word: right solves the round, wrong fails it.
  */
 export class Round {
   readonly #answer: string;
   readonly #answerHex: string;
   readonly #words: ReadonlySet<string>;
   readonly #rows: Row[] = [];
-  /** The accepted answer tries, in order. */
-  readonly #answers: string[] = [];
+  /** The one accepted word attempt, or null before it. */
+  #attempt: string | null = null;
   #phase: Phase = "guess";
   /** The hint count: one per stretch in which hints were turned on. Only ever grows. */
   #hintsUsed = 0;
-  /** The player's on/off toggle. Unlimited; a scored row or a wrong word turns it off. */
+  /** The player's on/off toggle. Unlimited until the hex locks; a scored row turns it off. */
   #hintsShown = false;
   /** Hints were turned on in the current stretch: see `RoundState.rowHinted`. */
   #rowHinted = false;
@@ -119,9 +115,9 @@ export class Round {
     return this.#rows;
   }
 
-  /** The accepted answer tries so far, uppercased, in order. */
-  get answers(): readonly string[] {
-    return this.#answers;
+  /** The one accepted word attempt, uppercased, or null before it. */
+  get attempt(): string | null {
+    return this.#attempt;
   }
 
   /**
@@ -141,20 +137,32 @@ export class Round {
     return this.#phase === "solved" || this.#phase === "failed";
   }
 
-  /**
-   * True while `submitAnswer` is allowed: the round is in progress and at
-   * least one row is scored. Optional before row 6, forced after it.
-   */
+  /** True at the decode step: `submitAnswer` is allowed, once. */
   get canDecode(): boolean {
-    return !this.isOver && this.#rows.length > 0;
+    return this.#phase === "decode";
   }
 
   /**
-   * Scores a hex row. An invalid guess is rejected without using up a row.
-   * The word never has to be tried first. A row already scored in this
-   * round is rejected too, without using a row. A rejected row leaves hints
-   * as they were; a scored one turns them off and starts a new stretch for
-   * the hint count (see `enableHints`).
+   * True once the hex is locked, at the decode step or after: Hints can't be
+   * turned on again in this round. It locks with the hex because, with the
+   * grid solved, the hint strip would spell the whole word.
+   */
+  get hintsLocked(): boolean {
+    return this.#phase !== "guess";
+  }
+
+  /** True if a scored row has all its digits in the right spot. Only the last row can be. */
+  get hexSolved(): boolean {
+    const last = this.#rows.at(-1);
+    return last !== undefined && isAllRight(last);
+  }
+
+  /**
+   * Scores a hex row. An invalid guess is rejected without using up a row,
+   * and so is a row already scored in this round. A rejected row leaves
+   * hints as they were; a scored one turns them off and starts a new stretch
+   * for the hint count (see `enableHints`). A fully right row, or row 6,
+   * locks the hex and moves the round to the decode step.
    */
   submitGuess(input: string): GuessOutcome {
     if (this.#phase !== "guess") {
@@ -168,40 +176,30 @@ export class Round {
     this.#rows.push(row);
     this.#hintsShown = false;
     this.#rowHinted = false;
-    if (this.#rows.length === MAX_ROWS) {
-      this.#phase = "final";
+    if (isAllRight(row) || this.#rows.length === MAX_ROWS) {
+      this.#phase = "decode";
     }
     return { ok: true, row };
   }
 
   /**
-   * Tries the word. The right word solves the round, rows left or not. A
-   * wrong word counts as a try but uses no row, and ends the round only if
-   * it was the forced final answer. A wrong word also turns hints off, but
-   * doesn't start a new stretch for the hint count: turning them on again
-   * before the next row counts nothing more (see `enableHints`). A rejected
-   * word changes nothing: that includes a word already tried in this round,
-   * even as the final answer. Throws unless `canDecode`.
+   * The round's one try at the word, at the decode step. The right word (in
+   * any letter case) solves the round; a wrong listed word fails it, even
+   * with the hex solved. A rejected word changes nothing and isn't the try.
+   * Throws unless `canDecode`.
    */
   submitAnswer(input: string): AnswerOutcome {
     if (!this.canDecode) {
-      throw new Error(`Not allowed in phase "${this.#phase}" with ${this.#rows.length} rows`);
+      throw new Error(`Not allowed in phase "${this.#phase}"`);
     }
     const error = this.answerError(input);
     if (error !== null) {
       return { ok: false, error };
     }
     const guess = input.trim().toUpperCase();
-    this.#answers.push(guess);
+    this.#attempt = guess;
     const correct = guess === this.#answer;
-    if (correct) {
-      this.#phase = "solved";
-    } else {
-      this.#hintsShown = false;
-      if (this.#phase === "final") {
-        this.#phase = "failed";
-      }
-    }
+    this.#phase = correct ? "solved" : "failed";
     return { ok: true, correct };
   }
 
@@ -216,9 +214,10 @@ export class Round {
   }
 
   /**
-   * Why `submitAnswer(input)` would reject the word now, or null if it would
-   * count it as a try: the format and word-list checks first, then the repeat
-   * check. Changes nothing, and doesn't check the phase.
+   * Why `submitAnswer(input)` would reject the word, or null if it would
+   * take it as the try: the format check, then the word list. Changes
+   * nothing, and doesn't check the phase. There is no repeat check: with one
+   * try per round, no word can come before it (#34's word rule is gone).
    */
   answerError(input: string): AnswerError | null {
     const guess = input.trim().toUpperCase();
@@ -228,25 +227,19 @@ export class Round {
     if (!this.#words.has(guess)) {
       return "notWord";
     }
-    // `guess` is uppercased, like every saved answer, so this ignores letter case.
-    if (this.#answers.includes(guess)) {
-      return "repeat";
-    }
     return null;
   }
 
   /**
    * Turns hints on, and counts a hint unless one is already counted for this
    * stretch. The round is split into stretches by its scored rows: one before
-   * each row, and one after the last row until the round ends (the final
-   * answer, or a decode that solves it). A stretch counts once however often
-   * hints are turned on and off in it, so a round counts at most `MAX_HINTS`.
-   * A rejected row doesn't end a stretch, and nor does a word attempt, even
-   * a wrong one that turns hints off. Allowed any number of times while the
-   * round is in progress; throws once it's over.
+   * each row. A stretch counts once however often hints are turned on and off
+   * in it, so a round counts at most one hint per row used. A rejected row
+   * doesn't end a stretch. Allowed any number of times until the hex locks;
+   * throws once `hintsLocked`.
    */
   enableHints(): void {
-    this.#requireInProgress();
+    this.#requireHintsUnlocked();
     this.#hintsShown = true;
     if (!this.#rowHinted) {
       this.#rowHinted = true;
@@ -256,10 +249,10 @@ export class Round {
 
   /**
    * Turns hints off. A hint already counted for this stretch stays counted.
-   * Throws once the round is over.
+   * Throws once `hintsLocked`: hints are already off then.
    */
   disableHints(): void {
-    this.#requireInProgress();
+    this.#requireHintsUnlocked();
     this.#hintsShown = false;
   }
 
@@ -296,7 +289,7 @@ export class Round {
       solved: this.#phase === "solved",
       answer: this.#answer,
       rowsUsed: this.#rows.length,
-      answerTries: this.#answers.length,
+      answerTries: 1,
       hintsUsed: this.#hintsUsed,
     };
   }
@@ -306,7 +299,7 @@ export class Round {
     return {
       answer: this.#answer,
       rows: this.#rows.map((row) => ({ hex: row.hex, word: row.word, marks: [...row.marks] })),
-      answers: [...this.#answers],
+      attempt: this.#attempt,
       phase: this.#phase,
       hintsUsed: this.#hintsUsed,
       hintsShown: this.#hintsShown,
@@ -317,8 +310,8 @@ export class Round {
   /**
    * Rebuilds a round from untrusted saved state, or returns null if the state
    * isn't exactly what `toState` gives for a real round. It replays the saved
-   * guesses and answers through the public methods, so every rule is checked
-   * again, then compares the result with the saved rows and phase.
+   * rows and attempt through the public methods, so every rule is checked
+   * again, then compares the result with the saved phase and hints.
    * Never throws.
    */
   static fromState(raw: unknown, words: ReadonlySet<string>): Round | null {
@@ -338,27 +331,27 @@ export class Round {
     return check;
   }
 
-  #requireInProgress(): void {
-    if (this.isOver) {
-      throw new Error("Round is over");
+  #requireHintsUnlocked(): void {
+    if (this.hintsLocked) {
+      throw new Error(`Hints are locked in phase "${this.#phase}"`);
     }
   }
+}
+
+/** True if every digit of the row is in the right spot. */
+function isAllRight(row: Row): boolean {
+  return row.marks.every((mark) => mark === Mark.Right);
 }
 
 /**
  * `Round.fromState` without the safety net: may throw on impossible state.
  *
- * The saved rows and answers are separate lists, so it replays them in an
- * order a real round could have taken: the first row, then the answers
- * (which need a scored row), then the other rows. Once the round is over,
- * its last answer is the one that ended it, so that one comes after every
- * row instead. Any other real order ends in the same state.
- *
  * Only the hint count is saved, not which stretches had hints, so hints are
  * turned on before the first rows, one for each counted stretch a scored row
- * has ended, and then for the current stretch after the last row (before the
- * answer that ended the round, if it's over). The count and the toggle come
- * out the same as in any real order.
+ * has ended, and then for the current stretch if `rowHinted`. The count and
+ * the toggle come out the same as in any real order. Hints can't be turned on
+ * once the hex is locked, so a `rowHinted` saved at the decode step or later
+ * throws, which `fromState` turns into null.
  */
 function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const fields = plainFields(raw);
@@ -368,8 +361,7 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   const answer = fields.get("answer");
   const phase = fields.get("phase");
   const rows = plainItems(fields.get("rows"), MAX_ROWS);
-  // Each listed word can be tried once, so there are never more tries than words.
-  const answers = plainItems(fields.get("answers"), words.size);
+  const attempt = fields.get("attempt");
   const hintsUsed = fields.get("hintsUsed");
   const hintsShown = fields.get("hintsShown");
   const rowHinted = fields.get("rowHinted");
@@ -377,7 +369,7 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
     typeof answer !== "string" ||
     !words.has(answer) ||
     !rows ||
-    !answers ||
+    !(attempt === null || (typeof attempt === "string" && isWord(attempt))) ||
     !isIntegerInRange(hintsUsed, 0, MAX_HINTS) ||
     typeof hintsShown !== "boolean" ||
     typeof rowHinted !== "boolean" ||
@@ -392,37 +384,24 @@ function replay(raw: unknown, words: ReadonlySet<string>): Round | null {
   }
 
   const round = new Round(answer, words);
-  const over = phase === "solved" || phase === "failed";
-  const during = over ? answers.slice(0, -1) : answers;
-  const ending = over ? answers.slice(-1) : [];
-  /** Replays row `index` (from 0), turning hints on first if it's one of the first `hintedRows`. */
-  const replayNthRow = (row: unknown, index: number): boolean => {
+  for (const [index, row] of rows.entries()) {
     if (index < hintedRows) {
       round.enableHints();
     }
-    return replayRow(round, row);
-  };
-  const [firstRow, ...laterRows] = rows;
-  if (
-    (firstRow !== undefined && !replayNthRow(firstRow, 0)) ||
-    !during.every((tried) => replayAnswer(round, tried)) ||
-    !laterRows.every((row, i) => replayNthRow(row, i + 1))
-  ) {
-    return null;
+    if (!replayRow(round, row)) {
+      return null;
+    }
   }
-  // The current stretch. Throws if the round is already over, which
-  // `fromState` turns into null.
   if (rowHinted) {
     round.enableHints();
     if (!hintsShown) {
       round.disableHints();
     }
   }
-  if (!ending.every((tried) => replayAnswer(round, tried))) {
+  // Only accepted attempts are saved, already uppercased.
+  if (attempt !== null && !round.submitAnswer(attempt).ok) {
     return null;
   }
-  // A wrong ending answer turns hints off, so a saved toggle it would have
-  // cleared doesn't match. The count can't differ, but is checked anyway.
   if (round.phase !== phase || round.hintsShown !== hintsShown || round.hintsUsed !== hintsUsed) {
     return null;
   }
@@ -443,13 +422,4 @@ function replayRow(round: Round, savedRow: unknown): boolean {
   const expected = outcome.row.marks;
   const marks = plainItems(row.get("marks"), expected.length);
   return marks !== null && marks.length === expected.length && marks.every((mark, j) => mark === expected[j]);
-}
-
-/**
- * Tries a saved answer again. Only accepted answers are saved, already
- * uppercased, so anything else is false. Throws, like `submitAnswer`, if the
- * round can't take an answer now (no row yet, or already over).
- */
-function replayAnswer(round: Round, tried: unknown): boolean {
-  return typeof tried === "string" && isWord(tried) && round.submitAnswer(tried).ok;
 }

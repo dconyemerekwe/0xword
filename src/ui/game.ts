@@ -78,12 +78,6 @@ export interface Key {
   readonly label: string;
 }
 
-export interface TriedWord {
-  readonly word: string;
-  /** Read out instead of the struck-through word, e.g. "BEAT, wrong". */
-  readonly label: string;
-}
-
 /** The decode panel's text: page 1's decode panel, or page 3's final-answer card. */
 export interface DecodePanel {
   /** The heading, which is also the text box's label. */
@@ -97,8 +91,9 @@ export interface DecodePanel {
 }
 
 /**
- * The decode panel before the hex is locked (page 1). Page 1's note "1 try
- * per row" is left out: tries are unlimited and optional (#30).
+ * The decode panel before the decode step (page 1), drawn faded and disabled
+ * under the lock (pages L1 and L2). Page 1's note "1 try per row" is left
+ * out: there is one try per round (#46).
  */
 export const DECODE_PANEL: DecodePanel = {
   heading: "Decode the word",
@@ -108,7 +103,7 @@ export const DECODE_PANEL: DecodePanel = {
   note: "",
 };
 
-/** The final-answer card once the hex is locked (page 3). */
+/** The final-answer card at the decode step (page 3, and page L3 after a solved grid). */
 export const FINAL_PANEL: DecodePanel = {
   heading: "Final answer",
   badge: "Last try",
@@ -117,14 +112,29 @@ export const FINAL_PANEL: DecodePanel = {
   note: "Type with your keyboard",
 };
 
-/** The status line while the hex is locked (page 3), after the lock icon. */
+/** The lock over the decode panel before the decode step (pages L1 and L2): its title. */
+export const DECODE_LOCKED_TITLE = "Locked until you crack the hex row";
+
+/** The lock's message, under its title (the owner's wording: "tile", not the draft's "digit"). */
+export const DECODE_LOCKED_MESSAGE = "Get every tile blue to unlock Decode.";
+
+/** The status line at the decode step after row 6 without a solved grid (page 3), after the lock icon. */
 export const HEX_LOCKED_STATUS = `Hex locked · all ${MAX_ROWS} rows used`;
 
-/** Added to the row 6 announcement, since the lock icon and dimming aren't read out. */
+/** The status line at the decode step after a fully right row (page L3). */
+export const HEX_SOLVED_STATUS = `${WORD_LENGTH}-letter word · hex solved`;
+
+/** Added to the announcement of row 6 when it isn't fully right, since the lock icon and dimming aren't read out. */
 export const FINAL_ANSWER_DUE = "Hex locked: one final answer";
+
+/** Added to a fully right row's announcement: the hex locks and the decode panel unlocks. */
+export const HEX_SOLVED_DUE = "Hex solved: decode the word, one try";
 
 /** The Hints button's text. */
 export const HINTS_BUTTON = "Hints";
+
+/** The locked Hints button's accessible description (page L3). */
+export const HINTS_LOCKED_NOTE = "Locked for the rest of the round";
 
 /** A hint cell whose byte isn't fully decoded yet. */
 export const HINT_UNKNOWN = "?";
@@ -134,6 +144,12 @@ export const NEW_ROUND_BUTTON = "New round";
 
 /** Under the result card, in muted text (page 4). */
 export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
+
+/** The message for a solved round: read out, since the result card replaces the message line. */
+export const SOLVED_MESSAGE = "Solved";
+
+/** The message for a failed round, likewise. */
+export const FAILED_MESSAGE = "Not solved";
 
 /** The line above the result card's heading for a solved round (the owner's wording). */
 export const SOLVED_OUTCOME = "Congrats! You cracked it";
@@ -176,12 +192,18 @@ export interface HintCell {
 
 /**
  * The Hints button and the hint strip (page 2). Hints are unlimited and
- * purely the player's choice. The round counts them for the result, but
- * there is no count or limit to show while it's in progress (#38).
+ * purely the player's choice until the hex locks. The round counts them for
+ * the result, but there is no count or limit to show while it's in
+ * progress (#38).
  */
 export interface HintsView {
   /** The Hints button is shown: only while a round is in progress. */
   readonly available: boolean;
+  /**
+   * The hex is locked (the decode step), so Hints is off and can't be turned
+   * on again this round: the button is disabled, with a lock icon (page L3).
+   */
+  readonly locked: boolean;
   /** Hints are on: the button is pressed (`aria-pressed`) and the strip shows. */
   readonly on: boolean;
   /** One cell per byte while hints are on; empty while they're off. */
@@ -198,25 +220,33 @@ export interface ScreenView {
   readonly rows: readonly (readonly Tile[])[];
   /** The 16 keypad keys in `HEX_DIGITS` order. */
   readonly keys: readonly Key[];
-  /** The keypad, DEL and ENTER take input: while the round waits for a hex row, so until row 6 is scored. */
+  /** The keypad, DEL and ENTER take input: while the round waits for a hex row, so until the decode step. */
   readonly keypadEnabled: boolean;
-  /**
-   * The decode box and its button take input: once a row is scored, until
-   * the round is over. Optional until the hex is locked, then forced.
-   */
+  /** The decode box and its button take input: at the decode step only. */
   readonly decodeAvailable: boolean;
   /**
-   * All `MAX_ROWS` rows are scored and the round isn't over: the hex is
-   * locked and the one final answer is due (page 3). The status line shows
-   * the lock icon, and the grid and keypad are dimmed.
+   * The decode panel is locked: before the decode step, from the very start
+   * of the round (and before the first round). It's drawn faded and
+   * disabled, under a lock badge, `DECODE_LOCKED_TITLE` and
+   * `DECODE_LOCKED_MESSAGE` (pages L1 and L2).
+   */
+  readonly decodeLocked: boolean;
+  /**
+   * The decode step: the hex is locked and the one try is due. The keypad is
+   * dimmed, the decode panel is the final-answer card, and it takes focus
+   * (pages 3 and L3).
    */
   readonly hexLocked: boolean;
+  /**
+   * The decode step after row 6 without a solved grid (page 3): the status
+   * line shows the lock icon and the grid is dimmed too. After a solved grid
+   * (page L3) neither is.
+   */
+  readonly outOfRows: boolean;
   /** The decode panel's text: the final-answer card while `hexLocked`. */
   readonly panel: DecodePanel;
   /** The Hints button and strip. */
   readonly hints: HintsView;
-  /** The wrong words tried so far, in order. */
-  readonly tried: readonly TriedWord[];
   /**
    * The result card once the round is over, or null while it's in progress
    * and before the first round. The only part of the view that holds the
@@ -231,8 +261,9 @@ export interface ScreenView {
   readonly message: string;
   /**
    * Plain text for screen readers only, in a visually hidden live region:
-   * the scored row's marks ("Row 2: 4 Right spot, …") or a wrong word. The
-   * tile colours and the Tried list show these on screen (owner's decision, #30).
+   * the scored row's marks ("Row 2: 4 Right spot, …"), and the decode step
+   * when that row opens it. The tile colours show these on screen (owner's
+   * decision, #30).
    */
   readonly announcement: string;
   /** True if `message` says why an action was rejected. */
@@ -342,27 +373,28 @@ export class GameController {
     const round = this.#session.round;
     const phase: Phase | null = round?.phase ?? null;
     const rows = round?.rows ?? [];
-    const answers = round?.answers ?? [];
-    const hexLocked = isHexLocked(phase, rows.length);
-    // The last answer of a solved round is the right one, not a tried word.
-    const wrong = phase === "solved" ? answers.slice(0, -1) : answers;
-    // Solved and out of rows come from the phase, so they survive a reload.
+    const hexLocked = isHexLocked(phase);
+    const hexSolved = round?.hexSolved ?? false;
+    // Solved and not solved come from the phase, so they survive a reload. A
+    // failed round may have rows left (a wrong word after a solved grid), so
+    // it says "Not solved" rather than that the rows ran out.
     const notice: Notice =
       phase === "solved"
-        ? { text: "Solved", error: false, announcement: "", rejection: null }
+        ? { text: SOLVED_MESSAGE, error: false, announcement: "", rejection: null }
         : phase === "failed"
-          ? { text: "Out of rows", error: false, announcement: "", rejection: null }
+          ? { text: FAILED_MESSAGE, error: false, announcement: "", rejection: null }
           : this.#notice;
     return {
-      status: statusLine(phase, rows.length),
+      status: statusLine(phase, rows.length, hexSolved),
       rows: gridTiles(rows, phase === "guess" ? this.#session.draft : ""),
       keys: keypad(rows),
       keypadEnabled: phase === "guess",
       decodeAvailable: round?.canDecode ?? false,
+      decodeLocked: phase === null || phase === "guess",
       hexLocked,
+      outOfRows: hexLocked && !hexSolved,
       panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
       hints: hintsView(round && !round.isOver ? round : null),
-      tried: wrong.map((word) => ({ word, label: `${word}, wrong` })),
       result: round?.isOver ? resultView(round.result()) : null,
       message: notice.text,
       messageIsError: notice.error,
@@ -415,20 +447,24 @@ export class GameController {
           // The digits stay typed, so the draft is the rejected row.
           return rejected({ kind: "row", error: outcome.error, hex: draft });
         }
-        // Read out only: on screen, the tile colours show the marks.
-        const rowsUsed = session.round?.rows.length ?? 0;
-        const scored = scoredMessage(rowsUsed, outcome.row.marks);
-        return announced(rowsUsed === MAX_ROWS ? `${scored}. ${FINAL_ANSWER_DUE}` : scored);
+        // Read out only: on screen, the tile colours show the marks. A fully
+        // right row or row 6 also locked the hex, and Hints with it, in the
+        // round itself, so that is saved by this same `changed()`.
+        const round = session.round;
+        const scored = scoredMessage(round?.rows.length ?? 0, outcome.row.marks);
+        if (!round?.canDecode) {
+          return announced(scored);
+        }
+        return announced(`${scored}. ${round.hexSolved ? HEX_SOLVED_DUE : FINAL_ANSWER_DUE}`);
       }
       case "decode":
         return this.#decode(action.word);
       case "toggleHints": {
-        // Any number of times while the round is in progress, the final
-        // answer included. Ignored before a round and once it's over. The
-        // automatic switch-off comes with a scored row (`enter`) or a wrong
-        // word (`decode`).
+        // Any number of times until the hex locks. Ignored before a round,
+        // and from the decode step on (`hintsLocked`). The automatic
+        // switch-off comes with a scored row (`enter`).
         const round = session.round;
-        if (round && !round.isOver) {
+        if (round && !round.hintsLocked) {
           if (round.hintsShown) {
             round.disableHints();
           } else {
@@ -446,24 +482,19 @@ export class GameController {
   }
 
   #decode(input: string): Notice {
-    const round = this.#session.round;
-    // Optional once a row is scored; ignored before that and once it's over.
-    if (!round?.canDecode) {
+    // Only at the decode step; ignored before it (the panel is locked) and
+    // once the round is over.
+    if (!this.#session.round?.canDecode) {
       return NO_NOTICE;
     }
-    // Through the session, which drops a half-typed row once the round is over (#43).
     const outcome = this.#session.submitAnswer(input);
-    const word = input.trim().toUpperCase();
     if (!outcome.ok) {
       // The format message doesn't name the input, so none of it is kept.
-      return rejected({ kind: "word", error: outcome.error, word: outcome.error === "format" ? "" : word });
+      const word = outcome.error === "format" ? "" : input.trim().toUpperCase();
+      return rejected({ kind: "word", error: outcome.error, word });
     }
-    // Solved and out of rows are shown by `view` from the phase.
-    if (round.isOver) {
-      return NO_NOTICE;
-    }
-    // On screen, the word joins the Tried list, struck through. No row is used.
-    return announced(`${word} isn't the word`);
+    // The one try ended the round: solved or failed is shown by `view` from the phase.
+    return NO_NOTICE;
   }
 }
 
@@ -476,8 +507,7 @@ export function rejectionMessage(rejection: Rejection): string {
 export function guessMessage(error: RowError, hex: string): string {
   switch (error) {
     case "repeat":
-      // Like the word message ("You've already tried BEAT"), with the guess
-      // in byte pairs as the grid groups them: "42 41 52 4E".
+      // The guess in byte pairs, as the grid groups them: "42 41 52 4E".
       return `You've already tried ${bytePairs(hex)}`;
     case "length":
       return "Not enough digits";
@@ -510,8 +540,6 @@ export function answerMessage(error: AnswerError, word: string): string {
       return `Type a ${WORD_LENGTH}-letter word, A to Z`;
     case "notWord":
       return `${word} isn't in the word list`;
-    case "repeat":
-      return `You've already tried ${word}`;
   }
 }
 
@@ -534,20 +562,20 @@ export function firstNonLetterByte(hex: string): string | null {
 }
 
 /**
- * True once all `MAX_ROWS` rows are scored and the round isn't over: the hex
- * is locked and the final answer is due. The one place this rule lives, so
- * the status line, the card and the keypad always agree. Keyed off the rows,
- * not the phase name.
+ * True at the decode step: the hex is locked and the one try is due. The one
+ * place this rule lives, so the status line, the card, the keypad and Hints
+ * always agree.
  */
-export function isHexLocked(phase: Phase | null, rowsUsed: number): boolean {
-  return phase !== null && phase !== "solved" && phase !== "failed" && rowsUsed === MAX_ROWS;
+export function isHexLocked(phase: Phase | null): boolean {
+  return phase === "decode";
 }
 
-/** The status line under the title: see `isHexLocked` for the locked one. */
-export function statusLine(phase: Phase | null, rowsUsed: number): string {
-  if (isHexLocked(phase, rowsUsed)) {
-    return HEX_LOCKED_STATUS;
-  }
+/**
+ * The status line under the title. At the decode step it says why the hex
+ * locked: "hex solved" after a fully right row (page L3), or the page 3 line
+ * after row 6 without one.
+ */
+export function statusLine(phase: Phase | null, rowsUsed: number, hexSolved = false): string {
   switch (phase) {
     case null:
       return `${WORD_LENGTH}-letter word`;
@@ -557,9 +585,8 @@ export function statusLine(phase: Phase | null, rowsUsed: number): string {
       return `${WORD_LENGTH}-letter word · not solved`;
     case "guess":
       return `${WORD_LENGTH}-letter word · row ${rowsUsed + 1} of ${MAX_ROWS}`;
-    case "final":
-      // Not reached: `isHexLocked` holds in phase "final".
-      return HEX_LOCKED_STATUS;
+    case "decode":
+      return hexSolved ? HEX_SOLVED_STATUS : HEX_LOCKED_STATUS;
   }
 }
 
@@ -591,18 +618,20 @@ export function hintsUsedText(hints: number): string {
 
 /**
  * The Hints button and strip for a round in progress, or for `null` (no
- * round yet, or the round is over), when the button is hidden.
+ * round yet, or the round is over), when the button is hidden. At the decode
+ * step the button is locked, and hints are always off then.
  */
 export function hintsView(round: Round | null): HintsView {
   if (!round) {
-    return { available: false, on: false, cells: [], label: "" };
+    return { available: false, locked: false, on: false, cells: [], label: "" };
   }
   if (!round.hintsShown) {
-    return { available: true, on: false, cells: [], label: "" };
+    return { available: true, locked: round.hintsLocked, on: false, cells: [], label: "" };
   }
   const letters = round.hintLetters();
   return {
     available: true,
+    locked: false,
     on: true,
     cells: letters.map((letter) => ({ text: letter ?? HINT_UNKNOWN, unknown: letter === null })),
     label: `${HINTS_BUTTON}: ${letters.map((letter) => letter ?? "unknown").join(", ")}`,
@@ -703,13 +732,14 @@ export function howToPlayActionForKey(press: KeyPress): Action | null {
 }
 
 /**
- * True if a key typed while the final answer is due (the hex is locked)
- * should go to the decode box, which then needs focus first: a single
- * printable character, with no Ctrl, Cmd or Alt, typed outside the box. A
- * space on a focused button is left to press that button. The caller focuses
- * the box and lets the key's default go ahead, so the character lands in the
- * box instead of being lost. Before row 6 decoding is optional, so keys
- * typed outside the box stay with the grid instead (#30).
+ * True if a key typed at the decode step (the hex is locked) should go to
+ * the decode box, which then needs focus first: a single printable
+ * character, with no Ctrl, Cmd or Alt, typed outside the box. A space on a
+ * focused button is left to press that button. The caller focuses the box
+ * and lets the key's default go ahead, so the character lands in the box
+ * instead of being lost. Before the decode step the box is locked, so keys
+ * typed outside it stay with the grid, and letters that aren't hex digits
+ * do nothing (#46).
  */
 export function shouldFocusDecodeBox(press: KeyPress, focus: KeyFocus, hexLocked: boolean): boolean {
   if (!hexLocked || focus === "decodeBox" || press.ctrlKey || press.metaKey || press.altKey) {

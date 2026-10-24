@@ -14,7 +14,7 @@ import { WORDS, WORD_SET } from "./game/fixtures.ts";
 
 /** A valid `roundFinished`; each case below changes one thing about it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: 0, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 1, hintsUsed: 0, ...overrides };
 }
 
 function without(key: string): Record<string, unknown> {
@@ -104,25 +104,23 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["roundFinished with an extra field", roundFinished({ extra: 1 })],
   ["roundFinished with the hidden answer", roundFinished({ answer: "BYTE" })],
   ["roundFinished with an undefined extra field", roundFinished({ extra: undefined })],
-  // answerTries came back in #30: every round ends with a word attempt, so at least 1
+  // One try per round since #46: answerTries is exactly 1
   ["roundFinished with answerTries: 0", roundFinished({ answerTries: 0 })],
   ["a failed round with answerTries: 0", roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: 0 })],
+  ["a solved round with 2 tries (sent before #46)", roundFinished({ answerTries: 2 })],
+  ["a failed round with a try per row (sent before #46)", roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: MAX_ROWS })],
+  ["a solved round with a try for every listed word (sent before #46)", roundFinished({ answerTries: WORD_LIST_SIZE })],
   ["roundFinished with answerTries: -1", roundFinished({ answerTries: -1 })],
   ["roundFinished with answerTries: 1.5", roundFinished({ answerTries: 1.5 })],
+  ["roundFinished with answerTries: 0.9999999999999999", roundFinished({ answerTries: 0.9999999999999999 })],
   ["roundFinished with answerTries: NaN", roundFinished({ answerTries: Number.NaN })],
   ["roundFinished with answerTries: Infinity", roundFinished({ answerTries: Number.POSITIVE_INFINITY })],
-  ["roundFinished with answerTries above the safe integers", roundFinished({ answerTries: Number.MAX_SAFE_INTEGER + 1 })],
-  // Each listed word can be tried once (#30): no more tries than words, nor than wrong words for a failed round
-  ["a solved round with more tries than listed words", roundFinished({ answerTries: WORD_LIST_SIZE + 1 })],
-  ["a solved round with a huge answerTries", roundFinished({ answerTries: Number.MAX_SAFE_INTEGER })],
-  [
-    "a failed round with a try for every listed word, the answer included",
-    roundFinished({ solved: false, rowsUsed: MAX_ROWS, answerTries: WORD_LIST_SIZE }),
-  ],
-  ["roundFinished with answerTries as a string", roundFinished({ answerTries: "3" })],
+  ["roundFinished with answerTries as a string", roundFinished({ answerTries: "1" })],
+  ["roundFinished with answerTries as true", roundFinished({ answerTries: true })],
+  ["roundFinished with answerTries as a Number object", roundFinished({ answerTries: new Number(1) })],
   ["roundFinished with answerTries as null", roundFinished({ answerTries: null })],
   ["roundFinished with an undefined answerTries", roundFinished({ answerTries: undefined })],
-  ["roundFinished with answerTries as a bigint", roundFinished({ answerTries: 3n })],
+  ["roundFinished with answerTries as a bigint", roundFinished({ answerTries: 1n })],
   ["ready with a JSON-parsed __proto__ key", JSON.parse('{"type":"ready","__proto__":{"polluted":true}}')],
   [
     "roundFinished with a JSON-parsed __proto__ key",
@@ -145,14 +143,16 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["hintsUsed as null", roundFinished({ hintsUsed: null })],
   ["hintsUsed as a bigint", roundFinished({ hintsUsed: 1n })],
   ["hintsUsed as a Number object", roundFinished({ hintsUsed: new Number(1) })],
-  // The hint count: 0 to rowsUsed + 1, so at most MAX_HINTS (#38)
+  // The hint count: 0 to rowsUsed, so at most MAX_HINTS (#38, #46)
   ["hintsUsed: -1", roundFinished({ hintsUsed: -1 })],
   ["hintsUsed: 1.5", roundFinished({ hintsUsed: 1.5 })],
   ["hintsUsed: NaN", roundFinished({ hintsUsed: Number.NaN })],
   ["hintsUsed: Infinity", roundFinished({ hintsUsed: Number.POSITIVE_INFINITY })],
   ["hintsUsed above MAX_HINTS", roundFinished({ solved: false, rowsUsed: MAX_ROWS, hintsUsed: MAX_HINTS + 1 })],
+  ["a hint after the last row: rowsUsed + 1 (sent before #46)", roundFinished({ rowsUsed: 3, hintsUsed: 4 })],
+  ["a failed round with MAX_ROWS + 1 hints (sent before #46)", roundFinished({ solved: false, rowsUsed: MAX_ROWS, hintsUsed: MAX_ROWS + 1 })],
+  ["2 hints after one row", roundFinished({ rowsUsed: 1, hintsUsed: 2 })],
   ["more hints than rowsUsed + 1", roundFinished({ rowsUsed: 3, hintsUsed: 5 })],
-  ["3 hints after one row", roundFinished({ rowsUsed: 1, hintsUsed: 3 })],
   ['rowsUsed as the string "3"', roundFinished({ rowsUsed: "3" })],
   ["rowsUsed as a Number object", roundFinished({ rowsUsed: new Number(3) })],
   ["rowsUsed as a bigint", roundFinished({ rowsUsed: 3n })],
@@ -163,10 +163,6 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["rowsUsed: 2.5", roundFinished({ rowsUsed: 2.5 })],
   ["rowsUsed: NaN", roundFinished({ rowsUsed: Number.NaN })],
   ["rowsUsed: Infinity", roundFinished({ rowsUsed: Number.POSITIVE_INFINITY })],
-  // A failed round always used every row and the forced final answer
-  ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: MAX_ROWS - 1 })],
-  ["a failed round on the first row", roundFinished({ solved: false, rowsUsed: 1 })],
-  ["a failed round with rows left and hints", roundFinished({ solved: false, rowsUsed: 3, hintsUsed: 1 })],
   // setTheme: any other value
   ['setTheme with "sepia"', setTheme("sepia")],
   ['setTheme with "Dark" in the wrong case', setTheme("Dark")],
@@ -228,20 +224,16 @@ describe("parseWebviewMessage", () => {
     const valid: readonly (readonly [string, Record<string, unknown>])[] = [
       ["solved on the first row", { solved: true, rowsUsed: 1 }],
       ["solved on the last row", { solved: true, rowsUsed: MAX_ROWS }],
-      ["failed", { solved: false, rowsUsed: MAX_ROWS }],
+      ["failed after row 6", { solved: false, rowsUsed: MAX_ROWS }],
+      ["failed with rows left: a wrong word after a solved grid", { solved: false, rowsUsed: MAX_ROWS - 1 }],
+      ["failed on the first row: a solved grid, then a wrong word", { solved: false, rowsUsed: 1 }],
       ["no hints", { hintsUsed: 0 }],
       ["one hint", { hintsUsed: 1 }],
-      ["a hint for every row and after the last (rowsUsed + 1)", { rowsUsed: 3, hintsUsed: 4 }],
-      ["solved on the first row with 2 hints", { rowsUsed: 1, hintsUsed: 2 }],
+      ["a hint for every row (rowsUsed)", { rowsUsed: 3, hintsUsed: 3 }],
+      ["solved on the first row with 1 hint", { rowsUsed: 1, hintsUsed: 1 }],
+      ["failed with rows left and hints", { solved: false, rowsUsed: 3, hintsUsed: 2 }],
       ["failed with the most hints, MAX_HINTS", { solved: false, rowsUsed: MAX_ROWS, hintsUsed: MAX_HINTS }],
-      ["solved with one answer try", { answerTries: 1 }],
-      ["solved with more answer tries than rows", { rowsUsed: 1, answerTries: 9 }],
-      ["failed with only the final answer tried", { solved: false, rowsUsed: MAX_ROWS, answerTries: 1 }],
-      ["a solved round with a try for every listed word", { answerTries: WORD_LIST_SIZE }],
-      [
-        "a failed round with a try for every listed word but the answer",
-        { solved: false, rowsUsed: MAX_ROWS, answerTries: WORD_LIST_SIZE - 1 },
-      ],
+      ["solved with the most hints, MAX_HINTS", { solved: true, rowsUsed: MAX_ROWS, hintsUsed: MAX_HINTS }],
     ];
     for (const [name, overrides] of valid) {
       it(`accepts ${name}`, () => {
@@ -284,8 +276,7 @@ describe("parseWebviewMessage", () => {
       let accepted = 0;
       for (const solved of [false, true]) {
         for (let rowsUsed = -1; rowsUsed <= MAX_ROWS + 2; rowsUsed++) {
-          // Up to MAX_TRIES, the most the real rounds below try: any more is just as real.
-          for (let answerTries = -1; answerTries <= MAX_TRIES; answerTries++) {
+          for (let answerTries = -1; answerTries <= 3; answerTries++) {
             for (let hintsUsed = -1; hintsUsed <= MAX_HINTS + 1; hintsUsed++) {
               const message = { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };
               const isReal = real.has(JSON.stringify(message));
@@ -298,28 +289,18 @@ describe("parseWebviewMessage", () => {
       assert.equal(accepted, REAL_ENDINGS);
     });
 
-    it("accepts the most answer tries a real round can reach: every listed word, or every wrong one", () => {
-      const [answer, ...wrong] = WORDS;
-      assert.ok(answer);
-      assert.equal(wrong.length, WORD_LIST_SIZE - 1);
-      for (const solved of [true, false]) {
-        const round: Round = new Round(answer, WORD_SET);
-        // Every wrong word after row 1 (the last one kept for a failed final answer), then the other rows.
-        for (const [row, word] of wrong.slice(0, MAX_ROWS).entries()) {
-          round.submitGuess(wordToHex(word));
-          if (row === 0) {
-            for (const tried of solved ? wrong : wrong.slice(0, -1)) {
-              round.submitAnswer(tried);
-            }
-          }
-        }
-        round.submitAnswer(solved ? answer : (wrong.at(-1) ?? ""));
-        assert.equal(round.result().solved, solved);
-        const { answer: _answer, ...fields } = round.result();
-        const message = { type: "roundFinished", ...fields };
-        assert.equal(message.answerTries, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1);
+    it("accepts answerTries 1 only: every real round ends with exactly one try (#46)", () => {
+      const tries = new Set(realRoundFinishedMessages().map((message) => message.answerTries));
+      assert.deepEqual([...tries], [1]);
+    });
+
+    it("accepts a failed round with fewer than 6 rows, as a real round gives it (#46)", () => {
+      const failedEarly = realRoundFinishedMessages().filter(
+        (message) => message.solved === false && message.rowsUsed !== MAX_ROWS,
+      );
+      assert.ok(failedEarly.length > 0);
+      for (const message of failedEarly) {
         assert.deepEqual(parseWebviewMessage(message), message);
-        assert.equal(parseWebviewMessage({ ...message, answerTries: message.answerTries + 1 }), null, "one more is impossible");
       }
     });
   });
@@ -492,58 +473,45 @@ describe("parseHostMessage", () => {
 });
 
 /**
- * The most answer tries `realRoundFinishedMessages` plays. Every count above
- * it, up to the word list's size, is reachable in the same ways: the test
- * of the most answer tries covers the top of that range.
+ * How many different endings `realRoundFinishedMessages` gives: solved or
+ * failed, after rows 1 to 6, with 0 to `rowsUsed` hints. For each outcome
+ * that's 2 + 3 + … + 7 = 27.
  */
-const MAX_TRIES = 3;
+const REAL_ENDINGS = 2 * 27;
 
 /**
- * How many endings `realRoundFinishedMessages` gives: for each ending, with
- * `rowsUsed` rows, MAX_TRIES × (rowsUsed + 2) hint counts (0 to rowsUsed + 1).
- * Solved after rows 1 to 6 gives 3 + 4 + … + 8 = 33, failed another 8.
- */
-const REAL_ENDINGS = 41 * MAX_TRIES;
-
-/**
- * Plays real rounds to every kind of ending (solved after each row, or
- * failed after the forced final answer), each with 1 to `MAX_TRIES` answer
- * tries and every hint count the round can reach, and returns their results
- * as `roundFinished` messages. A count of `hints` turns Hints on before each
- * of the first `hints` rows, and once more before the last answer if
- * `hints` is more than the rows.
+ * Plays real rounds to every kind of ending and returns their results as
+ * `roundFinished` messages: the decode step reached by a fully right row at
+ * each of rows 1 to 6, or by row 6 without one; then the right word or a
+ * wrong one (after a rejected word, which doesn't count), with every hint
+ * count the round can reach. A count of `hints` turns Hints on before each of
+ * the first `hints` rows. Hints locks with the hex, so there's none after.
  */
 function realRoundFinishedMessages(): Record<string, unknown>[] {
-  // Rows and words can't repeat in a round, so each row and each try uses a word of its own.
+  // Rows can't repeat in a round, so each row uses a word of its own.
   const [answer, ...others] = WORDS;
   assert.ok(answer);
-  const rowWord = (row: number): string => others[row - 1] ?? "";
-  const triedWord = (i: number): string => others[MAX_ROWS + i] ?? "";
-  const lastWord = others.at(-1) ?? "";
+  const wrongWord = others.at(-1) ?? "";
   const messages = [];
-  // endsOn MAX_ROWS + 1 stands for "never solved": the final answer is wrong.
-  for (let endsOn = 1; endsOn <= MAX_ROWS + 1; endsOn++) {
-    for (let tries = 1; tries <= MAX_TRIES; tries++) {
-      const rowsUsed = Math.min(endsOn, MAX_ROWS);
-      for (let hints = 0; hints <= rowsUsed + 1; hints++) {
-        const round = new Round(answer, WORD_SET);
-        for (let row = 1; row <= rowsUsed; row++) {
-          if (row <= hints) {
-            round.enableHints();
+  for (let rowsUsed = 1; rowsUsed <= MAX_ROWS; rowsUsed++) {
+    // A solved grid on the last row; at row 6, also a last row that isn't.
+    for (const solvedGrid of rowsUsed === MAX_ROWS ? [true, false] : [true]) {
+      for (const right of [true, false]) {
+        for (let hints = 0; hints <= rowsUsed; hints++) {
+          const round: Round = new Round(answer, WORD_SET);
+          for (let row = 1; row <= rowsUsed; row++) {
+            if (row <= hints) {
+              round.enableHints();
+            }
+            const last = row === rowsUsed && solvedGrid;
+            round.submitGuess(wordToHex(last ? answer : (others[row - 1] ?? "")));
           }
-          round.submitGuess(wordToHex(rowWord(row)));
-          // The wrong words, all tried after row 1; the last try ends the round.
-          for (let i = 0; row === 1 && i < tries - 1; i++) {
-            round.submitAnswer(triedWord(i));
-          }
+          assert.equal(round.submitAnswer("ZZZZ").ok, false);
+          round.submitAnswer(right ? answer : wrongWord);
+          assert.ok(round.isOver);
+          const { answer: _answer, ...fields } = round.result();
+          messages.push({ type: "roundFinished", ...fields });
         }
-        if (hints > rowsUsed) {
-          round.enableHints();
-        }
-        round.submitAnswer(endsOn <= MAX_ROWS ? answer : lastWord);
-        assert.ok(round.isOver);
-        const { answer: _answer, ...fields } = round.result();
-        messages.push({ type: "roundFinished", ...fields });
       }
     }
   }

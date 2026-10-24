@@ -26,16 +26,22 @@ describe("How to play: names and headings", () => {
 });
 
 describe("How to play: RULES", () => {
-  it("shows the seven numbered rules: page 5's, with the owner's revised rules 4 and 6, the repeat rule 5 (#34) and the hint count in rule 7 (#38)", () => {
+  it("shows the seven numbered rules: page 5's, with the owner's rules 4 to 6 and 7 rewritten for the decode step (#46)", () => {
     assert.deepEqual(RULES.map(plainText), [
       "The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.",
       "Guess 8 hex digits that spell a real 4-letter word.",
       "Each digit turns blue right spot, orange wrong spot, or grey not in the word.",
-      "You can decode the English word at any time. A wrong guess doesn't use up a row.",
-      "You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.",
-      "After 6 rows, the hex keypad locks and you get one final try to decode the English word.",
-      "Stuck? Turn on Hints to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result.",
+      "Get a row with every tile blue to unlock Decode. Then you get one try at the English word: a wrong word ends the round.",
+      "You can't repeat a hex guess in the same round. A repeat doesn't use up a row.",
+      "After 6 rows, the hex keypad locks and Decode unlocks for your one try, even if no row is all blue.",
+      "Stuck? Turn on Hints to see the letters you've fully decoded. It switches off after each hex row and locks once Decode unlocks. Every use is counted in your result.",
     ]);
+  });
+
+  it("no longer offers decoding at any time, or repeat rules for English words (#46)", () => {
+    const text = RULES.map(plainText).join(" ");
+    assert.doesNotMatch(text, /at any time/);
+    assert.doesNotMatch(text, /repeat[^.]*English word/);
   });
 
   it('shows "blue", "orange" and "grey" in rule 3 as chips in the right, wrong and absent colours', () => {
