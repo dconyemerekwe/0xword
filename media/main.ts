@@ -843,7 +843,7 @@ function drawResult(result: ScreenView["result"]): void {
   ui.legend.hidden = result !== null;
   ui.decode.hidden = result !== null;
   ui.keypad.hidden = result !== null;
-  // "Solved" and "Not solved" are still read out, but the card shows the result.
+  // "Solved", "Not decoded" and "Out of rows" are still read out, but the card shows the result.
   ui.message.classList.toggle("sr-only", result !== null);
 
   ui.resultOutcome.textContent = result?.outcome ?? "";

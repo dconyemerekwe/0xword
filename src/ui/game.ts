@@ -148,8 +148,11 @@ export const RESULT_NOTE = "Your agent is still working. Next round is ready whe
 /** The message for a solved round: read out, since the result card replaces the message line. */
 export const SOLVED_MESSAGE = "Solved";
 
-/** The message for a failed round, likewise. */
-export const FAILED_MESSAGE = "Not solved";
+/** The message for a round failed after row 6 without a solved grid, likewise (the owner's wording, #46). */
+export const OUT_OF_ROWS_MESSAGE = "Out of rows";
+
+/** The message for a round failed by a wrong word after a solved grid, likewise (the owner's wording, #46). */
+export const NOT_DECODED_MESSAGE = "Not decoded";
 
 /** The line above the result card's heading for a solved round (the owner's wording). */
 export const SOLVED_OUTCOME = "Congrats! You cracked it";
@@ -375,14 +378,12 @@ export class GameController {
     const rows = round?.rows ?? [];
     const hexLocked = isHexLocked(phase);
     const hexSolved = round?.hexSolved ?? false;
-    // Solved and not solved come from the phase, so they survive a reload. A
-    // failed round may have rows left (a wrong word after a solved grid), so
-    // it says "Not solved" rather than that the rows ran out.
+    // The ending comes from the phase and the rows, so it survives a reload.
     const notice: Notice =
       phase === "solved"
         ? { text: SOLVED_MESSAGE, error: false, announcement: "", rejection: null }
         : phase === "failed"
-          ? { text: FAILED_MESSAGE, error: false, announcement: "", rejection: null }
+          ? { text: failedMessage(hexSolved), error: false, announcement: "", rejection: null }
           : this.#notice;
     return {
       status: statusLine(phase, rows.length, hexSolved),
@@ -571,9 +572,19 @@ export function isHexLocked(phase: Phase | null): boolean {
 }
 
 /**
+ * How a failed round ended, read out behind the result card: "Not decoded"
+ * for a wrong word after a solved grid (all 8 tiles blue), or "Out of rows"
+ * after row 6 without one.
+ */
+export function failedMessage(hexSolved: boolean): string {
+  return hexSolved ? NOT_DECODED_MESSAGE : OUT_OF_ROWS_MESSAGE;
+}
+
+/**
  * The status line under the title. At the decode step it says why the hex
  * locked: "hex solved" after a fully right row (page L3), or the page 3 line
- * after row 6 without one.
+ * after row 6 without one. A failed round's line names the failure as its
+ * message does: "not decoded" or "out of rows".
  */
 export function statusLine(phase: Phase | null, rowsUsed: number, hexSolved = false): string {
   switch (phase) {
@@ -582,7 +593,7 @@ export function statusLine(phase: Phase | null, rowsUsed: number, hexSolved = fa
     case "solved":
       return `${WORD_LENGTH}-letter word · solved`;
     case "failed":
-      return `${WORD_LENGTH}-letter word · not solved`;
+      return `${WORD_LENGTH}-letter word · ${failedMessage(hexSolved).toLowerCase()}`;
     case "guess":
       return `${WORD_LENGTH}-letter word · row ${rowsUsed + 1} of ${MAX_ROWS}`;
     case "decode":

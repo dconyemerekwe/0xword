@@ -151,7 +151,7 @@ export class Round {
     return this.#phase !== "guess";
   }
 
-  /** True if a scored row has all its digits in the right spot. Only the last row can be. */
+  /** True if a scored row has all 8 tiles in the right spot. Only the last row can be. */
   get hexSolved(): boolean {
     const last = this.#rows.at(-1);
     return last !== undefined && isAllRight(last);
@@ -338,7 +338,7 @@ export class Round {
   }
 }
 
-/** True if every digit of the row is in the right spot. */
+/** True if all 8 tiles of the row are in the right spot. */
 function isAllRight(row: Row): boolean {
   return row.marks.every((mark) => mark === Mark.Right);
 }

@@ -9,7 +9,6 @@ import {
   DECODE_LOCKED_MESSAGE,
   DECODE_LOCKED_TITLE,
   DECODE_PANEL,
-  FAILED_MESSAGE,
   FAILED_OUTCOME,
   APPLIES_WHILE_HOW_TO_PLAY_OPEN,
   FINAL_ANSWER_DUE,
@@ -23,12 +22,15 @@ import {
   HINTS_LOCKED_NOTE,
   HINT_UNKNOWN,
   NEW_ROUND_BUTTON,
+  NOT_DECODED_MESSAGE,
+  OUT_OF_ROWS_MESSAGE,
   RESULT_NOTE,
   SOLVED_MESSAGE,
   SOLVED_OUTCOME,
   actionForKey,
   answerMessage,
   bytePairs,
+  failedMessage,
   firstNonLetterByte,
   guessMessage,
   hintsUsedText,
@@ -359,7 +361,7 @@ describe("GameController: the decode panel is locked until the hex locks (#46)",
     });
   }
 
-  it("stays locked after a row with 7 of 8 digits in the right spot", () => {
+  it("stays locked after a row with 7 of 8 tiles in the right spot", () => {
     // BITE = 42 49 54 45 against BYTE = 42 59 54 45.
     const view = harness().play(...guess("BITE"));
     assert.equal(view.decodeLocked, true);
@@ -563,17 +565,25 @@ describe("GameController: one try at the decode step (#46)", () => {
     const { play, session } = solvedGridAt(3);
     const view = play(decode("BITE"));
     assert.equal(session.round?.phase, "failed");
-    assert.equal(view.message, FAILED_MESSAGE);
-    assert.equal(FAILED_MESSAGE, "Not solved");
-    assert.equal(view.status, "4-letter word · not solved");
+    assert.equal(view.message, NOT_DECODED_MESSAGE);
+    assert.equal(NOT_DECODED_MESSAGE, "Not decoded");
+    assert.equal(view.status, "4-letter word · not decoded");
     assert.equal(view.result?.outcome, FAILED_OUTCOME);
     assert.equal(view.result?.heading, "The word was BYTE");
     assert.equal(view.result?.line, "3 of 6 rows attempted · 0 hints used");
   });
 
-  it("fails the round for a wrong listed word after row 6", () => {
+  it('says "Not decoded" for a wrong word after a grid solved on row 6 too: the hex was solved', () => {
+    const view = solvedGridAt(6).play(decode("CODE"));
+    assert.equal(view.message, "Not decoded");
+    assert.equal(view.status, "4-letter word · not decoded");
+  });
+
+  it('fails the round for a wrong listed word after row 6, saying "Out of rows"', () => {
     const view = atRowSix().play(decode("CODE"));
-    assert.equal(view.status, "4-letter word · not solved");
+    assert.equal(view.message, OUT_OF_ROWS_MESSAGE);
+    assert.equal(OUT_OF_ROWS_MESSAGE, "Out of rows");
+    assert.equal(view.status, "4-letter word · out of rows");
     assert.equal(view.result?.heading, "The word was BYTE");
   });
 
@@ -583,7 +593,7 @@ describe("GameController: one try at the decode step (#46)", () => {
     const before = session.toState();
     const view = play(...type("42"), { type: "delete" }, { type: "enter" }, decode("BYTE"), toggleHints, { type: "init" });
     assert.deepEqual(session.toState(), before);
-    assert.equal(view.message, FAILED_MESSAGE);
+    assert.equal(view.message, NOT_DECODED_MESSAGE);
   });
 });
 
@@ -877,9 +887,9 @@ describe("GameController: the result card for a failed round", () => {
     });
   });
 
-  it('shows "4-letter word · not solved" and hides the Hints button', () => {
+  it('shows "4-letter word · out of rows" after row 6 and hides the Hints button', () => {
     const view = failed().controller.view();
-    assert.equal(view.status, "4-letter word · not solved");
+    assert.equal(view.status, "4-letter word · out of rows");
     assert.deepEqual(view.hints, HIDDEN_HINTS);
     assert.equal(view.keypadEnabled, false);
     assert.equal(view.decodeAvailable, false);
@@ -1492,9 +1502,16 @@ describe("GameController: hiding and showing the panel", () => {
     });
   }
 
-  it("brings back Solved and Not solved, which come from the phase", () => {
+  it("brings back Solved, Out of rows and Not decoded, with their status lines, which come from the round", () => {
     assert.equal(reloaded(solvedAfter(1)).controller.view().message, "Solved");
-    assert.equal(reloaded(failed()).controller.view().message, "Not solved");
+    const outOfRows = reloaded(failed()).controller.view();
+    assert.equal(outOfRows.message, "Out of rows");
+    assert.equal(outOfRows.status, "4-letter word · out of rows");
+    const finished = solvedGridAt(2);
+    finished.play(decode("CODE"));
+    const restored = reloaded(finished).controller.view();
+    assert.equal(restored.message, "Not decoded");
+    assert.equal(restored.status, "4-letter word · not decoded");
   });
 
   describe("brings back the message of a rejected move, as an error (#34)", () => {
@@ -1790,8 +1807,14 @@ describe("messages", () => {
     assert.equal(statusLine("decode", 3, true), "4-letter word · hex solved");
     assert.equal(statusLine("decode", 6, true), "4-letter word · hex solved");
     assert.equal(statusLine("solved", 2, true), "4-letter word · solved");
-    assert.equal(statusLine("failed", 2, true), "4-letter word · not solved");
-    assert.equal(statusLine("failed", 6), "4-letter word · not solved");
+    assert.equal(statusLine("failed", 2, true), "4-letter word · not decoded");
+    assert.equal(statusLine("failed", 6, true), "4-letter word · not decoded");
+    assert.equal(statusLine("failed", 6), "4-letter word · out of rows");
+  });
+
+  it('names a failed round "Not decoded" after a solved grid and "Out of rows" otherwise', () => {
+    assert.equal(failedMessage(true), "Not decoded");
+    assert.equal(failedMessage(false), "Out of rows");
   });
 });
 

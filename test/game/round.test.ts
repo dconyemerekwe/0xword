@@ -120,7 +120,7 @@ describe("Round", () => {
     });
 
     it("doesn't unlock on a row that is nearly right", () => {
-      // BITE = 42 49 54 45: 7 of 8 digits in the right spot.
+      // BITE = 42 49 54 45: 7 of 8 tiles in the right spot.
       const round = newRound();
       guess(round, "BITE");
       assert.equal(round.phase, "guess");
