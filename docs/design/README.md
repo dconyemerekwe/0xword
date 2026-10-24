@@ -12,6 +12,14 @@ Each page is also saved as an image in [`pages/`](pages/) (1200 × 2700 px, a 3�
 | 4 | Solved | light | [page-4.jpg](pages/page-4.jpg) |
 | 5 | How to play | dark | [page-5.jpg](pages/page-5.jpg) |
 
+A second draft, [`0xword-decode-lock-design.pdf`](0xword-decode-lock-design.pdf), shows the locked decode panel and Hints for #46. Its pages are saved the same way and described under [Decode lock draft (#46)](#decode-lock-draft-46).
+
+| Page | Screen | Theme shown | Image |
+|---|---|---|---|
+| L1 | Mid-game, decode panel locked | dark | [lock-1.jpg](pages/lock-1.jpg) |
+| L2 | Mid-game, decode panel locked, hints on | dark | [lock-2.jpg](pages/lock-2.jpg) |
+| L3 | Hex solved: decode unlocked, Hints locked | dark | [lock-3.jpg](pages/lock-3.jpg) |
+
 ## Colours
 
 These values were measured from the page images, which are JPEGs, so they're accurate to within a few units. Where CLAUDE.md names a value, that value is used. Treat them as the design tokens. Values marked * were matched by eye, not measured: check them against the page image.
@@ -189,6 +197,71 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
+
+## Decode lock draft (#46)
+
+The owner's draft for #46, which allows a word attempt only once the hex grid is solved (a scored row with all 8 tiles in the right spot) or all 6 rows are used. It's drawn on the same game as pages 1–3, in the dark theme, at the same scale. Where it disagrees with #46's acceptance criteria, **the criteria win** (see the differences at the end of this section).
+
+### Page L1: Mid-game, decode panel locked
+
+- **Same as page 1, except for the decode panel.** Rows 1–3 are scored, row 4 shows `42 59` being typed, rows 5–6 are empty, and the keypad is fully usable. The status line reads "4-letter word · row 4 of 6", and Hints is off.
+- **The decode panel is locked.** It keeps its size and place between the legend and the keypad.
+  - Its normal contents (the "Decode the word" heading, the text box with "Type the English word", and the Decode button) are drawn faded, almost invisible against the panel.
+  - **Centred over them:**
+    - a **lock icon** in a small circle, with a thin outline and a slightly lighter fill than the panel;
+    - a bold, page-text-coloured title, **"Locked until you crack the hex row"**;
+    - under it, in lighter text, **"Get every tile blue to unlock Decode."** The draft says "every digit". The owner changed it to "tile", because a hex row holds letters (A–F) as well as digits, and the player sees tiles turn blue.
+- **No other changes.** The Hints button, grid, legend and keypad look the same as on page 1.
+
+### Page L2: Mid-game, decode panel locked, hints on
+
+- **Same as L1, but with Hints on, as on page 2.** The Hints button is highlighted, and the hint strip (`B ? T E`) sits between the grid and the legend.
+- **The locked panel is unchanged.** Hints is usable while the decode panel is locked.
+
+### Page L3: Hex solved, decode unlocked, Hints locked
+
+- **Row 4 is fully right.** It's `42 59 54 45`, all 8 tiles in the right spot. Rows 5–6 stay empty.
+- **The status line reads "4-letter word · hex solved".**
+- **The Hints button is locked.**
+  - Its light-bulb icon is replaced by a **lock icon**, and the button is drawn dimmed: muted text and outline, no highlight.
+  - The hint strip isn't shown.
+- **The decode panel unlocks** as the orange-outlined **"Final answer" card** from page 3, which is the "highlight" that prompts the player:
+  - "Last try" in orange at the top right;
+  - a text box with the placeholder "Decode the bytes above";
+  - an orange **Submit** button;
+  - "Type with your keyboard" underneath on the left.
+- **The keypad, DEL and ENTER are dimmed and disabled**, as on page 3, with the key colours still visible.
+
+### Colours for the decode lock draft
+
+These reuse the existing tokens where the draft visibly does: the panel, the page 3 card and the dimmed keypad. The new elements below **haven't been measured yet**. Measure them from the `lock-*.jpg` images before building, and record them in the [dark theme table](#dark-theme-pages-13-and-5). Don't pick values by eye.
+
+| Element | Background | Text / foreground | Border |
+|---|---|---|---|
+| Locked decode panel (L1, L2) | as the decode panel `#1D2027` | faded contents: to measure | as the decode panel |
+| Lock badge (L1, L2) | to measure (slightly lighter than the panel) | lock icon: to measure | to measure (thin) |
+| Lock title "Locked until you crack the hex row" | | page text `#E8EAF0` (to confirm) | |
+| Lock message "Get every tile blue to unlock Decode." | | to measure (lighter than the title) | |
+| Hints button, locked (L3) | page background | dimmed icon and text: to measure | to measure |
+| Status line "hex solved" (L3) | | muted text `#9C9FA8` | |
+| Final-answer card, Submit, locked keypad (L3) | as page 3 | as page 3 | as page 3 |
+
+The light theme has no drawing of these states. Derive the light values the same way as the others drawn only in dark (see [Light values derived for screens drawn only in dark](#light-values-derived-for-screens-drawn-only-in-dark-26)), and get the owner's sign-off.
+
+### Accessibility notes for the locked states
+
+- **The locked Decode button and text box** use `disabled`, not only dimming, as on page 3.
+- **The lock title and message are real text**, read by screen readers, and the lock icon is decorative (`aria-hidden`).
+- **The locked Hints button** uses `disabled`, and its accessible name or description says it's locked for the rest of the round.
+- **Both icons** are inline SVG bundled with the extension, like the header icons. No CDN.
+
+### Differences from #46's rules
+
+- **The lock message says "tile", not "digit" (L1, L2).** The shipped wording is "Get every tile blue to unlock Decode." (owner's correction: hex rows hold letters as well as digits).
+- **No "1 try per row" or "Tried: BEAT" under the lock (L1, L2).** The draft shows them faded behind the lock. #46 removes the Tried list and allows one try per round, so leave both out.
+- **No "Tried: BUSY · BEST" on the unlocked card (L3).** With one try per round there's never anything to list. Leave the right-hand side of the card's footer empty.
+- **The same lock applies before row 1 and after row 6.** The draft shows the lock mid-game. #46 locks the decode panel from the start of the round until the hex is solved or row 6 is scored. After row 6 without a solved row, the panel unlocks as the page 3 card, and the Hints lock applies there too. The status line then reads as it does on page 3, not "hex solved".
+- **The highlight on unlock is the page 3 card.** The draft shows no extra animation. Any transition must respect `prefers-reduced-motion`.
 
 ## Accessibility
 
