@@ -31,7 +31,7 @@ export const DARK_PALETTE = {
   // Page 3, while the hex is locked (docs/design/README.md colour table).
   /** The final-answer card's background. Its border, "Last try" and Submit are `wrong`. */
   finalCard: "#241B12",
-  /** "Type with your keyboard" and Tried on the card. Estimated from page 3: the table has no value. */
+  /** "Type with your keyboard" on the card. Estimated from page 3: the table has no value. */
   finalNote: "#D6C8B4",
   /** Right-spot tiles, dimmed. */
   lockedRight: "#2754A8",
@@ -196,7 +196,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["text", "panel"], // the decode panel and its text box
   ["text", "key"], // unmarked keypad keys, DEL and ENTER
   ["muted", "background"], // status line, legend
-  ["muted", "panel"], // Tried words, placeholder, disabled decode box
+  ["muted", "panel"], // placeholder, disabled decode box
   ["muted", "key"], // disabled unmarked keys
   ["muted", "keyAbsent"], // absent keypad keys, the disabled Decode button
   ["onRight", "right"], // right-spot tiles and keys, the Decode button
@@ -205,7 +205,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["wrongText", "background"], // error messages
   ["text", "finalCard"], // the "Final answer" heading
   ["wrongText", "finalCard"], // "Last try"
-  ["finalNote", "finalCard"], // "Type with your keyboard", Tried words
+  ["finalNote", "finalCard"], // "Type with your keyboard"
   ["onRight", "lockedRight"], // dimmed right-spot tiles
   ["onWrong", "lockedWrong"], // dimmed wrong-spot tiles
   // Locked keys: see DIMMED_KEY_PAIRS.

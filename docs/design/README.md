@@ -97,7 +97,7 @@ Pages 1–3 and 5 exist only in dark, so their light values are derived from the
 | `key` | neutral key, DEL, ENTER | `#E3E4E9` | 50% outline `#CFD2D8` over the page |
 | `keyAbsent` | absent key (struck through), disabled Decode | `#F6F6F9` | the page: like the dark theme's, the key sinks into the page |
 | `finalCard` | final-answer card (page 3) | `#FEF6E9` | 10% `wrong` over white |
-| `finalNote` | "Type with your keyboard", Tried on the card | `#5D636C` | `muted` |
+| `finalNote` | "Type with your keyboard" on the card | `#5D636C` | `muted` |
 | `lockedRight` | dimmed right-spot tiles | `#4169C0` | 40% `absent` over `right`: greyed rather than lightened, so white digits stay readable |
 | `lockedWrong` | dimmed wrong-spot tiles and keys | `#BD9149` | 40% `absent` over `wrong` |
 | `lockedKey` | locked neutral key, DEL, ENTER | `#ECEDF1` | 25% outline over the page: fainter than `key` |
