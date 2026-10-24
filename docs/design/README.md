@@ -55,15 +55,15 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Lock badge (L1, L2) | `#2A2E37`‡ | lock icon `#E8EAF0`‡ | `#3C3F48`‡ (1px) |
 | Lock title "Locked until you crack the hex row" (L1, L2) | | `#E8EAF0`‡ | |
 | Lock message "Get every tile blue to unlock Decode." (L1, L2) | | `#CCCFD8`‡ | |
-| Hints button, locked (L3) | page background | text and lock icon `#8B919E`‡ | `#303239`‡ |
+| Hints button, locked (L3) | page background | text and lock icon `#8A909C`‡ | `#303239`‡ |
 
 ‡ Measured for #46 from `lock-1.jpg` (the panel, badge, title, message and faded contents) and `lock-3.jpg` (the locked Hints button), with a small JPEG decoder run on the images. Its readings match the existing tokens where the draft reuses them (page `#14161B`, panel `#1D2027`, final card `#241B12` exactly; the Hints-off outline `#3C3F48` reads `#3D3F49`). Anti-aliased text reads about 5 units brighter than its colour in every channel (the Hints-off text `#CCCFD8` reads `#D1D4DD`), so text readings are corrected by that amount. Where a reading lands within that error of an existing token, the token is used:
 - **Badge fill** reads `#2A2E37`, which is `key`. **Badge outline** reads `#3C404A`: the Hints-off outline `#3C3F48`.
 - **Lock icon** reads `#EDF0F7` and **title** `#EEF0F6`: page text `#E8EAF0`. **Message** reads `#D0D3DC`: the Hints-off text and icon colour `#CCCFD8`.
-- **Locked Hints text and icon** read `#9096A3` and `#9096A2`, so `#8B919E` corrected. A new token: it's within 3 units of the absent-key text in the table above (`#8A909C`), which the code doesn't use. **Locked Hints outline** reads `#2F3239` (top) and `#31323A` (left): `#303239`, a new token, fainter than the Hints-off outline.
+- **Locked Hints text and icon** read `#9096A3` and `#9096A2`, so `#8B919E` corrected. That's within 3 units of the absent-key text in the table above, `#8A909C`, which the owner chose to use instead of a new colour. **Locked Hints outline** reads `#2F3239` (top) and `#31323A` (left): `#303239`, a new token, fainter than the Hints-off outline.
 - **Faded contents:** the heading reads up to `#32343C`, the placeholder `#26282F`, the box `#1C1F26`, the Decode button `#1E2128` with its text `#2A2D34`. Drawing the usual contents (page 1's heading and box, and the disabled Decode button) at 10% opacity over the panel gives `#30343B`, `#2A2F37`, `#1C1F26`, `#1C1F26` and `#2A2F37`, within a few units of each, so the panel's body is faded with `opacity: 0.1` rather than new colours.
 
-The owner should sign these off.
+**Approved by the owner (#46, 2026-10-24)**, with `#8A909C` for the locked Hints text.
 
 On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wrong spot about `#AE783F`) while the hex is locked.
 
@@ -118,7 +118,7 @@ Pages 1–3 and 5 exist only in dark, so their light values are derived from the
 | `hintsLockedText` | locked Hints text and lock icon (#46) | `#5D636C` | `muted`, as the locked keys' digits |
 | `hintsLockedBorder` | locked Hints outline (#46) | `#E3E4E9` | 50% outline over the page (as `key`): fainter than `hintsBorder`, as in dark |
 
-The decode lock's title and icon are `text` in both themes, and the faded panel body is 10% opacity in both.
+The decode lock's title and icon are `text` in both themes, and the faded panel body is 10% opacity in both. The five #46 rows above are **approved by the owner** (2026-10-24).
 
 Three tokens were added so the light theme can differ where the dark theme reuses a colour. Their dark values are the existing ones, so the dark theme is unchanged: `wrongText` (`#F0A04B`, `wrong`), `emptyBorder` (`#343944`, `absent`) and `cardBorder` (`#2A2E37`, `key`).
 
@@ -129,7 +129,7 @@ Three tokens were added so the light theme can differ where the dark theme reuse
 
 **Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (about 4.1:1). Placeholder text is a hint, not content; raise it with the owner before changing it.
 
-The decode lock's text (#46) meets 4.5:1 in both themes: the title `text` on the panel is 13.55:1 (dark) and 17.82:1 (light), the message 10.47:1 and 6.06:1, and the locked Hints text, though `disabled`, 5.72:1 and 5.62:1 on the page.
+The decode lock's text (#46) meets 4.5:1 in both themes: the title `text` on the panel is 13.55:1 (dark) and 17.82:1 (light), the message 10.47:1 and 6.06:1, and the locked Hints text, though `disabled`, 5.64:1 (`#8A909C`) and 5.62:1 on the page.
 
 The palette unit test checks every text pair the game draws in both palettes (`TEXT_PAIRS` and `DIMMED_KEY_PAIRS` in `src/ui/palette.ts`). All of them meet 4.5:1 except page 3's dimmed keys in the dark theme, which are listed for the owner rather than changed (#26): the locked digit `#6B7180` is 3.42:1 on a neutral key `#1B1E24`, 2.45:1 on a right-spot key `#1E3660` and 3.80:1 on an absent key `#111318`. The keys are `disabled`, so WCAG sets them no minimum. The light theme's dimmed keys all meet 4.5:1.
 
@@ -143,7 +143,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
   - decode step after a solved grid (page L3, #46): "4-letter word · hex solved", with no lock icon
   - solved: "4-letter word · solved"
-  - failed (no page; #24): "4-letter word · not solved"
+  - failed (no page; #24, owner's wording on #46): "4-letter word · out of rows" after row 6, or "4-letter word · not decoded" after a wrong word on a solved grid
 - **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times until the hex locks. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row (#38)**, so the player turns it on again when they want help; a rejected row (invalid, not a listed word, or a repeat) leaves it on. **It locks with the hex at the decode step (#46, page L3):** it switches off, the strip hides, and the button is dimmed and `disabled` for the rest of the round, with a lock icon in place of the bulb and the accessible description "Locked for the rest of the round". Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, so at most one per row used (6). Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or not).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
@@ -202,7 +202,7 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · out of rows" after row 6, or "4-letter word · not decoded" after a wrong word on a solved grid, which may leave rows unused (#46). Screen readers hear the same, "Out of rows" or "Not decoded", from the message line behind the card.
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
@@ -258,7 +258,7 @@ The owner's draft for #46, which allows a word attempt only once the hex grid is
 
 ### Colours for the decode lock draft
 
-These reuse the existing tokens where the draft visibly does: the panel, the page 3 card and the dimmed keypad. The new elements were **measured for #46** and are recorded, with how, in the [dark theme table](#dark-theme-pages-13-and-5); their light values are derived the #26 way and listed in [Light values derived for screens drawn only in dark](#light-values-derived-for-screens-drawn-only-in-dark-26). The owner should sign them off.
+These reuse the existing tokens where the draft visibly does: the panel, the page 3 card and the dimmed keypad. The new elements were **measured for #46** and are recorded, with how, in the [dark theme table](#dark-theme-pages-13-and-5); their light values are derived the #26 way and listed in [Light values derived for screens drawn only in dark](#light-values-derived-for-screens-drawn-only-in-dark-26). All are **approved by the owner** (2026-10-24).
 
 | Element | Background | Text / foreground | Border |
 |---|---|---|---|
@@ -266,7 +266,7 @@ These reuse the existing tokens where the draft visibly does: the panel, the pag
 | Lock badge (L1, L2) | `#2A2E37` (`key`) | lock icon `#E8EAF0` | `#3C3F48` (1px) |
 | Lock title "Locked until you crack the hex row" | | page text `#E8EAF0` | |
 | Lock message "Get every tile blue to unlock Decode." | | `#CCCFD8` | |
-| Hints button, locked (L3) | page background | icon and text `#8B919E` | `#303239` |
+| Hints button, locked (L3) | page background | icon and text `#8A909C` | `#303239` |
 | Status line "hex solved" (L3) | | the muted status text, as built | |
 | Final-answer card, Submit, locked keypad (L3) | as page 3 | as page 3 | as page 3 |
 
