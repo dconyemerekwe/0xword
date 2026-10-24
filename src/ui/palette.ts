@@ -69,8 +69,12 @@ export const DARK_PALETTE = {
   lockBadgeBorder: "#3C3F48",
   /** "Get every tile blue to unlock Decode.": measured as `hintsText` measures in the same image. */
   lockMessage: "#CCCFD8",
-  /** The locked Hints button's text and lock icon (page L3). Its fill is `background`. */
-  hintsLockedText: "#8B919E",
+  /**
+   * The locked Hints button's text and lock icon (page L3). Its fill is
+   * `background`. Measured about #8B919E; the owner chose the design table's
+   * absent-key text, #8A909C, instead of a new colour.
+   */
+  hintsLockedText: "#8A909C",
   /** The locked Hints button's outline (page L3): fainter than `hintsBorder`. */
   hintsLockedBorder: "#303239",
   // Page 4, the result card. Page 4 is drawn in the light theme, so these are

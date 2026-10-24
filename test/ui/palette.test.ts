@@ -62,11 +62,12 @@ describe("DARK_PALETTE", () => {
     assert.equal(DARK_PALETTE.cardBorder, DARK_PALETTE.key);
   });
 
-  it("uses the decode lock colours measured from the lock-*.jpg images, reusing tokens they match (#46)", () => {
+  it("uses the owner-approved decode lock colours, measured from the lock-*.jpg images and reusing values they match (#46)", () => {
     assert.equal(DARK_PALETTE.lockBadge, DARK_PALETTE.key);
     assert.equal(DARK_PALETTE.lockBadgeBorder, DARK_PALETTE.hintsBorder);
     assert.equal(DARK_PALETTE.lockMessage, DARK_PALETTE.hintsText);
-    assert.equal(DARK_PALETTE.hintsLockedText, "#8B919E");
+    // The design table's absent-key text (owner's choice over the measured #8B919E).
+    assert.equal(DARK_PALETTE.hintsLockedText, "#8A909C");
     assert.equal(DARK_PALETTE.hintsLockedBorder, "#303239");
   });
 
