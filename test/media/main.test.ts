@@ -569,8 +569,8 @@ describe("media/main.ts: the SVG icons, run as the bundled webview script", () =
 
 describe("media/main.ts: the result card, run as the bundled webview script", () => {
   it("keeps the answer out of the DOM while a round is in progress, hints on with every byte known", () => {
-    // BITE finds B, T, E and the 9 of Y; BUSY finds Y's 5. No row is fully right.
-    const words = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"];
+    // BITE gets B, T and E fully right in one row; LYNX gets Y. No row is fully right.
+    const words = ["BITE", "TEAM", "BEAT", "BEST", "LYNX"];
     const saved = savedAfter(...words.flatMap((word) => guess(word)), { type: "toggleHints" });
     assert.equal(saved.round.phase, "guess");
     const run = runWebview(saved);

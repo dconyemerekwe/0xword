@@ -1083,11 +1083,13 @@ describe("GameController: Hints (page 2)", () => {
     assert.equal(view.hints.label, "Hints: B, unknown, T, E");
   });
 
-  it("shows a byte's letter once both its digits have been in the right spot, in any rows", () => {
-    // BYTE's 2nd byte is 59. BUSY (55) finds the 5; LIME (49) finds the 9.
+  it("shows a byte's letter only once both its digits are in the right spot in the same row", () => {
+    // BYTE's 2nd byte is 59. BUSY (55) finds the 5 and LIME (49) the 9, but
+    // no row has both, so it stays ?; LYNX (59) then gets the whole byte.
     const { play } = harness();
     assert.equal(strip(play(...guess("BUSY"), toggleHints)), "B ? ? ?");
-    assert.equal(strip(play(...guess("LIME"), toggleHints)), "B Y ? E");
+    assert.equal(strip(play(...guess("LIME"), toggleHints)), "B ? ? E");
+    assert.equal(strip(play(...guess("LYNX"), toggleHints)), "B Y ? E");
   });
 
   it("turns off when pressed again: not pressed, and the strip is hidden", () => {

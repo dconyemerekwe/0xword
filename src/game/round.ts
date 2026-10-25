@@ -257,25 +257,22 @@ export class Round {
   }
 
   /**
-   * The letter of each byte whose two digits have both been in the right spot,
-   * in any rows, or null if not yet known: e.g. `["B", null, "T", "E"]`.
+   * The letter of each byte that some scored row got fully right (both of its
+   * digits in the right spot in that same row), or null if no row has yet:
+   * e.g. `["B", null, "T", "E"]`. Digits right only in different rows don't
+   * count (#50). Once shown, a letter stays, whatever later rows score.
    * Throws unless hints are on.
    */
   hintLetters(): (string | null)[] {
     if (!this.#hintsShown) {
       throw new Error("Hints are not enabled");
     }
-    const known = new Array<boolean>(this.#answerHex.length).fill(false);
-    for (const row of this.#rows) {
-      row.marks.forEach((mark, i) => {
-        if (mark === Mark.Right) {
-          known[i] = true;
-        }
-      });
-    }
     const letters: (string | null)[] = [];
     for (let byte = 0; byte < WORD_LENGTH; byte++) {
-      letters.push(known[byte * 2] && known[byte * 2 + 1] ? this.#answer[byte]! : null);
+      const cracked = this.#rows.some(
+        (row) => row.marks[byte * 2] === Mark.Right && row.marks[byte * 2 + 1] === Mark.Right,
+      );
+      letters.push(cracked ? (this.#answer[byte] ?? null) : null);
     }
     return letters;
   }
