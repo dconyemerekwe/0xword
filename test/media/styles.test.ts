@@ -259,6 +259,17 @@ describe("media/styles.css pages L1 to L3: the decode lock (#46)", () => {
     assert.match(locked, /cursor: default;/);
   });
 
+  it("draws the locked `?` greyed out in the locked Hints text colour, from `disabled`, at the same size (#53)", () => {
+    const locked = block(".icon-button:disabled");
+    assert.match(locked, /color: var\(--ox-hints-locked-text\);/);
+    assert.match(locked, /cursor: default;/);
+    // Only the colour and cursor change: no size, layout, opacity or icon change.
+    assert.deepEqual(
+      [...locked.matchAll(/([a-z-]+):/g)].map((match) => match[1]),
+      ["color", "cursor"],
+    );
+  });
+
   it("stacks the lock over the panel's body in one grid cell, so the panel keeps its size and place", () => {
     assert.match(block(".decode"), /display: grid;/);
     assert.match(block(".decode-body"), /grid-area: 1 \/ 1;/);

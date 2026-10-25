@@ -696,6 +696,10 @@ function render(view: ScreenView): void {
   const howToPlayWasOpen = !ui.howToPlay.hidden;
   ui.game.hidden = view.howToPlayOpen;
   ui.howToPlay.hidden = !view.howToPlayOpen;
+  // Locked at the decode step (#53): `disabled` and greyed out only, keeping
+  // its name and with no description. If it had focus, the decode box takes
+  // it below.
+  ui.howToPlayButton.disabled = view.howToPlayLocked;
 
   ui.statusText.textContent = view.status;
   ui.statusIcon.toggleAttribute("hidden", !view.outOfRows);

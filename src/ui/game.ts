@@ -283,6 +283,13 @@ export interface ScreenView {
    * was. While it's open the controller ignores every game move.
    */
   readonly howToPlayOpen: boolean;
+  /**
+   * The `?` button is locked: at the decode step only, like `hexLocked`, so
+   * How to play and its cheatsheet can't be opened while the word is being
+   * decoded (#53). It's `disabled` and greyed out, with no lock icon and no
+   * description. Worked out from the phase, so it isn't saved.
+   */
+  readonly howToPlayLocked: boolean;
 }
 
 /**
@@ -402,6 +409,7 @@ export class GameController {
       announcement: notice.announcement,
       noticeId: this.#noticeId,
       howToPlayOpen: this.#howToPlayOpen,
+      howToPlayLocked: hexLocked,
     };
   }
 
@@ -415,7 +423,12 @@ export class GameController {
     }
     switch (action.type) {
       case "openHowToPlay":
-        this.#howToPlayOpen = true;
+        // Ignored at the decode step, where the `?` button is locked (#53).
+        // How to play can't already be open when the decode step begins:
+        // the ENTER that starts it is a game move, ignored while it's open.
+        if (!isHexLocked(session.round?.phase ?? null)) {
+          this.#howToPlayOpen = true;
+        }
         return this.#notice;
       case "closeHowToPlay":
         this.#howToPlayOpen = false;
@@ -564,8 +577,8 @@ export function firstNonLetterByte(hex: string): string | null {
 
 /**
  * True at the decode step: the hex is locked and the one try is due. The one
- * place this rule lives, so the status line, the card, the keypad and Hints
- * always agree.
+ * place this rule lives, so the status line, the card, the keypad, Hints and
+ * the `?` button always agree.
  */
 export function isHexLocked(phase: Phase | null): boolean {
   return phase === "decode";

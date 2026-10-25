@@ -214,7 +214,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
   // The decode lock's title is `text` on `panel`: checked above.
   ["lockMessage", "panel"], // the decode lock's message
-  ["hintsLockedText", "background"], // the locked Hints button (disabled, but checked anyway)
+  ["hintsLockedText", "background"], // the locked Hints button and the locked `?` (#53) (disabled, but checked anyway)
   // The result card's heading and line are `text` and `muted` on `panel`, and
   // the note under it `muted` on `background`: all checked above.
   ["byteHex", "byteTile"], // a result byte tile's hex
