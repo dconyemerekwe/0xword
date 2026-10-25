@@ -175,7 +175,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
 
 ## Page 2: Mid-game with hints on
 
-The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Once ENTER scores the row being typed, the button goes back to off and the strip is hidden (#38).
+The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both of its tiles have been in the right spot **in the same row**, or a muted `?` (here `B ? T E`). A byte whose two tiles were each right only in different rows still shows `?` (owner's decision on #50). Once ENTER scores the row being typed, the button goes back to off and the strip is hidden (#38).
 
 ## Page 3: Forced final answer
 
