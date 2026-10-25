@@ -334,7 +334,7 @@ describe("Round", () => {
     });
 
     it("shows ? for the owner's playtest case: the 1st digit right in rows 1-3, the 2nd in rows 4-5", () => {
-      // BOLD = 42 4F 4C 44. ABLE, ACHE and AREA end in 45 (the first 4 right);
+      // BOLD = 42 4F 4C 44. ABLE and ACHE end in 45 and AREA in 41 (the first 4 right);
       // BEAT and BELT end in 54 (the second 4 right). No row gets both.
       const round = new Round("BOLD", WORD_SET);
       for (const word of ["ABLE", "ACHE", "AREA", "BEAT", "BELT"]) {
