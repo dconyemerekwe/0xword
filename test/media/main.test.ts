@@ -211,6 +211,13 @@ describe("media/main.ts", () => {
     assert.match(source, /header\.append\(title, headerButtons\)/);
   });
 
+  it("locks `?` from the view with `disabled` only: no lock icon and no description (#53)", () => {
+    assert.match(source, /ui\.howToPlayButton\.disabled = view\.howToPlayLocked/);
+    assert.match(source, /howToPlayButton\.append\(questionIcon\(\)\);/);
+    assert.doesNotMatch(source, /howToPlayButton\.(setAttribute|toggleAttribute)\("(aria-describedby|aria-disabled|title)"/);
+    assert.doesNotMatch(source, /howToPlayButton\.append\([^)]*lockIcon/);
+  });
+
   it("makes the theme button a real <button> outside the controller, in the header next to `?`", () => {
     assert.match(source, /const themeButton = pressButton\("icon-button", "", pressThemeButton\)/);
     assert.match(source, /themeButton\.append\(sunIcon\(\), moonIcon\(\)\)/);
@@ -702,15 +709,14 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
   const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => guess(w));
   /**
    * Every screen How to play opens from: its saved state (answer BYTE), or
-   * undefined for a fresh panel, and whether it's the decode step there.
+   * undefined for a fresh panel. Not the decode step, where `?` is locked (#53).
    */
-  const screens: readonly (readonly [string, () => SessionState | undefined, boolean])[] = [
-    ["a fresh panel", () => undefined, false],
-    ["a half-typed row", () => savedAfter(...halfTyped), false],
-    ["a scored row", () => savedAfter(...guess("TEAM")), false],
-    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE")), true],
-    ["the final answer", () => savedAfter(...firstFive, ...guess("ABLE")), true],
-    ["the result card", () => FINISHED[0]?.[1](), false],
+  const screens: readonly (readonly [string, () => SessionState | undefined])[] = [
+    ["a fresh panel", () => undefined],
+    ["a half-typed row", () => savedAfter(...halfTyped)],
+    ["a scored row", () => savedAfter(...guess("TEAM"))],
+    ["row 6", () => savedAfter(...firstFive)],
+    ["the result card", () => FINISHED[0]?.[1]()],
   ];
 
   it('draws `?` and the back arrow as real <button>s named "How to play" and "Back to game"', () => {
@@ -771,10 +777,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     );
   });
 
-  for (const [name, saved, attempt] of screens) {
-    /** Where focus goes after a mouse-opened How to play closes: the decode box, or the page. */
-    const afterMouse = (run: WebviewRun): unknown => (attempt ? byClass(run, "decode-input") : null);
-
+  for (const [name, saved] of screens) {
     it(`opens from ${name} with ?, moving focus to the back arrow`, () => {
       const run = runWebview(saved());
       click(byLabel(run, "How to play"));
@@ -792,7 +795,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
       assert.equal(byClass(run, "how-to-play")["hidden"], true);
       assert.equal(byClass(run, "game")["hidden"], false);
       assert.equal(snapshot(run, count), before);
-      assert.equal(run.focus.active, afterMouse(run));
+      assert.equal(run.focus.active, null, "focus goes back to the page");
     });
 
     it(`goes back to ${name} unchanged with Escape after a mouse open, focus off ?`, () => {
@@ -803,7 +806,7 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
       run.press("Escape");
       assert.equal(byClass(run, "how-to-play")["hidden"], true);
       assert.equal(snapshot(run, count), before);
-      assert.equal(run.focus.active, afterMouse(run));
+      assert.equal(run.focus.active, null, "focus goes back to the page");
     });
 
     it(`goes back to ${name} unchanged with Escape after a keyboard open, focus on ?`, () => {
@@ -904,13 +907,103 @@ describe("media/main.ts: How to play (page 5), run as the bundled webview script
     }
   });
 
-  it("gives the decode box focus back after a mouse open and close at the final answer", () => {
-    const run = runWebview(savedAfter(...firstFive, ...guess("ABLE")));
-    const decodeInput = byClass(run, "decode-input");
-    click(byLabel(run, "How to play"));
-    click(byLabel(run, "Back to game"));
-    // So Space and letters go to the decode box, not to `?`.
-    assert.equal(run.focus.active, decodeInput);
+});
+
+describe("media/main.ts: How to play locked at the decode step (#53), run as the bundled webview script", () => {
+  const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => guess(w));
+
+  /** Types `word`'s hex and presses Enter on the physical keyboard. */
+  function score(run: WebviewRun, word: string): void {
+    for (const key of [...wordToHex(word), "Enter"]) {
+      run.press(key);
+    }
+  }
+
+  /** The `?` button. */
+  function help(run: WebviewRun): Record<string, unknown> {
+    return byLabel(run, "How to play");
+  }
+
+  /** The decode steps, each reached by playing it in the panel. */
+  const decodeSteps: readonly (readonly [string, (run: WebviewRun) => void])[] = [
+    ["a solved grid", (run) => score(run, "BYTE")],
+    ["row 6", (run) => score(run, "ABLE")],
+  ];
+
+  for (const [name, reach] of decodeSteps) {
+    it(`disables ? after ${name}, keeping its name, its icon and no description`, () => {
+      const run = runWebview(name === "row 6" ? savedAfter(...firstFive) : savedAfter(...guess("TEAM")));
+      assert.equal(help(run)["disabled"], false);
+      reach(run);
+      const button = help(run);
+      assert.equal(button["disabled"], true);
+      assert.equal(button["className"], "icon-button");
+      // Only the name: no aria-describedby, no aria-disabled, no title.
+      assert.deepEqual(button["attributes"], { "aria-label": "How to play" });
+    });
+
+    it(`opens nothing after ${name}: no click, keyboard press or key reaches How to play`, () => {
+      const run = runWebview(name === "row 6" ? savedAfter(...firstFive) : savedAfter());
+      reach(run);
+      const decodeInput = byClass(run, "decode-input");
+      const count = run.elements.length;
+      const before = snapshot(run);
+      // A real browser never fires these on a disabled button; the controller ignores them anyway.
+      click(help(run));
+      keyboardClick(help(run));
+      screenReaderClick(help(run));
+      (decodeInput["focus"] as () => void)();
+      for (const key of ["?", "F1", "h", "Enter", " ", "Escape"]) {
+        run.press(key);
+      }
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(byClass(run, "game")["hidden"], false);
+      assert.equal(snapshot(run, count), before);
+    });
+  }
+
+  it("moves focus from ? to the decode box when ? locks while focused", () => {
+    const run = runWebview(savedAfter());
+    // `?` has focus: hex digits typed there still reach the grid.
+    (help(run)["focus"] as () => void)();
+    for (const digit of wordToHex("BYTE")) {
+      run.press(digit);
+    }
+    assert.equal(run.focus.active, help(run));
+    // ENTER pressed without taking focus, as a touch or pointer might.
+    const enter = byLabel(run, "ENTER, enter row");
+    (enter["listeners"] as Record<string, (event: unknown) => void>)["click"]?.({ detail: 1 });
+    assert.equal(help(run)["disabled"], true);
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+  });
+
+  it("shows ? locked when a round saved at the decode step is restored", () => {
+    for (const saved of [savedAfter(...guess("BYTE")), savedAfter(...firstFive, ...guess("ABLE"))]) {
+      const run = runWebview(saved);
+      assert.equal(help(run)["disabled"], true);
+      assert.equal(run.focus.active, byClass(run, "decode-input"));
+      click(help(run));
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+    }
+  });
+
+  it("leaves ? enabled before the decode step", () => {
+    for (const saved of [undefined, savedAfter(), savedAfter(...guess("TEAM")), savedAfter(...firstFive)]) {
+      assert.equal(help(runWebview(saved))["disabled"], false);
+    }
+  });
+
+  it("enables ? again once the round is solved or failed, and How to play opens", () => {
+    for (const word of ["byte", "BITE"]) {
+      const run = runWebview(savedAfter(...guess("BYTE")));
+      assert.equal(help(run)["disabled"], true);
+      byClass(run, "decode-input")["value"] = word;
+      (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"]?.({ preventDefault() {} });
+      assert.equal(byClass(run, "result")["hidden"], false, word);
+      assert.equal(help(run)["disabled"], false, word);
+      click(help(run));
+      assert.equal(byClass(run, "how-to-play")["hidden"], false, word);
+    }
   });
 });
 

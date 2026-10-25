@@ -1454,6 +1454,7 @@ describe("GameController: every action saves", () => {
         ["init", { type: "init" }],
         ["New Round", { type: "newRound" }],
         ["the locked Hints button", toggleHints],
+        ["the locked ? button (#53)", { type: "openHowToPlay" }],
       ];
       for (const [actionName, action] of actions) {
         it(actionName, () => {
@@ -1837,15 +1838,14 @@ describe("GameController: How to play (page 5)", () => {
     return h;
   }
 
-  /** Every screen How to play can be opened from. */
+  /** Every screen How to play can be opened from: all but the decode step (#53). */
   const screens: readonly (readonly [string, () => Harness])[] = [
     ["before the first round", () => harness(undefined, false)],
     ["row 1, nothing typed", () => harness()],
     ["a half-typed row", () => after(...guess("TEAM"), ...type("4259"))],
     ["a rejected row's error", () => after(...type("41414141"), { type: "enter" })],
     ["a scored row, hints on", () => after(toggleHints, ...guess("TEAM"), toggleHints)],
-    ["the decode step after a solved grid", () => solvedGridAt(2)],
-    ["the decode step after row 6", () => atRowSix()],
+    ["row 6, typed but not entered", () => after(...ROW_WORDS.slice(0, 5).flatMap(guess), ...type(wordToHex("BYTE")))],
     ["the result card of a solved round", () => solvedAfter(0)],
     ["the result card of a failed round", () => failed()],
   ];
@@ -1939,6 +1939,134 @@ describe("GameController: How to play (page 5)", () => {
     h.play(open, close);
     assert.equal(h.saves.length, before + 2);
     assert.deepEqual(h.saves.at(-1), h.saves.at(before - 1));
+  });
+});
+
+describe("GameController: How to play locks at the decode step (#53)", () => {
+  const open: Action = { type: "openHowToPlay" };
+  const close: Action = { type: "closeHowToPlay" };
+
+  /** The two ways into the decode step. */
+  const decodeSteps: readonly (readonly [string, () => Harness])[] = [
+    ["a solved grid at row 1", () => solvedGridAt(1)],
+    ["a solved grid at row 6", () => solvedGridAt(6)],
+    ["row 6 without a solved grid", () => atRowSix()],
+  ];
+
+  for (const [name, reach] of decodeSteps) {
+    it(`locks the ? button after ${name}`, () => {
+      const view = reach().controller.view();
+      assert.equal(view.hexLocked, true);
+      assert.equal(view.howToPlayLocked, true);
+    });
+
+    it(`ignores opening How to play after ${name}, through changed(), leaving the round as it was`, () => {
+      const h = reach();
+      const before = h.controller.view();
+      const state = JSON.stringify(h.controller.savedState());
+      for (let i = 0; i < 3; i++) {
+        const count = h.saves.length;
+        h.controller.dispatch(open);
+        assert.equal(h.saves.length, count + 1, "changed() ran exactly once");
+        assert.deepEqual(h.controller.view(), before);
+      }
+      assert.equal(h.controller.view().howToPlayOpen, false);
+      assert.equal(JSON.stringify(h.controller.savedState()), state);
+    });
+
+    it(`stays locked after ${name} through rejected words, ignored moves and closing`, () => {
+      const h = reach();
+      const view = h.play(decode("QXZJ"), decode("B4"), ...type("42"), { type: "enter" }, toggleHints, close, open);
+      assert.equal(view.howToPlayLocked, true);
+      assert.equal(view.howToPlayOpen, false);
+    });
+
+    for (const [ending, word, outcome] of [
+      ["solved", "BYTE", SOLVED_OUTCOME],
+      ["failed", "BITE", FAILED_OUTCOME],
+    ] as const) {
+      it(`unlocks ? once the round after ${name} is ${ending}, and How to play opens`, () => {
+        const h = reach();
+        const view = h.play(decode(word));
+        assert.equal(view.result?.outcome, outcome);
+        assert.equal(view.howToPlayLocked, false);
+        assert.equal(h.play(open).howToPlayOpen, true);
+      });
+    }
+
+    it(`keeps ? locked when a round saved after ${name} is restored`, () => {
+      const restored = reloaded(reach());
+      const view = restored.controller.view();
+      assert.equal(view.hexLocked, true);
+      assert.equal(view.howToPlayLocked, true);
+      assert.equal(restored.play(open).howToPlayOpen, false);
+    });
+
+    it(`unlocks ? when New Round replaces the round after ${name}`, () => {
+      const view = reach().play({ type: "newRound" }, open);
+      assert.equal(view.howToPlayLocked, false);
+      assert.equal(view.howToPlayOpen, true);
+    });
+  }
+
+  it("leaves ? unlocked before the decode step: before the first round, on every row 1 to 6, and with Hints on", () => {
+    const h = harness(undefined, false);
+    assert.equal(h.controller.view().howToPlayLocked, false, "before the first round");
+    h.play({ type: "init" });
+    for (const [row, word] of ROW_WORDS.entries()) {
+      const view = h.controller.view();
+      assert.equal(view.status, `4-letter word · row ${row + 1} of 6`);
+      assert.equal(view.howToPlayLocked, false, `row ${row + 1}`);
+      assert.equal(h.play(toggleHints, open).howToPlayOpen, true, `opens at row ${row + 1}`);
+      h.play(close, toggleHints, ...guess(word));
+    }
+    assert.equal(h.controller.view().howToPlayLocked, true, "locked once row 6 is scored");
+  });
+
+  it("leaves ? unlocked after a rejected row before the decode step", () => {
+    const view = harness().play(...type("41414141"), { type: "enter" });
+    assert.equal(view.messageIsError, true);
+    assert.equal(view.howToPlayLocked, false);
+  });
+
+  for (const [name, rowsBefore, last] of [
+    ["a fully right row 1", [] as readonly string[], "BYTE"],
+    ["a fully right row 6", ROW_WORDS.slice(0, 5), "BYTE"],
+    ["row 6 without a solved grid", ROW_WORDS.slice(0, 5), "BITE"],
+  ] as const) {
+    it(`can't start the decode step with ${name} while How to play is open: ENTER is ignored`, () => {
+      const h = harness();
+      for (const word of rowsBefore) {
+        h.play(...guess(word));
+      }
+      h.play(...type(wordToHex(last)));
+      const state = JSON.stringify(h.controller.savedState());
+      const posts = h.posts.length;
+      const view = h.play(open, { type: "enter" });
+      assert.equal(view.howToPlayOpen, true);
+      assert.equal(view.hexLocked, false);
+      assert.equal(view.howToPlayLocked, false);
+      assert.equal(JSON.stringify(h.controller.savedState()), state, "the row wasn't scored");
+      assert.equal(h.posts.length, posts);
+      // Back on the game, the same ENTER scores the row and locks `?`.
+      const after = h.play(close, { type: "enter" });
+      assert.equal(after.hexLocked, true);
+      assert.equal(after.howToPlayLocked, true);
+    });
+  }
+
+  it("isn't saved: the saved state has no How to play field at the decode step", () => {
+    const h = solvedGridAt(2);
+    h.play(open);
+    assert.doesNotMatch(JSON.stringify(h.saves.at(-1)), /howToPlay/i);
+  });
+
+  it("agrees with isHexLocked in every view: locked exactly at the decode step", () => {
+    for (const h of [harness(undefined, false), harness(), solvedGridAt(3), atRowSix(), solvedAfter(1), failed()]) {
+      const view = h.controller.view();
+      assert.equal(view.howToPlayLocked, view.hexLocked);
+      assert.equal(view.howToPlayLocked, isHexLocked(h.session.round?.phase ?? null));
+    }
   });
 });
 
