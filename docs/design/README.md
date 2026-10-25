@@ -56,6 +56,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Lock title "Locked until you crack the hex row" (L1, L2) | | `#E8EAF0`‡ | |
 | Lock message "Get every tile blue to unlock Decode." (L1, L2) | | `#CCCFD8`‡ | |
 | Hints button, locked (L3) | page background | text and lock icon `#8A909C`‡ | `#303239`‡ |
+| Icon button `?`, locked at the decode step (#53) | | `#8A909C` (`hintsLockedText`, owner's choice) | |
 
 ‡ Measured for #46 from `lock-1.jpg` (the panel, badge, title, message and faded contents) and `lock-3.jpg` (the locked Hints button), with a small JPEG decoder run on the images. Its readings match the existing tokens where the draft reuses them (page `#14161B`, panel `#1D2027`, final card `#241B12` exactly; the Hints-off outline `#3C3F48` reads `#3D3F49`). Anti-aliased text reads about 5 units brighter than its colour in every channel (the Hints-off text `#CCCFD8` reads `#D1D4DD`), so text readings are corrected by that amount. Where a reading lands within that error of an existing token, the token is used:
 - **Badge fill** reads `#2A2E37`, which is `key`. **Badge outline** reads `#3C404A`: the Hints-off outline `#3C3F48`.
@@ -115,7 +116,7 @@ Pages 1–3 and 5 exist only in dark, so their light values are derived from the
 | `lockBadge` | the decode lock's badge fill (#46) | `#E3E4E9` | `key`, as in the dark theme |
 | `lockBadgeBorder` | the decode lock's badge outline (#46) | `#CFD2D8` | the outline, as `hintsBorder` |
 | `lockMessage` | "Get every tile blue to unlock Decode." (#46) | `#5D636C` | `muted`: lighter than the `text` title, as in the dark theme |
-| `hintsLockedText` | locked Hints text and lock icon (#46) | `#5D636C` | `muted`, as the locked keys' digits |
+| `hintsLockedText` | locked Hints text and lock icon (#46), and the locked `?` (#53) | `#5D636C` | `muted`, as the locked keys' digits |
 | `hintsLockedBorder` | locked Hints outline (#46) | `#E3E4E9` | 50% outline over the page (as `key`): fainter than `hintsBorder`, as in dark |
 
 The decode lock's title and icon are `text` in both themes, and the faded panel body is 10% opacity in both. The five #46 rows above are **approved by the owner** (2026-10-24).
@@ -138,6 +139,7 @@ The palette unit test checks every text pair the game draws in both palettes (`T
 - **Header:**
   - On the left, the title: `0x` in blue JetBrains Mono, then `WORD` in DM Sans at weight 1000.
   - On the right, two icon buttons: `?` (How to play) and the theme toggle. The theme toggle shows a sun in the dark theme and a moon in the light theme.
+  - **`?` locks at the decode step (#53, owner's decisions, 2026-10-25):** from the moment a fully right row or row 6 is scored until the round is solved or failed, `?` is `disabled`, so How to play and its cheatsheet can't be opened. It's only greyed out, in the locked Hints text colour (`hintsLockedText`: `#8A909C` dark, `#5D636C` light), in the same place and size, with no lock or "not allowed" icon. Its accessible name stays "How to play", with no description (no `aria-describedby`). It's the only way into How to play, so there's no shortcut or command to lock as well. It works again on the result card and in the next round. The theme toggle never locks.
 - **Status line** below the header, in muted text:
   - mid-game: "4-letter word · row 4 of 6"
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
@@ -186,7 +188,7 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - an orange **Submit** button
   - underneath, "Type with your keyboard" on the left. The draft's "Tried: BUSY · BEST" on the right is left out: there's one try and no Tried list (#46).
 - The **keypad, DEL and ENTER are dimmed and disabled**. Key colours stay visible.
-- **Hints is locked (#46)**, as on page L3. The same card is the decode step after a solved grid (page L3), where the status line and grid differ.
+- **Hints is locked (#46)**, and so is the header's `?` (#53), as on page L3. The same card is the decode step after a solved grid (page L3), where the status line and grid differ.
 
 ## Page 4: Solved (light theme)
 
@@ -249,6 +251,7 @@ The owner's draft for #46, which allows a word attempt only once the hex grid is
 - **The Hints button is locked.**
   - Its light-bulb icon is replaced by a **lock icon**, and the button is drawn dimmed: muted text and outline, no highlight.
   - The hint strip isn't shown.
+- **The header's `?` is locked (#53, not in the draft):** greyed out and `disabled`, with no lock icon, as described under [Shared layout](#shared-layout-pages-14). The draft draws it as usual.
 - **The decode panel unlocks** as the orange-outlined **"Final answer" card** from page 3, which is the "highlight" that prompts the player:
   - "Last try" in orange at the top right;
   - a text box with the placeholder "Decode the bytes above";
@@ -267,6 +270,7 @@ These reuse the existing tokens where the draft visibly does: the panel, the pag
 | Lock title "Locked until you crack the hex row" | | page text `#E8EAF0` | |
 | Lock message "Get every tile blue to unlock Decode." | | `#CCCFD8` | |
 | Hints button, locked (L3) | page background | icon and text `#8A909C` | `#303239` |
+| `?` button, locked (L3 and page 3, #53) | | `#8A909C`, as the locked Hints text | |
 | Status line "hex solved" (L3) | | the muted status text, as built | |
 | Final-answer card, Submit, locked keypad (L3) | as page 3 | as page 3 | as page 3 |
 
@@ -279,6 +283,7 @@ These reuse the existing tokens where the draft visibly does: the panel, the pag
 - **The locked Decode button and text box** use `disabled`, not only dimming, as on page 3.
 - **The lock title and message are real text**, read by screen readers, and the lock icon is decorative (`aria-hidden`).
 - **The locked Hints button** uses `disabled`, and its accessible name or description says it's locked for the rest of the round.
+- **The locked `?` button (#53)** uses `disabled`, so it can't be clicked or reached with Tab. Its name stays "How to play" and it has no description (owner's decision). The decode box already takes focus at the decode step, so focus never stays on the disabled `?`.
 - **Both icons** are inline SVG bundled with the extension, like the header icons. No CDN.
 
 ### Differences from #46's rules
@@ -287,6 +292,7 @@ These reuse the existing tokens where the draft visibly does: the panel, the pag
 - **No "1 try per row" or "Tried: BEAT" under the lock (L1, L2).** The draft shows them faded behind the lock. #46 removes the Tried list and allows one try per round, so leave both out.
 - **No "Tried: BUSY · BEST" on the unlocked card (L3).** With one try per round there's never anything to list. Leave the right-hand side of the card's footer empty.
 - **The same lock applies before row 1 and after row 6.** The draft shows the lock mid-game. #46 locks the decode panel from the start of the round until the hex is solved or row 6 is scored. After row 6 without a solved row, the panel unlocks as the page 3 card, and the Hints lock applies there too. The status line then reads as it does on page 3, not "hex solved".
+- **`?` locks at the decode step (#53).** The draft keeps it usable on L3 and page 3; the owner locked it so the cheatsheet can't be read while decoding.
 - **The highlight on unlock is the page 3 card.** The draft shows no extra animation. Any transition must respect `prefers-reduced-motion`.
 
 ## Accessibility
