@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { WORD_SET } from "./fixtures.ts";
 import { wordToHex } from "../../src/game/hex.ts";
 import { MAX_HINTS, MAX_ROWS, Round } from "../../src/game/round.ts";
+import { Mark } from "../../src/game/score.ts";
 
 /** A round whose answer is BYTE (42 59 54 45). */
 function newRound(): Round {
@@ -313,15 +314,70 @@ describe("Round", () => {
       assert.deepEqual(round.hintLetters(), ["B", null, null, "E"]);
     });
 
-    it("combines digits found in different rows", () => {
+    it("shows ? for every byte before any row is scored", () => {
+      const round = newRound();
+      round.enableHints();
+      assert.deepEqual(round.hintLetters(), [null, null, null, null]);
+    });
+
+    it("shows ? for a byte whose two digits were each right only in different rows", () => {
       const round = newRound();
       // BYTE's 2nd byte is 59. BUSY (55) finds the 5; LIME (49) finds the 9.
       guess(round, "BUSY");
+      guess(round, "LIME");
+      assert.deepEqual(round.rows.map((row) => [row.marks[2] === Mark.Right, row.marks[3] === Mark.Right]), [
+        [true, false],
+        [false, true],
+      ]);
       round.enableHints();
       assert.equal(round.hintLetters()[1], null);
-      guess(round, "LIME");
+    });
+
+    it("shows ? for the owner's playtest case: the 1st digit right in rows 1-3, the 2nd in rows 4-5", () => {
+      // BOLD = 42 4F 4C 44. ABLE and ACHE end in 45 and AREA in 41 (the first 4 right);
+      // BEAT and BELT end in 54 (the second 4 right). No row gets both.
+      const round = new Round("BOLD", WORD_SET);
+      for (const word of ["ABLE", "ACHE", "AREA", "BEAT", "BELT"]) {
+        guess(round, word);
+      }
+      assert.deepEqual(round.rows.map((row) => [row.marks[6] === Mark.Right, row.marks[7] === Mark.Right]), [
+        [true, false],
+        [true, false],
+        [true, false],
+        [false, true],
+        [false, true],
+      ]);
       round.enableHints();
-      assert.equal(round.hintLetters()[1], "Y");
+      assert.equal(round.phase, "guess");
+      assert.equal(round.hintLetters()[3], null);
+    });
+
+    it("keeps a byte's letter after a later row gets that byte wrong", () => {
+      const round = newRound();
+      // BAKE gets bytes 1 and 4 right; SLOT (53 4C 4F 54) gets no digit of either right.
+      guess(round, "BAKE");
+      guess(round, "SLOT");
+      const later = round.rows[1]?.marks ?? [];
+      assert.deepEqual([0, 1, 6, 7].map((i) => later[i] === Mark.Right), [false, false, false, false]);
+      round.enableHints();
+      assert.deepEqual(round.hintLetters(), ["B", null, null, "E"]);
+    });
+
+    it("shows every letter when each byte was fully right in a different row, while Hints can still be used", () => {
+      const round = newRound();
+      // Against BYTE = 42 59 54 45, each row gets exactly one byte fully right.
+      const rows = [
+        ["BUSY", ["B", null, null, null]], // 42 55 53 59
+        ["LYNX", ["B", "Y", null, null]], // 4C 59 4E 58
+        ["CITY", ["B", "Y", "T", null]], // 43 49 54 59
+        ["LIME", ["B", "Y", "T", "E"]], // 4C 49 4D 45
+      ] as const;
+      for (const [word, letters] of rows) {
+        guess(round, word);
+        round.enableHints();
+        assert.deepEqual(round.hintLetters(), letters, word);
+      }
+      assert.equal(round.hintsLocked, false);
     });
 
     it("starts off, with no hints counted", () => {
