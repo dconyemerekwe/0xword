@@ -26,8 +26,13 @@ import { pickAnswer } from "./words.ts";
  * is a number instead of a one-way flag, and `rowHinted` says whether the
  * current stretch is already counted. Older state is dropped, so the panel
  * starts fresh: its one-way flag can't say how many hints were used.
+ * Version 9 adds the decode step (#46): the round's `final` phase becomes
+ * `decode`, reached by a fully right row as well as by row 6, which also
+ * records the Hints lock; its `answers` list becomes the one `attempt`; and
+ * a word rejection can no longer be a `repeat`. Older state is dropped:
+ * a version-8 round may hold word attempts the new rules don't allow.
  */
-export const SESSION_STATE_VERSION = 8;
+export const SESSION_STATE_VERSION = 9;
 
 /**
  * The player's last rejected move, as data rather than text: the error, and
@@ -90,7 +95,7 @@ export function isReported(reported: unknown, round: Round): reported is boolean
 const ROW_ERRORS: Readonly<Record<RowError, true>> = { length: true, notHex: true, notLetter: true, notWord: true, repeat: true };
 
 /** Every `AnswerError`, likewise. */
-const ANSWER_ERRORS: Readonly<Record<AnswerError, true>> = { format: true, notWord: true, repeat: true };
+const ANSWER_ERRORS: Readonly<Record<AnswerError, true>> = { format: true, notWord: true };
 
 function isRowError(error: unknown): error is RowError {
   return typeof error === "string" && Object.hasOwn(ROW_ERRORS, error);
@@ -104,7 +109,7 @@ function isAnswerError(error: unknown): error is AnswerError {
  * `raw` as a fresh `Rejection` if it's well formed for the round with `draft`
  * typed, or else null. Well formed means: exactly the keys of its kind, a
  * known error code, and, for a row, the round waiting for a hex row with
- * `hex` equal to the draft; for a word, the round able to take a word
+ * `hex` equal to the draft; for a word, the round at the decode step
  * (`canDecode`) and the word four letters A–Z, or "" exactly when the error
  * is `format`. It doesn't ask whether the round still rejects that input
  * with that error: see `stillApplies`.
@@ -255,12 +260,10 @@ export class Session {
   }
 
   /**
-   * Tries the word in the round, like `Round.submitAnswer`, and clears the
-   * half-typed hex row if that ended the round: a finished round has no
-   * draft (see `isDraft`), or its saved state couldn't be restored (#43).
-   * A wrong or rejected word before row 6 keeps the draft, since the player
-   * carries on typing hex. Throws if there is no round, or the round can't
-   * take an answer now.
+   * Tries the word in the round, like `Round.submitAnswer`. The draft is
+   * already empty: a scored row clears it, and only a scored row reaches the
+   * decode step. Throws if there is no round, or the round can't take an
+   * answer now.
    */
   submitAnswer(input: string): AnswerOutcome {
     if (!this.#round) {
@@ -268,9 +271,6 @@ export class Session {
     }
     const outcome = this.#round.submitAnswer(input);
     this.#rejection = null;
-    if (this.#round.isOver) {
-      this.#draft = "";
-    }
     return outcome;
   }
 

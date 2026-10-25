@@ -6,8 +6,7 @@
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
-import { MAX_HINTS, MAX_ROWS, type RoundResult } from "./game/round.ts";
-import { WORD_LIST_SIZE } from "./game/words.ts";
+import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
 import { isTheme, type Theme } from "./theme.ts";
 
@@ -120,20 +119,19 @@ export function handleWebviewMessage(raw: unknown, handlers: HostHandlers): Host
 const ROUND_FINISHED_KEYS = ["type", "solved", "rowsUsed", "answerTries", "hintsUsed"] as const;
 
 /**
- * Checks the fields against what a real round can produce (see `Round`):
- * - `rowsUsed` is 1 to `MAX_ROWS`
- * - a failed round used every row and the forced final answer
- * - `answerTries` is at least 1, since every round ends with a word attempt
- *   (the right word, or the wrong final answer)
- * - tries are unlimited, but a word already tried is rejected, so each
- *   listed word counts at most once. A solved round's tries are at most
- *   every word in the list (all the others wrong, then the answer); a failed
- *   one's at most every word but the answer. Both are reachable: the wrong
- *   words can all be tried after row 1.
- * - `hintsUsed` counts one hint per stretch with hints on: one stretch
- *   before each row and one after the last, so 0 to `rowsUsed + 1` (at most
- *   `MAX_HINTS`). Every count in that range is reachable. The one-way
- *   boolean sent before #38 is rejected.
+ * Checks the fields against what a real round can produce (see `Round`).
+ * Every round ends with its one try at the decode step, reached by a fully
+ * right row (at any of rows 1 to 6) or by row 6:
+ * - `rowsUsed` is 1 to `MAX_ROWS`, solved or failed: a wrong word after a
+ *   solved grid fails the round with rows left
+ * - `answerTries` is exactly 1. The counts sent before #46 (more than one
+ *   try) are rejected
+ * - `hintsUsed` counts one hint per row with hints on before it was scored,
+ *   and none after the last row, since Hints locks with the hex: 0 to
+ *   `rowsUsed`. The `rowsUsed + 1` sent before #46 is rejected, and so is
+ *   the one-way boolean sent before #38.
+ *
+ * Every combination in those ranges is reachable.
  */
 function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinishedMessage | null {
   if (!hasExactKeys(fields, ROUND_FINISHED_KEYS)) {
@@ -146,12 +144,9 @@ function parseRoundFinished(fields: ReadonlyMap<string, unknown>): RoundFinished
   if (
     typeof solved !== "boolean" ||
     !isIntegerInRange(rowsUsed, 1, MAX_ROWS) ||
-    !isIntegerInRange(answerTries, 1, solved ? WORD_LIST_SIZE : WORD_LIST_SIZE - 1) ||
-    !isIntegerInRange(hintsUsed, 0, Math.min(rowsUsed + 1, MAX_HINTS))
+    answerTries !== 1 ||
+    !isIntegerInRange(hintsUsed, 0, rowsUsed)
   ) {
-    return null;
-  }
-  if (!solved && rowsUsed !== MAX_ROWS) {
     return null;
   }
   return { type: "roundFinished", solved, rowsUsed, answerTries, hintsUsed };

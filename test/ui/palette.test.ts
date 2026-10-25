@@ -62,6 +62,15 @@ describe("DARK_PALETTE", () => {
     assert.equal(DARK_PALETTE.cardBorder, DARK_PALETTE.key);
   });
 
+  it("uses the owner-approved decode lock colours, measured from the lock-*.jpg images and reusing values they match (#46)", () => {
+    assert.equal(DARK_PALETTE.lockBadge, DARK_PALETTE.key);
+    assert.equal(DARK_PALETTE.lockBadgeBorder, DARK_PALETTE.hintsBorder);
+    assert.equal(DARK_PALETTE.lockMessage, DARK_PALETTE.hintsText);
+    // The design table's absent-key text (owner's choice over the measured #8B919E).
+    assert.equal(DARK_PALETTE.hintsLockedText, "#8A909C");
+    assert.equal(DARK_PALETTE.hintsLockedBorder, "#303239");
+  });
+
   it("needs at least WCAG AA for large text, and only puts the design's blue title there", () => {
     assert.equal(MIN_LARGE_TEXT_CONTRAST, 3);
     assert.deepEqual(LARGE_TEXT_PAIRS, [["right", "background"]]);
@@ -117,6 +126,11 @@ describe("LIGHT_PALETTE", () => {
     hintsOnText: light("byteHex"),
     stripBorder: [light("muted"), OUTLINE, 0.5],
     stripUnknown: light("muted"),
+    lockBadge: light("key"),
+    lockBadgeBorder: OUTLINE,
+    lockMessage: light("muted"),
+    hintsLockedText: light("muted"),
+    hintsLockedBorder: [OUTLINE, light("background"), 0.5],
     cardBorder: OUTLINE,
     icon: light("text"),
     cheatHex: light("byteHex"),

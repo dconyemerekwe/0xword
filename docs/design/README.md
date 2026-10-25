@@ -31,7 +31,7 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Page | `#14161B` | `#E8EAF0` | |
 | Title `0x` | | `#2F6FE4` (owner's choice; the mock-up draws `#7EA8FF`) | |
 | Title `WORD`, headings | | `#E8EAF0` | |
-| Muted text: status line, legend, "Tried:" | | `#9C9FA8` | |
+| Muted text: status line, legend | | `#9C9FA8` | |
 | Icon buttons (`?`, theme) | | `#CCCFD8` | |
 | Hints button, off | page background | `#CCCFD8` | `#3C3F48` |
 | Hints button, on (page 2) | `#1E2A45` | `#7EA8FF`* | `#2F6FE4`* |
@@ -51,6 +51,19 @@ These values were measured from the page images, which are JPEGs, so they're acc
 | Final-answer Submit button (page 3) | `#F0A04B` | `#1A1206` | |
 | Locked keypad (page 3): neutral, right | `#1B1E24`, `#1E3660` | dimmed | |
 | How to play cheatsheet card (page 5) | `#1D2027` | letter `#E8EAF0`, hex `#7EA8FF` | |
+| Locked decode panel (L1, L2) | `#1D2027` | its usual contents at 10% opacity‡ | `#1D2027` |
+| Lock badge (L1, L2) | `#2A2E37`‡ | lock icon `#E8EAF0`‡ | `#3C3F48`‡ (1px) |
+| Lock title "Locked until you crack the hex row" (L1, L2) | | `#E8EAF0`‡ | |
+| Lock message "Get every tile blue to unlock Decode." (L1, L2) | | `#CCCFD8`‡ | |
+| Hints button, locked (L3) | page background | text and lock icon `#8A909C`‡ | `#303239`‡ |
+
+‡ Measured for #46 from `lock-1.jpg` (the panel, badge, title, message and faded contents) and `lock-3.jpg` (the locked Hints button), with a small JPEG decoder run on the images. Its readings match the existing tokens where the draft reuses them (page `#14161B`, panel `#1D2027`, final card `#241B12` exactly; the Hints-off outline `#3C3F48` reads `#3D3F49`). Anti-aliased text reads about 5 units brighter than its colour in every channel (the Hints-off text `#CCCFD8` reads `#D1D4DD`), so text readings are corrected by that amount. Where a reading lands within that error of an existing token, the token is used:
+- **Badge fill** reads `#2A2E37`, which is `key`. **Badge outline** reads `#3C404A`: the Hints-off outline `#3C3F48`.
+- **Lock icon** reads `#EDF0F7` and **title** `#EEF0F6`: page text `#E8EAF0`. **Message** reads `#D0D3DC`: the Hints-off text and icon colour `#CCCFD8`.
+- **Locked Hints text and icon** read `#9096A3` and `#9096A2`, so `#8B919E` corrected. That's within 3 units of the absent-key text in the table above, `#8A909C`, which the owner chose to use instead of a new colour. **Locked Hints outline** reads `#2F3239` (top) and `#31323A` (left): `#303239`, a new token, fainter than the Hints-off outline.
+- **Faded contents:** the heading reads up to `#32343C`, the placeholder `#26282F`, the box `#1C1F26`, the Decode button `#1E2128` with its text `#2A2D34`. Drawing the usual contents (page 1's heading and box, and the disabled Decode button) at 10% opacity over the panel gives `#30343B`, `#2A2F37`, `#1C1F26`, `#1C1F26` and `#2A2F37`, within a few units of each, so the panel's body is faded with `opacity: 0.1` rather than new colours.
+
+**Approved by the owner (#46, 2026-10-24)**, with `#8A909C` for the locked Hints text.
 
 On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wrong spot about `#AE783F`) while the hex is locked.
 
@@ -84,7 +97,7 @@ Pages 1–3 and 5 exist only in dark, so their light values are derived from the
 | `key` | neutral key, DEL, ENTER | `#E3E4E9` | 50% outline `#CFD2D8` over the page |
 | `keyAbsent` | absent key (struck through), disabled Decode | `#F6F6F9` | the page: like the dark theme's, the key sinks into the page |
 | `finalCard` | final-answer card (page 3) | `#FEF6E9` | 10% `wrong` over white |
-| `finalNote` | "Type with your keyboard", Tried on the card | `#5D636C` | `muted` |
+| `finalNote` | "Type with your keyboard" on the card | `#5D636C` | `muted` |
 | `lockedRight` | dimmed right-spot tiles | `#4169C0` | 40% `absent` over `right`: greyed rather than lightened, so white digits stay readable |
 | `lockedWrong` | dimmed wrong-spot tiles and keys | `#BD9149` | 40% `absent` over `wrong` |
 | `lockedKey` | locked neutral key, DEL, ENTER | `#ECEDF1` | 25% outline over the page: fainter than `key` |
@@ -99,6 +112,13 @@ Pages 1–3 and 5 exist only in dark, so their light values are derived from the
 | `icon` | `?`, theme and back arrow buttons | `#15181B` | `text`: page 4 draws `?` and the moon dark |
 | `cheatHex` | cheatsheet hex, `4_` / `5_` | `#2463EA` | the byte tiles' hex |
 | `chipOnAbsent` | the "grey" chip in How to play | `#FFFFFF` | the not-in-word tile text |
+| `lockBadge` | the decode lock's badge fill (#46) | `#E3E4E9` | `key`, as in the dark theme |
+| `lockBadgeBorder` | the decode lock's badge outline (#46) | `#CFD2D8` | the outline, as `hintsBorder` |
+| `lockMessage` | "Get every tile blue to unlock Decode." (#46) | `#5D636C` | `muted`: lighter than the `text` title, as in the dark theme |
+| `hintsLockedText` | locked Hints text and lock icon (#46) | `#5D636C` | `muted`, as the locked keys' digits |
+| `hintsLockedBorder` | locked Hints outline (#46) | `#E3E4E9` | 50% outline over the page (as `key`): fainter than `hintsBorder`, as in dark |
+
+The decode lock's title and icon are `text` in both themes, and the faded panel body is 10% opacity in both. The five #46 rows above are **approved by the owner** (2026-10-24).
 
 Three tokens were added so the light theme can differ where the dark theme reuses a colour. Their dark values are the existing ones, so the dark theme is unchanged: `wrongText` (`#F0A04B`, `wrong`), `emptyBorder` (`#343944`, `absent`) and `cardBorder` (`#2A2E37`, `key`).
 
@@ -108,6 +128,8 @@ Three tokens were added so the light theme can differ where the dark theme reuse
 - **Light** or **Dark**: forced with the theme button in the header, next to `?`. It cycles System → Light → Dark → System. It shows a sun while the dark palette is showing and a moon while the light one is, and its accessible name says what the next press does ("Switch to light theme", "Switch to dark theme", "Follow VS Code's theme"). The choice is kept in VS Code's `globalState`, so it applies in every workspace.
 
 **Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (about 4.1:1). Placeholder text is a hint, not content; raise it with the owner before changing it.
+
+The decode lock's text (#46) meets 4.5:1 in both themes: the title `text` on the panel is 13.55:1 (dark) and 17.82:1 (light), the message 10.47:1 and 6.06:1, and the locked Hints text, though `disabled`, 5.64:1 (`#8A909C`) and 5.62:1 on the page.
 
 The palette unit test checks every text pair the game draws in both palettes (`TEXT_PAIRS` and `DIMMED_KEY_PAIRS` in `src/ui/palette.ts`). All of them meet 4.5:1 except page 3's dimmed keys in the dark theme, which are listed for the owner rather than changed (#26): the locked digit `#6B7180` is 3.42:1 on a neutral key `#1B1E24`, 2.45:1 on a right-spot key `#1E3660` and 3.80:1 on an absent key `#111318`. The keys are `disabled`, so WCAG sets them no minimum. The light theme's dimmed keys all meet 4.5:1.
 
@@ -119,9 +141,10 @@ The palette unit test checks every text pair the game draws in both palettes (`T
 - **Status line** below the header, in muted text:
   - mid-game: "4-letter word · row 4 of 6"
   - forced final answer: a lock icon and "Hex locked · all 6 rows used"
+  - decode step after a solved grid (page L3, #46): "4-letter word · hex solved", with no lock icon
   - solved: "4-letter word · solved"
-  - failed (no page; #24): "4-letter word · not solved"
-- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times while a round is in progress, including at the final answer. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row or the decode box takes a wrong listed word (#38)**, so the player turns it on again when they want help; a rejected row (invalid, not a listed word, or a repeat) or a rejected word (malformed, not listed, or a repeat) leaves it on. Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, plus one if it's turned on after the last scored row (the final answer, or a decode that solves the round), so at most 7. A wrong word doesn't count again: turning Hints back on before the next row is part of the same row. Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or out of rows).
+  - failed (no page; #24, owner's wording on #46): "4-letter word · out of rows" after row 6, or "4-letter word · not decoded" after a wrong word on a solved grid
+- **Hints button** on the right of the status line: a light-bulb icon and "Hints", outlined. It's an on/off toggle (`aria-pressed`), off at the start of each round, and can be pressed any number of times until the hex locks. When on (page 2), it has a blue border and a tinted fill and the hint strip shows. **It switches off by itself when ENTER scores a hex row (#38)**, so the player turns it on again when they want help; a rejected row (invalid, not a listed word, or a repeat) leaves it on. **It locks with the hex at the decode step (#46, page L3):** it switches off, the strip hides, and the button is dimmed and `disabled` for the rest of the round, with a lock icon in place of the bulb and the accessible description "Locked for the rest of the round". Each use is counted for the result card (page 4): one hint for each row Hints was on at any point while it was typed, however often it was pressed, so at most one per row used (6). Nothing shows the count or a limit while the round is in progress. It's hidden once the round is over (solved or not).
 - **Grid:** 6 rows × 4 byte pairs.
   - Each pair is two square tiles, with a wider gap between pairs than within a pair.
   - Digits are in JetBrains Mono, bold.
@@ -147,12 +170,12 @@ The palette unit test checks every text pair the game draws in both palettes (`T
   - the heading "Decode the word"
   - a text box with the placeholder "Type the English word"
   - a blue **Decode** button
-  - underneath, "Tried: BEAT" on the right, with each tried word struck through. The draft's "1 try per row" on the left is left out: word tries are optional and unlimited, though each word can be tried only once (#30).
-- The keypad stays usable while the decode box is open: the player keeps guessing hex and decodes whenever they like, once a row is scored.
+  - the draft's "1 try per row" and "Tried: BEAT" underneath are left out: there's one try per round, and no Tried list (#46).
+- **Since #46 the panel is locked on this screen** (pages L1 and L2, below): a word can be tried only at the decode step, once a row is fully right or row 6 is scored. The keypad stays usable while it's locked.
 
 ## Page 2: Mid-game with hints on
 
-The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Once ENTER scores the row being typed, or the decode box takes a wrong word, the button goes back to off and the strip is hidden (#38).
+The same as page 1 with Hints on: the Hints button is highlighted, and a **hint strip** sits between the grid and the legend. The strip has one dashed-outline cell per byte, each showing the byte's letter once both its digits have been in the right spot, or a muted `?` (here `B ? T E`). Once ENTER scores the row being typed, the button goes back to off and the strip is hidden (#38).
 
 ## Page 3: Forced final answer
 
@@ -161,8 +184,9 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - "Last try" in orange at the top right
   - a text box with the placeholder "Decode the bytes above"
   - an orange **Submit** button
-  - underneath, "Type with your keyboard" on the left and "Tried: BUSY · BEST" (struck through) on the right
+  - underneath, "Type with your keyboard" on the left. The draft's "Tried: BUSY · BEST" on the right is left out: there's one try and no Tried list (#46).
 - The **keypad, DEL and ENTER are dimmed and disabled**. Key colours stay visible.
+- **Hints is locked (#46)**, as on page L3. The same card is the decode step after a solved grid (page L3), where the status line and grid differ.
 
 ## Page 4: Solved (light theme)
 
@@ -178,7 +202,7 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
 - Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
-- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · not solved".
+- **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · out of rows" after row 6, or "4-letter word · not decoded" after a wrong word on a solved grid, which may leave rows unused (#46). Screen readers hear the same, "Out of rows" or "Not decoded", from the message line behind the card.
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 
 ## Page 5: How to play
@@ -188,12 +212,12 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   1. The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.
   2. Guess 8 hex digits that spell a real 4-letter word.
   3. Each digit turns **blue** right spot, **orange** wrong spot, or **grey** not in the word. Each colour word is shown as a chip in that colour.
-  4. You can decode the English word at any time. A wrong guess doesn't use up a row.
-  5. You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.
-  6. After 6 rows, the hex keypad locks and you get one final try to decode the English word.
-  7. Stuck? Turn on **Hints** to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result.
+  4. Get a row with every tile blue to unlock Decode. Then you get one try at the English word: a wrong word ends the round.
+  5. You can't repeat a hex guess in the same round. A repeat doesn't use up a row.
+  6. After 6 rows, the hex keypad locks and Decode unlocks for your one try, even if no row is all blue.
+  7. Stuck? Turn on **Hints** to see the letters you've fully decoded. It switches off after each hex row and locks once Decode unlocks. Every use is counted in your result.
 
-  Rules 4 and 6 are the owner's revised wording (#25) and differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." The game matches them since #30: decoding is optional once a row is scored, and forced after row 6. Rule 5 isn't in the draft: the owner added it with the repeat rule (#34). Rule 7 is the owner's wording for the hint count (#38); the draft reads "Stuck? Turn on **Hints** to see the letters you have fully decoded so far."
+  Rules 4 to 7 differ from the draft, which reads "After each row you get one try to type the English word. Fewer rows is a better score." and "After 6 rows the hex locks and you get one final answer." They were rewritten for the decode step (#46): rule 4 replaces #30's "decode at any time", rule 5 keeps only the hex half of #34's repeat rule, and rule 7 adds the Hints lock to the owner's hint-count wording (#38). The draft's Hints rule reads "Stuck? Turn on **Hints** to see the letters you have fully decoded so far."
 - **ASCII CHEATSHEET:**
   - The line "`4_` is A–O, `5_` is P–Z. The second digit counts up from there."
   - A 5-column grid of cards from `A 41` to `Z 5A`: the letter in bold, the hex in blue JetBrains Mono.
@@ -234,19 +258,21 @@ The owner's draft for #46, which allows a word attempt only once the hex grid is
 
 ### Colours for the decode lock draft
 
-These reuse the existing tokens where the draft visibly does: the panel, the page 3 card and the dimmed keypad. The new elements below **haven't been measured yet**. Measure them from the `lock-*.jpg` images before building, and record them in the [dark theme table](#dark-theme-pages-13-and-5). Don't pick values by eye.
+These reuse the existing tokens where the draft visibly does: the panel, the page 3 card and the dimmed keypad. The new elements were **measured for #46** and are recorded, with how, in the [dark theme table](#dark-theme-pages-13-and-5); their light values are derived the #26 way and listed in [Light values derived for screens drawn only in dark](#light-values-derived-for-screens-drawn-only-in-dark-26). All are **approved by the owner** (2026-10-24).
 
 | Element | Background | Text / foreground | Border |
 |---|---|---|---|
-| Locked decode panel (L1, L2) | as the decode panel `#1D2027` | faded contents: to measure | as the decode panel |
-| Lock badge (L1, L2) | to measure (slightly lighter than the panel) | lock icon: to measure | to measure (thin) |
-| Lock title "Locked until you crack the hex row" | | page text `#E8EAF0` (to confirm) | |
-| Lock message "Get every tile blue to unlock Decode." | | to measure (lighter than the title) | |
-| Hints button, locked (L3) | page background | dimmed icon and text: to measure | to measure |
-| Status line "hex solved" (L3) | | muted text `#9C9FA8` | |
+| Locked decode panel (L1, L2) | as the decode panel `#1D2027` | its usual contents at 10% opacity | as the decode panel |
+| Lock badge (L1, L2) | `#2A2E37` (`key`) | lock icon `#E8EAF0` | `#3C3F48` (1px) |
+| Lock title "Locked until you crack the hex row" | | page text `#E8EAF0` | |
+| Lock message "Get every tile blue to unlock Decode." | | `#CCCFD8` | |
+| Hints button, locked (L3) | page background | icon and text `#8A909C` | `#303239` |
+| Status line "hex solved" (L3) | | the muted status text, as built | |
 | Final-answer card, Submit, locked keypad (L3) | as page 3 | as page 3 | as page 3 |
 
-The light theme has no drawing of these states. Derive the light values the same way as the others drawn only in dark (see [Light values derived for screens drawn only in dark](#light-values-derived-for-screens-drawn-only-in-dark-26)), and get the owner's sign-off.
+**Sizes**, estimated from L1 at a 400px panel: a 38px round badge with a 20px lock icon, then the 14px bold title and the 14px message, centred in the panel with 4px gaps. The panel keeps its size and place: the lock sits in the same grid cell as the panel's body, so the decode row's width, and with it the #33 placeholder cut-offs, is unchanged in every state.
+
+**On page L3 the grid isn't dimmed** and the status line has no lock icon: both are kept for page 3, the decode step after row 6 without a solved row.
 
 ### Accessibility notes for the locked states
 
@@ -268,17 +294,17 @@ The light theme has no drawing of these states. Derive the light values the same
 These apply to every screen and come from CLAUDE.md's Design section:
 - Touch targets are at least 44px, and text contrast is at least 4.5:1 in both themes.
 - Use real `<button>` and `<label>` elements. The icon buttons need accessible names ("How to play", "Switch to light theme").
-- Absent keys and tried words are struck through, so colour is never the only cue.
+- Absent keys are struck through, so colour is never the only cue.
 - Disabled controls on page 3 use `disabled`, not only dimming.
 - Respect `prefers-reduced-motion`.
 
 ## Differences from the rules
 
-Since #30 the game plays as the draft does: the player guesses hex rows freely and decodes the word when they feel ready. The remaining differences:
+Since #46 the player decodes the word only at the decode step: once a scored row has every tile blue, or after row 6. The differences from the draft:
 
-- **No "1 try per row" note.** Word tries are unlimited and optional until all 6 rows are used, so page 1's note is left out.
-- **Decoding opens after the first scored row.** Before row 1 is scored, the decode box and its button are disabled (owner's decision on #30).
-- **The "Tried:" list** holds every wrong listed word, in order, however many there are. Rejected words (malformed, not in the list, or already tried in this round in any letter case, which shows "You've already tried BEAT") are never added and don't count as tries. A hex guess already scored is rejected too ("You've already tried 42 41 52 4E", the guess in uppercase byte pairs) and uses no row (owner's decision on #30).
-- **Messages survive a hide and show.** Whatever error message was showing (a repeat, an invalid row, an invalid word) is still there, in the error style, after the panel is hidden and shown, along with the typed hex digits (owner's decision on #34). Text typed in the decode box isn't kept. Screen-reader-only announcements aren't brought back.
-- **After a wrong word, focus goes back to the page**, where the physical keyboard drives the hex grid, so the player carries on guessing hex. A rejected word keeps its text and focus in the box.
-- **Scored rows show no message.** The tile colours show the result; screen readers hear the row's marks ("Row 2: 4 Right spot, …") from a visually hidden live region (owner's decision on #30).
+- **No "1 try per row" note and no "Tried:" list** (pages 1, 3, L1 to L3). There's one try per round (#46).
+- **The decode panel is locked until the decode step** (pages L1 and L2), from the very start of the round.
+- **A rejected word doesn't count as the try.** A malformed or unlisted word gets a plain-text reason and leaves the round at the decode step. A hex guess already scored is rejected too ("You've already tried 42 41 52 4E", the guess in uppercase byte pairs) and uses no row (owner's decision on #30).
+- **Messages survive a hide and show.** Whatever error message was showing (a repeated or invalid row, an invalid word) is still there, in the error style, after the panel is hidden and shown, along with the typed hex digits (owner's decision on #34). Text typed in the decode box isn't kept. Screen-reader-only announcements aren't brought back.
+- **A rejected word keeps its text and focus in the box.**
+- **Scored rows show no message.** The tile colours show the result; screen readers hear the row's marks ("Row 2: 4 Right spot, …") from a visually hidden live region (owner's decision on #30), followed by the unlock when that row opens the decode step.

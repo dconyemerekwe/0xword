@@ -31,7 +31,7 @@ function round(overrides: Partial<FinishedRound> = {}): FinishedRound {
 
 /** A valid `roundFinished` message, as the webview would send it. */
 function roundFinished(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 2, hintsUsed: 0, ...overrides };
+  return { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 1, hintsUsed: 0, ...overrides };
 }
 
 /** An in-memory `globalState` that counts writes and can be made to fail. */
@@ -408,6 +408,13 @@ describe("the host's message handling with a stats store", () => {
     assert.deepEqual(store.current(), { played: 1, solved: 0, solvedRowsTotal: 0, hintsUsedCount: 0 });
   });
 
+  it("counts a failed round with rows left (a wrong word after a solved grid) as played only (#46)", async () => {
+    const store = new StatsStore(new FakeStorage());
+    handleWebviewMessage(roundFinished({ solved: false, rowsUsed: 3, hintsUsed: 1 }), handlersFor(store));
+    await settle();
+    assert.deepEqual(store.current(), { played: 1, solved: 0, solvedRowsTotal: 0, hintsUsedCount: 1 });
+  });
+
   describe("leaves the stats unchanged for a malformed roundFinished", () => {
     const malformed: readonly (readonly [string, unknown])[] = [
       ["a missing field", { type: "roundFinished", solved: true, rowsUsed: 3, answerTries: 1 }],
@@ -415,13 +422,14 @@ describe("the host's message handling with a stats store", () => {
       ['solved as the string "true"', roundFinished({ solved: "true" })],
       ["hintsUsed as true (the flag sent before #38)", roundFinished({ hintsUsed: true })],
       ["more hints than rowsUsed + 1", roundFinished({ rowsUsed: 3, hintsUsed: 5 })],
+      ["a hint after the last row: rowsUsed + 1 (sent before #46)", roundFinished({ rowsUsed: 3, hintsUsed: 4 })],
       ["rowsUsed: 0", roundFinished({ rowsUsed: 0 })],
       ["rowsUsed above MAX_ROWS", roundFinished({ rowsUsed: MAX_ROWS + 1 })],
       ["a fractional rowsUsed", roundFinished({ rowsUsed: 2.5 })],
       ["a huge rowsUsed", roundFinished({ rowsUsed: 1e9 })],
       ["no answer tries", roundFinished({ answerTries: 0 })],
       ["a fractional answerTries", roundFinished({ answerTries: 1.5 })],
-      ["a failed round with rows left", roundFinished({ solved: false, rowsUsed: 3 })],
+      ["two answer tries (sent before #46)", roundFinished({ answerTries: 2 })],
       ["not an object", "roundFinished"],
     ];
     for (const [name, raw] of malformed) {

@@ -10,9 +10,12 @@ import { restoreSession, type SessionState } from "../src/game/session.ts";
 import { parseWordList } from "../src/game/words.ts";
 import { parseHostMessage, type RoundFinishedMessage, type WebviewMessage } from "../src/protocol.ts";
 import {
+  DECODE_LOCKED_MESSAGE,
+  DECODE_LOCKED_TITLE,
   GameController,
   HEX_DIGITS,
   HINTS_BUTTON,
+  HINTS_LOCKED_NOTE,
   MARK_NAMES,
   NEW_ROUND_BUTTON,
   actionForKey,
@@ -77,6 +80,9 @@ interface Screen {
   readonly statusIcon: SVGSVGElement;
   readonly statusText: HTMLElement;
   readonly hintsButton: HTMLButtonElement;
+  /** The Hints button's light bulb, and the lock that replaces it once Hints locks (page L3). */
+  readonly hintsBulb: SVGSVGElement;
+  readonly hintsLock: SVGSVGElement;
   readonly grid: HTMLElement;
   readonly tiles: readonly (readonly TileElements[])[];
   readonly hintStrip: HTMLElement;
@@ -93,8 +99,8 @@ interface Screen {
   readonly decodeInput: HTMLInputElement;
   readonly decodeButton: HTMLButtonElement;
   readonly tryNote: HTMLElement;
-  readonly tried: HTMLElement;
-  readonly triedList: HTMLElement;
+  /** The lock over the decode panel before the decode step (pages L1 and L2). */
+  readonly decodeLock: HTMLElement;
   readonly message: HTMLElement;
   /** A visually hidden live region: what only screen readers hear (`ScreenView.announcement`). */
   readonly announcement: HTMLElement;
@@ -221,9 +227,13 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
   return node;
 }
 
-/** The padlock before "Hex locked" (page 3). Decoration: the text says it. */
-function lockIcon(): SVGSVGElement {
-  const icon = svgElement("svg", { class: "status-icon", viewBox: "0 0 16 16", "aria-hidden": "true" });
+/**
+ * A padlock: before "Hex locked" (page 3), on the locked Hints button and in
+ * the decode panel's lock badge (pages L1 to L3). Decoration: the text next
+ * to it says it.
+ */
+function lockIcon(className: string): SVGSVGElement {
+  const icon = svgElement("svg", { class: className, viewBox: "0 0 16 16", "aria-hidden": "true" });
   icon.append(
     svgElement("rect", { x: "3", y: "7", width: "10", height: "7.5", rx: "1.5" }),
     svgElement("path", { d: "M5.5 7V5a2.5 2.5 0 0 1 5 0v2" }),
@@ -440,14 +450,21 @@ function buildScreen(app: HTMLElement): Screen {
   header.append(title, headerButtons);
 
   const status = element("p", "status");
-  const statusIcon = lockIcon();
+  const statusIcon = lockIcon("status-icon");
   const statusText = element("span");
   status.append(statusIcon, statusText);
-  // Its pressed state (`aria-pressed`) and whether it shows come from the view.
+  // Its pressed state (`aria-pressed`), whether it shows and whether it's
+  // locked come from the view. Locked, it's described by `hintsLockedNote`,
+  // which is `hidden`: read only as the button's description.
   const hintsButton = actionButton("hints-button", "", { type: "toggleHints" });
-  hintsButton.append(bulbIcon(), element("span", "", HINTS_BUTTON));
+  const hintsBulb = bulbIcon();
+  const hintsLock = lockIcon("hints-icon");
+  hintsButton.append(hintsBulb, hintsLock, element("span", "", HINTS_BUTTON));
+  const hintsLockedNote = element("span", "", HINTS_LOCKED_NOTE);
+  hintsLockedNote.id = "hints-locked-note";
+  hintsLockedNote.hidden = true;
   const statusBar = element("div", "status-bar");
-  statusBar.append(status, hintsButton);
+  statusBar.append(status, hintsButton, hintsLockedNote);
 
   const grid = element("div", "grid");
   const tiles = Array.from({ length: MAX_ROWS }, (_, r) => {
@@ -490,7 +507,9 @@ function buildScreen(app: HTMLElement): Screen {
   }
 
   // The heading, placeholder, button and note come from the view (`panel`):
-  // the decode panel, or the final-answer card once the hex is locked.
+  // the decode panel, or the final-answer card at the decode step. Before
+  // the decode step the panel is locked: its contents are faded and
+  // disabled, under `decodeLock`.
   const decode = element("form", "decode");
   const decodeLabel = element("label", "decode-label");
   decodeLabel.htmlFor = "decode-input";
@@ -507,38 +526,33 @@ function buildScreen(app: HTMLElement): Screen {
   const decodeRow = element("div", "decode-row");
   decodeRow.append(decodeInput, decodeButton);
   const tryNote = element("span");
-  const tried = element("div", "tried");
-  const triedList = element("ul", "tried-list");
-  tried.append(element("span", "", "Tried:"), triedList);
   const foot = element("div", "decode-foot");
-  foot.append(tryNote, tried);
-  decode.append(head, decodeRow, foot);
+  foot.append(tryNote);
+  const body = element("div", "decode-body");
+  body.append(head, decodeRow, foot);
+  // A lock badge and two lines of real text, stacked over the faded body in
+  // the same grid cell, so the panel keeps its size.
+  const decodeLock = element("div", "decode-lock");
+  const lockBadge = element("span", "lock-badge");
+  lockBadge.append(lockIcon("lock-badge-icon"));
+  decodeLock.append(
+    lockBadge,
+    element("p", "lock-title", DECODE_LOCKED_TITLE),
+    element("p", "lock-message", DECODE_LOCKED_MESSAGE),
+  );
+  decode.append(body, decodeLock);
   decode.addEventListener("submit", (event) => {
     event.preventDefault();
-    const triedBefore = controller.view().tried.length;
+    // The one try ends the round, and New round takes focus on the result
+    // card. A rejected word keeps the box's focus and text, so it can be
+    // corrected.
     controller.dispatch({ type: "decode", word: decodeInput.value });
-    // A wrong word was taken as a try and joined Tried: empty the box, and
-    // give the keyboard back to the page, where hex keys drive the grid
-    // (`actionForKey`), so the player carries on guessing hex. At the final
-    // answer a wrong word ends the round, and New round takes focus instead.
-    // A rejected word keeps the box's focus and text, so it can be corrected.
-    // Decode itself may have focus (clicked, or Tab then Enter): it stays
-    // enabled now, so it lets go too, or the next ENTER would press it
-    // instead of entering the hex row.
-    if (controller.view().tried.length !== triedBefore) {
-      decodeInput.value = "";
-      for (const control of [decodeInput, decodeButton]) {
-        if (document.activeElement === control) {
-          control.blur();
-        }
-      }
-    }
   });
 
   const message = element("p", "message");
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
-  // Nothing shows on screen: scored rows and wrong words are read out here.
+  // Nothing shows on screen: scored rows, and the unlock they bring, are read out here.
   const announcement = element("p", "sr-only");
   announcement.setAttribute("role", "status");
   announcement.setAttribute("aria-live", "polite");
@@ -627,6 +641,8 @@ function buildScreen(app: HTMLElement): Screen {
     statusIcon,
     statusText,
     hintsButton,
+    hintsBulb,
+    hintsLock,
     grid,
     tiles,
     hintStrip,
@@ -643,8 +659,7 @@ function buildScreen(app: HTMLElement): Screen {
     decodeInput,
     decodeButton,
     tryNote,
-    tried,
-    triedList,
+    decodeLock,
     message,
     announcement,
     result,
@@ -683,12 +698,22 @@ function render(view: ScreenView): void {
   ui.howToPlay.hidden = !view.howToPlayOpen;
 
   ui.statusText.textContent = view.status;
-  ui.statusIcon.toggleAttribute("hidden", !view.hexLocked);
-  ui.grid.classList.toggle("grid-locked", view.hexLocked);
+  ui.statusIcon.toggleAttribute("hidden", !view.outOfRows);
+  ui.grid.classList.toggle("grid-locked", view.outOfRows);
   ui.keypad.classList.toggle("keypad-locked", view.hexLocked);
 
   ui.hintsButton.hidden = !view.hints.available;
   ui.hintsButton.setAttribute("aria-pressed", String(view.hints.on));
+  // Locked at the decode step: disabled, with a lock for the bulb, and
+  // described as locked for screen readers.
+  ui.hintsButton.disabled = view.hints.locked;
+  ui.hintsBulb.toggleAttribute("hidden", view.hints.locked);
+  ui.hintsLock.toggleAttribute("hidden", !view.hints.locked);
+  if (view.hints.locked) {
+    ui.hintsButton.setAttribute("aria-describedby", "hints-locked-note");
+  } else {
+    ui.hintsButton.removeAttribute("aria-describedby");
+  }
   ui.hintStrip.hidden = !view.hints.on;
   ui.hintCells.forEach((cell, i) => {
     const model = view.hints.cells[i];
@@ -726,22 +751,14 @@ function render(view: ScreenView): void {
     ui.decodeInput.value = "";
   }
   ui.decode.classList.toggle("decode-final", view.hexLocked);
+  ui.decode.classList.toggle("decode-locked", view.decodeLocked);
+  ui.decodeLock.hidden = !view.decodeLocked;
   ui.decodeLabel.textContent = view.panel.heading;
   ui.decodeBadge.textContent = view.panel.badge;
   ui.decodeBadge.hidden = view.panel.badge === "";
   ui.decodeInput.placeholder = view.panel.placeholder;
   ui.decodeButton.textContent = view.panel.button;
   ui.tryNote.textContent = view.panel.note;
-  ui.tried.hidden = view.tried.length === 0;
-  ui.triedList.replaceChildren(
-    ...view.tried.map(({ word, label }) => {
-      const item = element("li");
-      const struck = element("s", "tried-word", word);
-      struck.setAttribute("aria-hidden", "true");
-      item.append(struck, element("span", "sr-only", label));
-      return item;
-    }),
-  );
 
   drawResult(view.result);
 
@@ -773,8 +790,8 @@ function render(view: ScreenView): void {
   }
   drawnMessage = view.message;
 
-  // Each announcement names a new row or a new word (repeats are rejected),
-  // and every other action clears it, so a plain write is always read out.
+  // Each announcement names a new row (repeats are rejected), and every
+  // other action clears it, so a plain write is always read out.
   if (view.announcement !== drawnAnnouncement) {
     ui.announcement.textContent = view.announcement;
   }
@@ -795,11 +812,9 @@ function render(view: ScreenView): void {
       // clicked button, so Enter enters the row instead of reopening it.
       ui.backButton.blur();
     }
-    // The hex is locked and the final answer is due: the decode box takes the
-    // keyboard, unless the Hints button has it, so it can be toggled again
-    // from the keyboard. Before that, decoding is optional and focus stays put.
-    const keyboardFree = document.activeElement !== ui.decodeInput && document.activeElement !== ui.hintsButton;
-    if (!view.howToPlayOpen && view.hexLocked && keyboardFree) {
+    // The decode step: the hex is locked and the decode box takes the
+    // keyboard. Before that the box is locked and focus stays put.
+    if (!view.howToPlayOpen && view.hexLocked && document.activeElement !== ui.decodeInput) {
       ui.decodeInput.focus();
     }
   }
@@ -828,7 +843,7 @@ function drawResult(result: ScreenView["result"]): void {
   ui.legend.hidden = result !== null;
   ui.decode.hidden = result !== null;
   ui.keypad.hidden = result !== null;
-  // "Solved" and "Out of rows" are still read out, but the card shows the result.
+  // "Solved", "Not decoded" and "Out of rows" are still read out, but the card shows the result.
   ui.message.classList.toggle("sr-only", result !== null);
 
   ui.resultOutcome.textContent = result?.outcome ?? "";

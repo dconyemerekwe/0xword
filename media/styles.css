@@ -63,6 +63,11 @@
   --ox-hints-on-text: #7EA8FF;
   --ox-strip-border: #4A4D55;
   --ox-strip-unknown: #7B808B;
+  --ox-lock-badge: #2A2E37;
+  --ox-lock-badge-border: #3C3F48;
+  --ox-lock-message: #CCCFD8;
+  --ox-hints-locked-text: #8A909C;
+  --ox-hints-locked-border: #303239;
   --ox-byte-tile: #1E2A45;
   --ox-byte-hex: #7EA8FF;
   --ox-card-border: #2A2E37;
@@ -134,6 +139,11 @@ body[data-ox-theme="light"] {
   --ox-hints-on-text: #2463EA;
   --ox-strip-border: #969BA2;
   --ox-strip-unknown: #5D636C;
+  --ox-lock-badge: #E3E4E9;
+  --ox-lock-badge-border: #CFD2D8;
+  --ox-lock-message: #5D636C;
+  --ox-hints-locked-text: #5D636C;
+  --ox-hints-locked-border: #E3E4E9;
   --ox-byte-tile: #EDF3FC;
   --ox-byte-hex: #2463EA;
   --ox-card-border: #CFD2D8;
@@ -310,7 +320,14 @@ body {
   color: var(--ox-hints-on-text);
 }
 
-/* The light bulb: an inline SVG drawn in the button's text colour. */
+/* Locked with the hex (page L3): dimmed, with a lock for the bulb, and disabled. */
+.hints-button:disabled {
+  border-color: var(--ox-hints-locked-border);
+  color: var(--ox-hints-locked-text);
+  cursor: default;
+}
+
+/* The light bulb, or the lock once locked: an inline SVG drawn in the button's text colour. */
 .hints-icon {
   flex: none;
   width: 16px;
@@ -467,15 +484,76 @@ body {
 
 /* Decode panel */
 
+/*
+ * One grid cell holds both the panel's body and, before the decode step, the
+ * lock over it (pages L1 and L2), so the panel keeps its size and place.
+ */
 .decode {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   padding: 12px;
   /* Drawn in the panel colour, so the final card's orange border doesn't shift the layout. */
   border: 2px solid var(--ox-panel);
   border-radius: var(--ox-radius);
   background: var(--ox-panel);
+}
+
+.decode-body {
+  display: flex;
+  flex-direction: column;
+  grid-area: 1 / 1;
+  gap: 8px;
+}
+
+/*
+ * Locked (pages L1 and L2): the body is drawn faded under the lock. 10%
+ * reproduces the faded heading, box and Decode button measured from
+ * lock-1.jpg. Its controls are `disabled` as well.
+ */
+.decode-locked .decode-body {
+  opacity: 0.1;
+}
+
+.decode-lock {
+  display: flex;
+  flex-direction: column;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+}
+
+/* A lock icon in a small round badge, slightly lighter than the panel, with a thin outline. */
+.lock-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ox-lock-badge-border);
+  border-radius: 50%;
+  background: var(--ox-lock-badge);
+  color: var(--ox-text);
+}
+
+.lock-badge-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.lock-title {
+  margin: 0;
+  color: var(--ox-text);
+  font-weight: 700;
+}
+
+.lock-message {
+  margin: 0;
+  color: var(--ox-lock-message);
 }
 
 .decode-head {
@@ -577,32 +655,7 @@ body {
   font-size: 12px;
 }
 
-.tried {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-}
-
-.tried-list {
-  display: contents;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tried-word {
-  font-family: var(--ox-mono);
-  text-decoration: line-through;
-}
-
-/* "Tried: BUSY · BEST": the dot is decoration, so its alt text is empty. */
-.tried-list li + li::before {
-  content: "·" / "";
-  /* The list's 8px gap already sits before each word: pull the dot back 4px to centre it. */
-  margin: 0 4px 0 -4px;
-}
-
-/* The final-answer card (page 3), in place of the decode panel once the hex is locked. */
+/* The final-answer card (pages 3 and L3), in place of the decode panel at the decode step. */
 .decode-final {
   border-color: var(--ox-wrong);
   background: var(--ox-final-card);

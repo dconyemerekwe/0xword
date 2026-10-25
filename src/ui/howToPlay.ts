@@ -48,7 +48,10 @@ export const BACK_TO_GAME = "Back to game";
 export const RULES_HEADING = "Rules";
 export const CHEATSHEET_HEADING = "ASCII cheatsheet";
 
-/** The seven numbered rules: page 5's wording, with the owner's rules 4 to 6 and the hint count in rule 7 (#38). */
+/**
+ * The seven numbered rules: page 5's wording, with the owner's rules 4 to 6
+ * and the hint count in rule 7 (#38), rewritten for the decode step (#46).
+ */
 export const RULES: readonly StyledText[] = [
   [plain(`The hidden word has ${WORD_LENGTH} letters, written as ASCII hex: 2 digits per letter.`)],
   [plain(`Guess ${HEX_LENGTH} hex digits that spell a real ${WORD_LENGTH}-letter word.`)],
@@ -61,16 +64,18 @@ export const RULES: readonly StyledText[] = [
     chip("grey", Mark.Absent),
     plain(" not in the word."),
   ],
-  // Rules 4 to 6 are the owner's, not page 5's. Rule 4 describes the
-  // optional decoding that #30 builds, and rule 5 its repeat rule (#34).
-  [plain("You can decode the English word at any time. A wrong guess doesn't use up a row.")],
-  [plain("You can't repeat a hex guess or an English word in the same round. A repeat doesn't use up a row or a try.")],
-  [plain(`After ${MAX_ROWS} rows, the hex keypad locks and you get one final try to decode the English word.`)],
-  // Rule 7 is the owner's wording for the hint count (#38).
+  // Rules 4 to 6 are the owner's, not page 5's: the decode step (#46), and
+  // the repeat rule for hex rows (#34).
+  [plain("Get a row with every tile blue to unlock Decode. Then you get one try at the English word: a wrong word ends the round.")],
+  [plain("You can't repeat a hex guess in the same round. A repeat doesn't use up a row.")],
+  [plain(`After ${MAX_ROWS} rows, the hex keypad locks and Decode unlocks for your one try, even if no row is all blue.`)],
+  // Rule 7 is the owner's wording for the hint count (#38), and the Hints lock (#46).
   [
     plain("Stuck? Turn on "),
     strong(HINTS_BUTTON),
-    plain(" to see the letters you've fully decoded. It switches off after each hex row, and every use is counted in your result."),
+    plain(
+      " to see the letters you've fully decoded. It switches off after each hex row and locks once Decode unlocks. Every use is counted in your result.",
+    ),
   ],
 ];
 

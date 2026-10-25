@@ -104,8 +104,8 @@ describe("media/styles.css colours", () => {
     assert.match(block(".key-absent"), /text-decoration: line-through;/);
   });
 
-  it("strikes through tried words", () => {
-    assert.match(block(".tried-word"), /text-decoration: line-through;/);
+  it("has no Tried list styles: one try per round (#46)", () => {
+    assert.doesNotMatch(css, /\.tried/);
   });
 });
 
@@ -248,6 +248,54 @@ describe("media/styles.css page 2: the Hints button and strip", () => {
   it("draws known letters in the text colour and ? muted", () => {
     assert.match(block(".hint-cell"), /color: var\(--ox-text\);/);
     assert.match(block(".hint-unknown"), /color: var\(--ox-strip-unknown\);/);
+  });
+});
+
+describe("media/styles.css pages L1 to L3: the decode lock (#46)", () => {
+  it("draws the locked Hints button dimmed, from `disabled`, with no pressed highlight", () => {
+    const locked = block(".hints-button:disabled");
+    assert.match(locked, /border-color: var\(--ox-hints-locked-border\);/);
+    assert.match(locked, /color: var\(--ox-hints-locked-text\);/);
+    assert.match(locked, /cursor: default;/);
+  });
+
+  it("stacks the lock over the panel's body in one grid cell, so the panel keeps its size and place", () => {
+    assert.match(block(".decode"), /display: grid;/);
+    assert.match(block(".decode-body"), /grid-area: 1 \/ 1;/);
+    assert.match(block(".decode-lock"), /grid-area: 1 \/ 1;/);
+    assert.match(block(".decode-lock"), /align-items: center;/);
+    assert.match(block(".decode-lock"), /justify-content: center;/);
+  });
+
+  it("keeps the decode row's padding and border, so the #33 placeholder widths still hold", () => {
+    assert.match(block(".decode"), /padding: 12px;/);
+    assert.match(block(".decode"), /border: 2px solid var\(--ox-panel\);/);
+    assert.match(block(".decode-body"), /gap: 8px;/);
+  });
+
+  it("fades the locked panel's body to the 10% measured from lock-1.jpg", () => {
+    assert.match(block(".decode-locked .decode-body"), /opacity: 0\.1;/);
+  });
+
+  it("draws the lock badge round, with a thin outline, and the lock in the title's colour", () => {
+    const badge = block(".lock-badge");
+    assert.match(badge, /border: 1px solid var\(--ox-lock-badge-border\);/);
+    assert.match(badge, /border-radius: 50%;/);
+    assert.match(badge, /background: var\(--ox-lock-badge\);/);
+    assert.match(badge, /color: var\(--ox-text\);/);
+    assert.match(block(".lock-badge-icon"), /stroke: currentColor;/);
+  });
+
+  it("draws the title bold in the text colour and the message lighter", () => {
+    assert.match(block(".lock-title"), /color: var\(--ox-text\);/);
+    assert.match(block(".lock-title"), /font-weight: 700;/);
+    assert.match(block(".lock-message"), /color: var\(--ox-lock-message\);/);
+  });
+
+  it("adds no transition or animation for the unlock: the page 3 card is the highlight", () => {
+    for (const selector of [".decode", ".decode-body", ".decode-lock", ".decode-locked .decode-body"]) {
+      assert.doesNotMatch(block(selector), /transition|animation/, selector);
+    }
   });
 });
 

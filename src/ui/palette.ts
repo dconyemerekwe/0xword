@@ -31,7 +31,7 @@ export const DARK_PALETTE = {
   // Page 3, while the hex is locked (docs/design/README.md colour table).
   /** The final-answer card's background. Its border, "Last try" and Submit are `wrong`. */
   finalCard: "#241B12",
-  /** "Type with your keyboard" and Tried on the card. Estimated from page 3: the table has no value. */
+  /** "Type with your keyboard" on the card. Estimated from page 3: the table has no value. */
   finalNote: "#D6C8B4",
   /** Right-spot tiles, dimmed. */
   lockedRight: "#2754A8",
@@ -60,6 +60,23 @@ export const DARK_PALETTE = {
    * within the image's JPEG error, so it meets 4.5:1.
    */
   stripUnknown: "#7B808B",
+  // Pages L1 to L3, the decode lock (#46), measured from the lock-*.jpg
+  // images (docs/design/README.md). The lock's title and icon are `text`, and
+  // the faded panel contents are the usual ones at 10% opacity.
+  /** The lock badge's fill: measured #2A2E37, the same as `key`. */
+  lockBadge: "#2A2E37",
+  /** The lock badge's thin outline: measured #3C404A, within the JPEG error of `hintsBorder`. */
+  lockBadgeBorder: "#3C3F48",
+  /** "Get every tile blue to unlock Decode.": measured as `hintsText` measures in the same image. */
+  lockMessage: "#CCCFD8",
+  /**
+   * The locked Hints button's text and lock icon (page L3). Its fill is
+   * `background`. Measured about #8B919E; the owner chose the design table's
+   * absent-key text, #8A909C, instead of a new colour.
+   */
+  hintsLockedText: "#8A909C",
+  /** The locked Hints button's outline (page L3): fainter than `hintsBorder`. */
+  hintsLockedBorder: "#303239",
   // Page 4, the result card. Page 4 is drawn in the light theme, so these are
   // the dark theme's matches for its values, taken from existing dark tokens
   // (no new colours). The card itself is `panel` with a `right` border, and
@@ -142,6 +159,17 @@ export const LIGHT_PALETTE: Readonly<Record<PaletteToken, string>> = {
   stripBorder: "#969BA2",
   /** `muted`. */
   stripUnknown: "#5D636C",
+  // Derived: pages L1 to L3, the decode lock (#46).
+  /** `key`, as in the dark theme. */
+  lockBadge: "#E3E4E9",
+  /** The light outline `#CFD2D8`, as `hintsBorder`. */
+  lockBadgeBorder: "#CFD2D8",
+  /** `muted`: lighter than the `text` title, as in the dark theme. */
+  lockMessage: "#5D636C",
+  /** `muted`, as the locked keys' digits. */
+  hintsLockedText: "#5D636C",
+  /** 50% of `#CFD2D8` over `background` (as `key`): fainter than `hintsBorder`, as in the dark theme. */
+  hintsLockedBorder: "#E3E4E9",
   // Page 4, the result card.
   byteTile: "#EDF3FC",
   byteHex: "#2463EA",
@@ -168,7 +196,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["text", "panel"], // the decode panel and its text box
   ["text", "key"], // unmarked keypad keys, DEL and ENTER
   ["muted", "background"], // status line, legend
-  ["muted", "panel"], // Tried words, placeholder, disabled decode box
+  ["muted", "panel"], // placeholder, disabled decode box
   ["muted", "key"], // disabled unmarked keys
   ["muted", "keyAbsent"], // absent keypad keys, the disabled Decode button
   ["onRight", "right"], // right-spot tiles and keys, the Decode button
@@ -177,13 +205,16 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["wrongText", "background"], // error messages
   ["text", "finalCard"], // the "Final answer" heading
   ["wrongText", "finalCard"], // "Last try"
-  ["finalNote", "finalCard"], // "Type with your keyboard", Tried words
+  ["finalNote", "finalCard"], // "Type with your keyboard"
   ["onRight", "lockedRight"], // dimmed right-spot tiles
   ["onWrong", "lockedWrong"], // dimmed wrong-spot tiles
   // Locked keys: see DIMMED_KEY_PAIRS.
   ["hintsText", "background"], // the Hints button, off
   ["hintsOnText", "hintsOn"], // the Hints button, on
   ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
+  // The decode lock's title is `text` on `panel`: checked above.
+  ["lockMessage", "panel"], // the decode lock's message
+  ["hintsLockedText", "background"], // the locked Hints button (disabled, but checked anyway)
   // The result card's heading and line are `text` and `muted` on `panel`, and
   // the note under it `muted` on `background`: all checked above.
   ["byteHex", "byteTile"], // a result byte tile's hex

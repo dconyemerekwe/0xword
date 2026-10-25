@@ -2,7 +2,7 @@
 
 Puzzles between prompts. A short word game for VS Code's side panel that you can play while your AI agent works.
 
-A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `42 59 54 45`). Guess it in hex, one row at a time, and see which digits are in the right spot, in the wrong spot, or not in the word at all. After each row you get one try to name the word in plain English. Fewer rows means a better score.
+A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `42 59 54 45`). Guess it in hex, one row at a time, and see which digits are in the right spot, in the wrong spot, or not in the word at all. Get a row with every tile blue, or use all 6 rows, to unlock one try at naming the word in plain English. Fewer rows means a better score.
 
 > Status: early development. Not yet published.
 
