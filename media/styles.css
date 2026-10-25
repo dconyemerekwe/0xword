@@ -255,7 +255,7 @@ body {
 }
 
 /*
- * The `?` button, locked at the decode step (#53): greyed out in the locked
+ * Icon buttons when disabled (only `?` is, at the decode step, #53): greyed out in the locked
  * Hints text colour, in the same place and size, with no other icon.
  */
 .icon-button:disabled {
