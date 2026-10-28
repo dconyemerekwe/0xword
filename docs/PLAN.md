@@ -7,7 +7,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 | 0 | Repo setup and packages | Done |
 | 1 | Game engine (pure TypeScript and tests) | Done |
 | 2 | Extension shell | Done (#5; stories #6–#9) |
-| 3 | Game UI, screen by screen | Done (#19; stories #20-#38) |
+| 3 | Game UI, screen by screen | Done (#19; stories #20–#34, #38, #46, #50, #53; bugs #32, #43) |
 | 4 | Hardening and accessibility | Not started |
 | 5 | Packaging | Not started |
 | 6 | Publish | Not started |
@@ -140,10 +140,18 @@ Build each screen from the owner's draft design, [docs/design/0xword-draft-desig
 
 ## Phase 4: Hardening and accessibility
 
-- Message validation: Phase 2 already tests that both sides reject unknown or malformed messages and saved state. Re-audit it once Phase 3 adds `setTheme` and any other messages.
+Phase 3 is finished, so this phase starts from a green `develop` (typecheck clean, 1,567 tests passing). Split it into stories with `/plan-phase 4`.
+
+- Message validation: Phase 2 already tests that both sides reject unknown or malformed messages and saved state. Re-audit it now that Phase 3 has added `setTheme` and the `roundFinished` fields (`answerTries` is always 1 since #46; `hintsUsed` is a count since #38), and the saved-state reader (version 9).
 - Error handling found by QA in Phase 2: catch a rejected `postMessage` for `init` (it's sent with `void` today), and decide what to do if `postMessage` returns false for a webview that's actually listening (later New Round runs would queue until the next reload).
-- Audit the CSP: no inline script, no inline event handlers, nothing loaded from outside.
-- Keyboard-only play and focus order, screen-reader labels (`aria-pressed`, `aria-live` status messages), `prefers-reduced-motion`, and contrast checks in both themes.
+- Audit the CSP: no inline script, no inline event handlers, nothing loaded from outside (fonts are now bundled, #27).
+- Keyboard-only play and focus order, screen-reader labels (`aria-pressed`, `aria-live` status messages), `prefers-reduced-motion`, and contrast checks in both themes. Include the decode step's focus moves (#46) and the disabled `?` at that step (#53).
+- Open items from Phase 3 for the owner to decide, each recorded in [docs/design/README.md](design/README.md) or above, not changed without them:
+  - the dark-theme placeholder `#757578` on `#14161B` is about 4.1:1, under 4.5:1;
+  - page 3's dimmed dark keys are 3.42, 2.45 and 3.80:1 (they're `disabled`, so WCAG sets no minimum);
+  - the light values derived for screens drawn only in dark (#26) are awaiting the owner's confirmation;
+  - the keypad's known limits from #33: below about 366px wide the right-hand keys' focus ring can be cut at the scroll edge, and from about 424px wide the keypad is narrower than the grid, so their edges don't line up.
+- Not in this phase: showing the stats and Copy result (see [Later releases](#later-releases-on-hold)).
 
 ## Phase 5: Packaging
 
