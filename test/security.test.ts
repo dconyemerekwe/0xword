@@ -1,5 +1,9 @@
 // Audit tests for the webview's security rules (CLAUDE.md rules 2, 5 and 6):
 // the policy, the extension-side wiring, and what media/ holds.
+//
+// The per-load nonce and refuse-a-foreign-nonce criteria of #58 are also
+// covered by the createNonce and buildHtml tests in test/webview/html.test.ts;
+// the draw-as-text criterion also by the last suite of test/media/main.test.ts.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -26,7 +30,21 @@ const FORBIDDEN = [
   /new Function\b/,
   /\.on[a-z]+\s*=[^=]/,
   /setAttribute\(\s*["'](style|on[a-z]+)["']/i,
+  /\.style\b/,
+  /cssText/,
+  /srcdoc/i,
+  /createContextualFragment/,
+  /DOMParser/,
+  /insertAdjacentElement/,
 ];
+
+/** Every .ts file under src/, as `src/...` paths: media/main.ts bundles src/game and src/ui. */
+function sourceFiles(): string[] {
+  return readdirSync(fileURLToPath(new URL("src/", root)), { recursive: true, encoding: "utf8" })
+    .map((path) => `src/${path.replaceAll("\\", "/")}`)
+    .filter((path) => path.endsWith(".ts"))
+    .sort();
+}
 
 /** Every file under media/, as `media/...` paths with forward slashes. */
 function mediaFiles(): string[] {
@@ -62,9 +80,20 @@ describe("security audit: the Content Security Policy", () => {
       }),
   );
 
-  it("sets default-src 'none' and exactly the four directives it needs", () => {
+  it("sets default-src 'none' and the script, style, font and img directives", () => {
     assert.deepEqual(directives.get("default-src"), ["'none'"]);
-    assert.deepEqual([...directives.keys()].sort(), ["default-src", "font-src", "img-src", "script-src", "style-src"]);
+    for (const name of ["script-src", "style-src", "font-src", "img-src"]) {
+      assert.ok(directives.has(name), name);
+    }
+  });
+
+  it("lets no other directive allow more than 'none' or the extension's own source", () => {
+    const required = ["default-src", "script-src", "style-src", "font-src", "img-src"];
+    for (const [name, sources] of directives) {
+      if (!required.includes(name)) {
+        assert.ok(sources.every((source) => source === "'none'" || source === CSP_SOURCE), name);
+      }
+    }
   });
 
   it("allows scripts only with the per-load nonce", () => {
@@ -88,13 +117,57 @@ describe("security audit: the Content Security Policy", () => {
 });
 
 describe("security audit: no markup or code built from text", () => {
-  for (const file of ["media/main.ts", "src/webview/html.ts", "src/extension.ts"]) {
-    it(`${file} has no innerHTML, insertAdjacentHTML, inline handler or style attribute set as text`, () => {
+  // The built bundle is gitignored: scanned when a build has made it, skipped before.
+  const bundle = existsSync(new URL("media/dist/main.js", root)) ? ["media/dist/main.js"] : [];
+  for (const file of [...sourceFiles(), "media/main.ts", ...bundle]) {
+    it(`${file} has no innerHTML, insertAdjacentHTML, inline handler, style or script injection`, () => {
       for (const pattern of FORBIDDEN) {
         assert.doesNotMatch(code(file), pattern, file);
       }
     });
   }
+
+  it("scans the source files it should", () => {
+    const files = sourceFiles();
+    for (const file of ["src/extension.ts", "src/webview/html.ts", "src/game/round.ts", "src/ui/game.ts"]) {
+      assert.ok(files.includes(file), file);
+    }
+  });
+
+  it("gives setAttribute a string-literal name everywhere, bar the one in svgElement", () => {
+    const source = code("media/main.ts");
+    const calls = [...source.matchAll(/\.setAttribute\(\s*([^,)]*)/g)].map((match) => (match[1] ?? "").trim());
+    assert.ok(calls.length > 10, "found the setAttribute calls");
+    // The one named exception is `node.setAttribute(name, value)` inside svgElement, pinned below.
+    assert.equal(calls.filter((arg) => arg === "name").length, 1);
+    // The other named exception is the theme attribute, a constant in src/theme.ts.
+    assert.equal(calls.filter((arg) => arg === "THEME_ATTRIBUTE").length, 1);
+    assert.match(code("src/theme.ts"), /export const THEME_ATTRIBUTE = "data-ox-theme"/);
+    for (const arg of calls.filter((arg) => arg !== "name" && arg !== "THEME_ATTRIBUTE")) {
+      assert.match(arg, /^"[a-z-]+"$/, arg);
+    }
+    assert.match(
+      source,
+      /function svgElement[\s\S]*?for \(const \[name, value\] of Object\.entries\(attributes\)\) \{\s*node\.setAttribute\(name, value\);/,
+    );
+  });
+
+  it("calls svgElement only with a literal object of known attribute names, never on*, style or href", () => {
+    const known = new Set(["class", "viewBox", "stroke-linecap", "stroke-linejoin", "aria-hidden", "d", "x", "y", "width", "height", "rx", "cx", "cy", "r"]);
+    const source = code("media/main.ts");
+    const calls = [...source.matchAll(/svgElement\(\s*"[a-z]+",\s*(\{[^}]*\})/g)];
+    assert.ok(calls.length > 10, "found the svgElement calls");
+    // Every call matched the literal form: the definition is the only other `svgElement(`.
+    assert.equal(source.match(/svgElement[<(]/g)?.length, calls.length + 1);
+    for (const [, literal = ""] of calls) {
+      assert.doesNotMatch(literal, /\.\.\.|\[|\$\{/, "no spread or computed names");
+      const keys = [...literal.matchAll(/(?:^\{|,)\s*("[\w-]+"|\w+)\s*:/g)].map((match) => (match[1] ?? "").replaceAll('"', ""));
+      assert.ok(keys.length > 0, literal);
+      for (const key of keys) {
+        assert.ok(known.has(key), key);
+      }
+    }
+  });
 
   it("the HTML builder's output has no inline script, on* handler or style attribute", () => {
     const html = buildHtml({ cspSource: CSP_SOURCE, nonce: createNonce(), scriptUri: "s.js", styleUri: "c.css", theme: "dark" });
@@ -111,6 +184,8 @@ describe("security audit: no markup or code built from text", () => {
 });
 
 describe("security audit: the webview options and each load", () => {
+  // These two tests read src/extension.ts as text on purpose: it imports `vscode`,
+  // which a plain node test can't load, so the exact wiring text is what can be pinned.
   const extension = code("src/extension.ts");
 
   it("limits localResourceRoots to the extension's media/ folder, and nothing else", () => {
