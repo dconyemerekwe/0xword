@@ -30,7 +30,7 @@ const FORBIDDEN = [
 
 /** Every file under media/, as `media/...` paths with forward slashes. */
 function mediaFiles(): string[] {
-  return readdirSync(fileURLToPath(new URL(`${MEDIA_FOLDER}/`, root)), { recursive: true })
+  return readdirSync(fileURLToPath(new URL(`${MEDIA_FOLDER}/`, root)), { recursive: true, encoding: "utf8" })
     .map((path) => `${MEDIA_FOLDER}/${path.replaceAll("\\", "/")}`)
     .filter((path) => statSync(new URL(path, root)).isFile())
     .sort();
