@@ -1374,3 +1374,36 @@ describe("media/main.ts: the theme button (#26), run as the bundled webview scri
     assert.deepEqual(run.posts, [{ type: "ready" }, { type: "setTheme", theme: "light" }]);
   });
 });
+
+describe("media/main.ts: hostile text is drawn as plain text (security rule 2)", () => {
+  const HOSTILE = "<img src=x onerror=alert(1)>";
+
+  it("rejects a hostile typed word with plain message text, making no element and leaving the typed text in the box as a value", () => {
+    const run = runWebview(savedAfter(...guess("BYTE")));
+    const elementsBefore = run.elements.length;
+    const input = byClass(run, "decode-input");
+    input["value"] = HOSTILE;
+    const onSubmit = (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"];
+    assert.ok(onSubmit, "a submit listener");
+    onSubmit({ preventDefault() {} });
+    const message = byClass(run, "message");
+    // The host rejects it as a format error with fixed text, which is set as plain text.
+    assert.equal(message["textContent"], "Type a 4-letter word, A to Z");
+    assert.equal(typeof message["textContent"], "string");
+    // Nothing was parsed into elements: no <img> or any other element appeared.
+    assert.equal(run.elements.length, elementsBefore);
+    assert.equal(run.elements.filter((node) => node["tag"] === "img").length, 0);
+    assert.equal(input["value"], HOSTILE);
+  });
+
+  it("ignores non-hex characters typed on the grid, so they never reach the DOM", () => {
+    const run = runWebview(savedAfter());
+    const before = domText(run);
+    for (const key of HOSTILE) {
+      run.press(key);
+    }
+    // Only the hex digits in the string (b, e, a, 1, ...) can land; none of `<`, `>`, `=` or `(` ever do.
+    assert.doesNotMatch(domText(run), /[<>=(]/);
+    assert.doesNotMatch(before, /[<>=(]/);
+  });
+});
