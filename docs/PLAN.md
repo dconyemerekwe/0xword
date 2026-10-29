@@ -169,8 +169,19 @@ The owner handles accounts and access tokens.
 
 ## Phase 7: Agent integration (later)
 
-- A Claude Code `UserPromptSubmit` hook opens `vscode://<publisher>.<id>/start` to start a round, reusing the `0xword.newRound` command and its queue. A `Stop` hook shows an "agent finished" notice in the panel.
-- The URI handler accepts only fixed paths with no arguments, following the untrusted-input rule.
+The design and the user's setup guide are in [agent-integration.md](agent-integration.md).
+
+- **Signals:** an agent tool's hooks open `vscode://<publisher>.<id>/agent-started` when a prompt is sent and `…/agent-finished` when the agent finishes. The URI handler accepts only those two fixed paths, with no arguments, following the untrusted-input rule. The links carry no data: nothing from the prompt is read or passed on.
+- **Notices (`notify`, the default):** shown straight away and removed when the agent finishes. They never take focus. There are three, each switched on or off by the user: a badge on the activity-bar icon (`WebviewView.badge`), a `0x Round ready` status-bar item (`window.createStatusBarItem`) and a pop-up with Play and Not now (`window.showInformationMessage`). Defaults: badge and status bar on, pop-up off.
+- **Settings** in `contributes.configuration`, read with `workspace.getConfiguration` and applied as soon as they change (`onDidChangeConfiguration`):
+  - `0xword.autoStart.mode`: `off` (ignore the signal without removing the hooks), `notify` (default) or `open` (open the panel)
+  - `0xword.notify.badge`, `0xword.notify.statusBar`, `0xword.notify.popup`
+  - `0xword.autoStart.delaySeconds`: `open` mode only; the panel opens only if the agent is still working after this many seconds, so quick prompts never open it
+  - VS Code saves them in the user's settings, so a choice lasts until changed, and they can be set per workspace. Any in-panel toggle writes the same settings rather than keeping its own copy. `globalState` stays for stats and the saved round.
+- **Rounds:** a signal never interrupts or resets a round in progress. In `open` mode a round starts through the `0xword.newRound` command and its queue. If the agent finishes mid-round, the panel says so and the round carries on. An unfinished round carries over to the next prompt.
+- **Hooks stay the user's:** the extension never edits an agent tool's config files (security rule 8). The user adds the hooks from the setup guide. A **0xWORD: Copy agent hook setup** command copies the snippet for the chosen tool to the clipboard.
+- **Setup guide** for Claude Code, GitHub Copilot (VS Code agent hooks and Copilot CLI), Cursor and Codex, with the README linking to it. Each tool's hook format and events are checked against its current docs when this phase starts.
+- **To check first:** whether `code --open-url` brings VS Code to the front (which would undo `notify`), and which window gets the signal when several are open.
 
 ## Later releases: on hold
 
