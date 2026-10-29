@@ -22,7 +22,7 @@ Built on its own `feature/ci` branch and merged into `develop` before the Phase 
 - **Locked down:** only GitHub's own actions (`actions/checkout`, `actions/setup-node`, `actions/upload-artifact`), each pinned to a full commit SHA rather than a tag. `permissions: contents: read`. No secrets in the workflow.
 - **Secret scanning:** the repo is private for now, so rely on the local gitleaks pre-commit hook plus vsce's own secret check when packaging. Before publishing, make the repo public (SECURITY.md's private vulnerability reporting needs that) and turn on GitHub secret scanning with push protection, which is free for public repos. A gitleaks step in CI would add a new tool and needs the owner's approval first.
 - **Dependabot (security updates only):** `.github/dependabot.yml` watches npm and the pinned GitHub Actions. When a known vulnerability affects one, Dependabot opens a PR into `develop` that bumps it to the lowest fixed version. Routine version-bump PRs are off (`open-pull-requests-limit: 0`). Dependabot never merges: CI runs on its PR and the owner reviews and merges. Alerts are under Security → Dependabot. `develop` is the default branch, so these PRs target it.
-- **No publishing from CI.** The owner publishes by hand (Phase 6), so no Marketplace or Open VSX tokens are stored in GitHub.
+- **Releases (Phases 5 and 6):** a separate `release.yml` runs only when the owner pushes a `v*` tag on `main`. It checks the tag against `package.json`, runs all of `ci.yml` through `workflow_call`, waits for the owner's approval, then publishes the `.vsix` CI built and tested, and creates a GitHub Release. Merges never publish. See [release-pipeline.md](release-pipeline.md).
 - **Branch protection** on `develop` and `main`: changes go in only through a PR, the CI check *Typecheck, test, build and package* must pass, and one approving review is required. Nobody pushes directly to either branch, agents included. GitHub doesn't let the owner approve their own PRs (including those agents open under the owner's account), so the owner reviews them and merges with the admin bypass. Dependabot's PRs can be approved normally.
 
 ## Agent workflow
@@ -32,9 +32,9 @@ Claude Code agents in `.claude/agents/` and skills in `.claude/skills/` do the b
 - **Agents:** `developer` builds stories and fixes bugs with unit tests, then pushes its branch. `reviewer` (read-only) checks each branch against the acceptance criteria and the security rules. `qa-engineer` tests each PR and files bugs as issues with a failing test.
 - **`/plan-phase <n>`:** proposes the phase's stories with acceptance criteria. After the owner approves, it creates a phase issue with one story sub-issue per slice. Safe to re-run; it never duplicates a story.
 - **`/story #<issue>`:** takes one story or bug to ready-to-merge: build → review → PR into `develop` → CI → QA → fix `blocks-pr` bugs → hand over. Progress is tracked in a status comment on the issue, so it resumes instead of starting twice.
-- **`/release <patch|minor|major>`:** bumps the version, updates `CHANGELOG.md`, and opens the release PR into `main`. The owner tags and publishes (Phase 6).
+- **`/release <patch|minor|major>`:** bumps the version, updates `CHANGELOG.md`, and opens the release PR into `main`. The owner tags the merge, which starts `release.yml`, and approves the publish (see [release-pipeline.md](release-pipeline.md)).
 - **Labels:** `phase` (phase issue), `phase-<n>`, `story`, `bug`, `in-progress`, `in-review`, `blocks-pr` (bug blocking an open PR), `agent-found` (filed by `qa-engineer`).
-- **Owner's checkpoints:** approve the stories, merge each PR after playtesting the CI-built `.vsix`, and tag and publish releases.
+- **Owner's checkpoints:** approve the stories, merge each PR after playtesting the CI-built `.vsix`, tag releases, and approve each publish.
 
 ## Phase 0: Repo setup and packages
 
@@ -158,12 +158,15 @@ Phase 3 is finished, so this phase starts from a green `develop` (typecheck clea
 - A 128×128 PNG icon, a README with screenshots, and a CHANGELOG.
 - A `.vscodeignore` that leaves out `src/`, tests, `scripts/`, source maps and `.git`.
 - Run `vsce package`, install the `.vsix` locally ("Extensions: Install from VSIX…"), and test it.
+- **Release workflow, first part** (see [release-pipeline.md](release-pipeline.md)): add `on: workflow_call` to `ci.yml`, and a `release.yml` with `verify-tag` → `ci` → `github-release`. A `v*` tag then checks the tag against `package.json` and `main`, runs CI, and creates a GitHub Release with the `.vsix`. It needs no secrets, so it's tried with a test tag before anything is published. It's here because what it tests is packaging.
 
 ## Phase 6: Publish
 
 The owner handles accounts and access tokens.
 
-- Create a VS Code Marketplace publisher and an Azure DevOps access token with the Marketplace (Manage) scope, then run `vsce login` and `vsce publish`.
+- Create a VS Code Marketplace publisher and an Azure DevOps access token with the Marketplace (Manage) scope.
+- **Release workflow, second part** (see [release-pipeline.md](release-pipeline.md)): add the `publish` job to `release.yml`, between `ci` and `github-release`. It waits for the owner's approval, then publishes the `.vsix` CI built and tested, with `vsce publish --packagePath`. The owner provides the token to the workflow. It's here because it needs the publisher account and token from the step above.
+- Then update `/release`'s last steps, which still say to publish by hand.
 - For Open VSX: create an Eclipse account, sign the publisher agreement, then publish with `ovsx`. **Open issue:** `ovsx` isn't on the dev-dependency allowlist (security rule 3), and a bare `npx ovsx` runs an unpinned version. Decide before publishing: add it as a pinned dev dependency, or run `npx ovsx@<exact version>`.
 - Before publishing, check that the extension ID (lowercase and permanent, e.g. `oxword` or `hexword`) is free in both registries.
 
