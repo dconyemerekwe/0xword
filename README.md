@@ -6,6 +6,10 @@ A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `
 
 > Status: early development. Not yet published.
 
+## Play while your agent works
+
+Planned: 0xWORD will be able to show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. It works through hooks you add to your agent tool, with guides for Claude Code, GitHub Copilot, Cursor and Codex. Settings let you choose which notices you see, or turn it off. See [docs/agent-integration.md](docs/agent-integration.md).
+
 ## No telemetry
 
 0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. Your stats (rounds played and solved, average rows, how often you used hints) and the round in progress stay on your machine in VS Code's own storage. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
