@@ -871,20 +871,42 @@ describe("media/styles.css every text and background pair it draws is contrast-c
   ];
   const checked = [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS, ...LARGE_TEXT_PAIRS].map(([text, background]) => `${text}/${background}`);
 
+  /** The custom properties a rule's body sets for `kind`: its text or icon colour, or its fill. */
+  function declared(body: string, kind: "foreground" | "background"): string[] {
+    const names = kind === "foreground" ? "color|stroke|fill" : "background|background-color";
+    const pattern = new RegExp(`(?:^|[\\s;{])(?:${names})\\s*:\\s*var\\((--ox-[a-z-]+)\\)`, "g");
+    return [...body.matchAll(pattern)].map((match) => match[1] ?? "");
+  }
+
   for (const [selector, text, background] of DRAWN) {
     it(`checks ${selector}: ${text} on ${background}`, () => {
       const body = block(selector);
-      assert.ok(
-        body.includes(`var(${property(text)})`) || body.includes(`var(${property(background)})`),
-        `${selector} names neither colour: ${body}`,
-      );
+      // A rule listed twice (the final card's box) draws two texts on one fill.
+      const rows = DRAWN.filter(([other]) => other === selector);
+      const texts = rows.map(([, rowText]) => property(rowText));
+      const backgrounds = rows.map(([, , rowBackground]) => property(rowBackground));
+      const foregrounds = declared(body, "foreground");
+      const fills = declared(body, "background");
+      for (const colour of foregrounds) {
+        assert.ok(texts.includes(colour), `${selector} draws in ${colour}, not ${texts.join(" or ")}`);
+      }
+      for (const fill of fills) {
+        assert.ok(backgrounds.includes(fill), `${selector} fills with ${fill}, not ${backgrounds.join(" or ")}`);
+      }
+      if (foregrounds.length === 0 && fills.length === 0) {
+        // Both colours come from the rules behind it: it must still name one.
+        assert.ok(
+          body.includes(`var(${property(text)})`) || body.includes(`var(${property(background)})`),
+          `${selector} names neither colour: ${body}`,
+        );
+      }
       assert.ok(checked.includes(`${text}/${background}`), `${text}/${background} isn't in TEXT_PAIRS`);
     });
   }
 
   it("draws text and icons only in colours the audit lists", () => {
     const listed = new Set(DRAWN.map(([, text]) => property(text)));
-    const used = [...outsidePalettes.matchAll(/(?:^|[\s;{])(?:color|stroke): var\((--ox-[a-z-]+)\)/g)].map((match) => match[1]);
+    const used = [...outsidePalettes.matchAll(/(?:^|[\s;{])(?:color|stroke|fill)\s*:\s*var\((--ox-[a-z-]+)\)/g)].map((match) => match[1]);
     assert.ok(used.length > 0);
     for (const colour of used) {
       assert.ok(colour && listed.has(colour), `${colour} is drawn as text but not audited`);
@@ -903,7 +925,13 @@ describe("media/styles.css every text and background pair it draws is contrast-c
 describe("media/styles.css colour is never the only cue (#64)", () => {
   it("strikes through not-in-word keys, and keeps them struck through when the hex locks", () => {
     assert.match(block(".key-absent"), /text-decoration: line-through;/);
-    assert.doesNotMatch(block(".keypad-locked .key-absent:disabled"), /text-decoration/);
+    // No other rule that can reach a key (by its classes, as a button, or
+    // any element) sets text-decoration, so none can take the line away.
+    const reachesKeys = /\.key(?![a-z])|\bbutton\b|\*|(?:^|,)\s*:/;
+    const decorating = [...rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selector, body]) => reachesKeys.test(selector ?? "") && /(?:^|[\s;])text-decoration[a-z-]*\s*:/.test(body ?? ""))
+      .map(([, selector]) => selector?.trim());
+    assert.deepEqual(decorating, [".key-absent"]);
   });
 
   it("dashes the disabled decode box's outline", () => {

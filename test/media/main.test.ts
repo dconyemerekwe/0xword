@@ -417,7 +417,7 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
       namespaces.push({ tag, ns });
       return fakeNode({ tag }, focus);
     },
-    createTextNode: () => fakeNode({}, focus),
+    createTextNode: (text: string) => fakeNode({ textContent: text }, focus),
     addEventListener: listen,
     get activeElement() {
       return focus.active;
@@ -2036,6 +2036,17 @@ describe("media/main.ts: colour is never the only cue (#64), run as the bundled 
   });
 
   it("names every legend swatch's mark in words beside it", () => {
-    assert.match(source, /for \(const \[mark, name\] of Object\.entries\(MARK_NAMES\)\) \{[\s\S]*?item\.append\(swatch, document\.createTextNode\(name\)\);/);
+    const run = runWebview(savedAfter());
+    const items = byClass(run, "legend")["children"] as Record<string, unknown>[];
+    assert.equal(items.length, MARKS.length);
+    items.forEach((item, i) => {
+      const mark = MARKS[i];
+      assert.ok(mark);
+      const [swatch, name] = item["children"] as Record<string, unknown>[];
+      assert.equal(swatch?.["className"], `swatch swatch-${mark}`);
+      assert.equal((swatch?.["attributes"] as Record<string, string>)["aria-hidden"], "true");
+      assert.equal(name?.["textContent"], MARK_NAMES[mark]);
+      assert.equal(spokenText(item), MARK_NAMES[mark]);
+    });
   });
 });

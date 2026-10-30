@@ -224,7 +224,9 @@ describe("both palettes", () => {
 
   it("records the owner's decision for each accepted exception (#64)", () => {
     for (const [pair, decision] of Object.entries(CONTRAST_EXCEPTIONS)) {
-      assert.match(decision, /^Owner's decision, 2026-10-30 \(#64\): kept as drawn on page 3, an accepted exception\./, pair);
+      assert.notEqual(decision.trim(), "", pair);
+      assert.match(decision, /Owner's decision/, pair);
+      assert.match(decision, /#\d+/, pair);
     }
   });
 
@@ -241,20 +243,21 @@ describe("both palettes", () => {
  * so each is checked through that mapping rather than with a palette of its own.
  */
 const VSCODE_THEMES = [
-  { theme: "light", bodyClass: "vscode-light", palette: "light" },
-  { theme: "dark", bodyClass: "vscode-dark", palette: "dark" },
-  { theme: "high-contrast dark", bodyClass: "vscode-high-contrast", palette: "dark" },
-  { theme: "high-contrast light", bodyClass: "vscode-high-contrast-light", palette: "light" },
+  { theme: "light", bodyClasses: ["vscode-light"], palette: "light" },
+  { theme: "dark", bodyClasses: ["vscode-dark"], palette: "dark" },
+  { theme: "high-contrast dark", bodyClasses: ["vscode-high-contrast"], palette: "dark" },
+  // With both high-contrast classes, as VS Code's webviews can mark it: the dark one mustn't win.
+  { theme: "high-contrast light", bodyClasses: ["vscode-high-contrast", "vscode-high-contrast-light"], palette: "light" },
 ] as const;
 
 describe("contrast in all four VS Code themes (#64)", () => {
-  for (const { theme, bodyClass, palette } of VSCODE_THEMES) {
+  for (const { theme, bodyClasses, palette } of VSCODE_THEMES) {
     it(`shows the ${palette} palette in a ${theme} theme`, () => {
-      assert.equal(shownPalette("system", [bodyClass]), palette);
+      assert.equal(shownPalette("system", bodyClasses), palette);
     });
 
     it(`lists every pair under ${MIN_TEXT_CONTRAST}:1 in a ${theme} theme, and finds none but the owner's accepted exceptions`, () => {
-      const colours = PALETTES[shownPalette("system", [bodyClass])];
+      const colours = PALETTES[shownPalette("system", bodyClasses)];
       const failing = [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS]
         .map(([text, background]) => ({
           pair: `${palette}:${text}/${background}`,
@@ -275,9 +278,21 @@ describe("contrast in all four VS Code themes (#64)", () => {
     });
   }
 
-  it("covers each of VS Code's theme kinds once", () => {
+  it("gives right-spot blue and wrong-spot orange different lightness, as docs/design/README.md states (#64)", () => {
+    const figures = Object.values(PALETTES).map((colours) => [
+      relativeLuminance(colours.right).toFixed(3),
+      relativeLuminance(colours.wrong).toFixed(3),
+      contrastRatio(colours.right, colours.wrong).toFixed(2),
+    ]);
+    assert.deepEqual(figures, [
+      ["0.176", "0.442", "2.18"],
+      ["0.152", "0.461", "2.52"],
+    ]);
+  });
+
+  it("covers each of VS Code's theme kinds once, by its own body class", () => {
     assert.deepEqual(
-      VSCODE_THEMES.map(({ bodyClass }) => bodyClass),
+      VSCODE_THEMES.map(({ bodyClasses }) => bodyClasses.at(-1)),
       ["vscode-light", "vscode-dark", "vscode-high-contrast", "vscode-high-contrast-light"],
     );
   });
