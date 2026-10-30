@@ -146,7 +146,12 @@ The owner's decisions on the three known gaps (2026-10-30), with no colour chang
 | Page 3's dimmed dark keys (`disabled`) | 3.42, 2.45 and 3.80:1 | Keep as is, an accepted exception: disabled controls are exempt, and the dimming shows they're locked. |
 | Light values derived for screens drawn only in dark (#26) | all meet 4.5:1 | Confirmed: see [the derived table](#light-values-derived-for-screens-drawn-only-in-dark-26). |
 
-**Colour is never the only cue.** Not-in-word keys are struck through, in the locked keypad too. Every marked key and scored tile names its mark in its accessible name ("4, Right spot"), in the dimmed grid too. The legend names each swatch in words. The hint strip shows `?` for a byte not yet decoded. The locked states say so in words or with an icon: the decode panel's lock badge and two lines, "Hex locked · all 6 rows used" with a padlock, and the locked Hints button's padlock and description. The disabled decode box has a dashed outline. Tests in `test/media/styles.test.ts` and `test/media/main.test.ts` check these. Visually, though, right-spot and wrong-spot keys and tiles differ only by colour (blue or orange), with the mark in the accessible name only, and the disabled `?` at the decode step is only greyed out (the owner's design, #53). These are open for the owner; nothing was changed.
+**Colour is never the only cue.** Not-in-word keys are struck through, in the locked keypad too. Every marked key and scored tile names its mark in its accessible name ("4, Right spot"), in the dimmed grid too. The legend names each swatch in words. The hint strip shows `?` for a byte not yet decoded. The locked states say so in words or with an icon: the decode panel's lock badge and two lines, "Hex locked · all 6 rows used" with a padlock, and the locked Hints button's padlock and description. The disabled decode box has a dashed outline. Tests in `test/media/styles.test.ts` and `test/media/main.test.ts` check these.
+
+**Accepted by the owner (2026-10-30, #64), with no design or colour change:** two places show their meaning on screen by colour alone.
+
+- **Right-spot and wrong-spot tiles and keypad keys** are blue or orange, with no other visual mark. The blue and orange differ in lightness as well as hue, though not by much: relative luminance 0.176 for `#2F6FE4` against 0.442 for `#F0A04B` in the dark theme (2.18:1), and 0.152 for `#2463EA` against 0.461 for `#F3A524` in the light theme (2.52:1). The legend names each colour in words, and screen readers say each tile's and key's mark ("4, Right spot").
+- **The disabled `?` at the decode step** is only greyed out (#53's design). It is `disabled`, which is exposed to assistive technology.
 
 ## Shared layout (pages 1–4)
 
