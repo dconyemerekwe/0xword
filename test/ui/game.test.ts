@@ -21,6 +21,7 @@ import {
   HINTS_BUTTON,
   HINTS_LOCKED_NOTE,
   HINT_UNKNOWN,
+  NEW_ROUND_ANNOUNCEMENT,
   NEW_ROUND_BUTTON,
   NOT_DECODED_MESSAGE,
   OUT_OF_ROWS_MESSAGE,
@@ -812,6 +813,55 @@ describe("GameController: new round", () => {
     play(...type("42"), { type: "init" });
     assert.equal(session.roundNumber, 1);
     assert.equal(session.draft, "42");
+  });
+});
+
+describe("GameController: announcing a new round (#62)", () => {
+  const starts: readonly (readonly [string, () => Harness])[] = [
+    ["mid-round", () => harness()],
+    ["the decode step", () => solvedGridAt(2)],
+    ["the result card", () => solvedAfter(1)],
+  ];
+  for (const [name, start] of starts) {
+    it(`announces "New round" to screen readers only, from ${name}`, () => {
+      const view = start().play({ type: "newRound" });
+      assert.equal(NEW_ROUND_ANNOUNCEMENT, NEW_ROUND_BUTTON, "the button's own wording");
+      assert.equal(view.announcement, "New round");
+      assert.equal(view.message, "", "nothing shows on screen");
+    });
+  }
+
+  it("doesn't announce the first round, which init starts as the panel opens", () => {
+    const view = harness().controller.view();
+    assert.equal(view.announcement, "");
+    assert.equal(view.message, "");
+  });
+
+  it("counts New round twice in a row as a new notice each time, so it's read out again", () => {
+    const { play } = harness();
+    const first = play({ type: "newRound" });
+    const second = play({ type: "newRound" });
+    assert.equal(second.announcement, "New round");
+    assert.equal(second.noticeId, first.noticeId + 1);
+  });
+
+  it("clears the announcement on the next move", () => {
+    const { play } = harness();
+    play({ type: "newRound" });
+    assert.equal(play(...type("4")).announcement, "");
+  });
+
+  it("doesn't bring the announcement back after a hide and show", () => {
+    const h = harness();
+    h.play({ type: "newRound" });
+    assert.equal(reloaded(h).controller.view().announcement, "");
+  });
+
+  it("still announces a New Round command that arrives while How to play is open", () => {
+    const { play } = harness();
+    const view = play({ type: "openHowToPlay" }, { type: "newRound" });
+    assert.equal(view.howToPlayOpen, true);
+    assert.equal(view.announcement, "New round");
   });
 });
 
