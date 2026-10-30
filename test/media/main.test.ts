@@ -262,7 +262,8 @@ interface FocusTracker {
  * A stand-in DOM node: any property reads as a value set on it, or else a
  * no-op function. `focus()` and `blur()` move `focus.active` and count the
  * node's `focusCalls`. `append` and `replaceChildren` record its `children`,
- * in document order, for `tabOrder`.
+ * in document order, for `tabOrder`. `texts` records every `textContent`
+ * write, so a test can count what a live region was given.
  */
 function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { active: null }): Record<string, unknown> {
   const attributes: Record<string, string> = {};
@@ -275,6 +276,8 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
     children,
     focusCalls: 0,
     textWrites: 0,
+    // Every value written to `textContent`, in order.
+    texts: [],
     addEventListener: (type: string, listener: (event: unknown) => void) => {
       listeners[type] = listener;
     },
@@ -316,6 +319,7 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
       }
       if (key === "textContent") {
         t["textWrites"] = Number(t["textWrites"] ?? 0) + 1;
+        (t["texts"] as unknown[]).push(value);
       }
       return true;
     },
@@ -1624,5 +1628,297 @@ describe("media/main.ts: hostile text is drawn as plain text (security rule 2)",
     // Only the hex digits in the string (b, e, a, 1, ...) can land; none of `<`, `>`, `=` or `(` ever do.
     assert.doesNotMatch(domText(run), /[<>=(]/);
     assert.doesNotMatch(before, /[<>=(]/);
+  });
+});
+
+/**
+ * What a screen reader reads for `node`: its `aria-label`, or else its own
+ * text and its children's, skipping anything `aria-hidden`.
+ */
+function spokenText(node: Record<string, unknown>): string {
+  const attributes = node["attributes"] as Record<string, string>;
+  if (attributes["aria-hidden"] === "true") {
+    return "";
+  }
+  const label = attributes["aria-label"];
+  if (label) {
+    return label;
+  }
+  const own = typeof node["textContent"] === "string" ? node["textContent"] : "";
+  return own + (node["children"] as Record<string, unknown>[]).map(spokenText).join("");
+}
+
+describe("media/main.ts: screen-reader names and announcements (#62), run as the bundled webview script", () => {
+  const toggle = { type: "toggleHints" } as const;
+  const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => guess(w));
+  const initMessage = JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" });
+  const LOCK_TEXT = ["Locked until you crack the hex row", "Get every tile blue to unlock Decode."];
+
+  /** The message line: rejections, and how the round ended. */
+  function messageRegion(run: WebviewRun): Record<string, unknown> {
+    return byClass(run, "message");
+  }
+
+  /** The visually hidden region: scored rows, the decode step and a new round. */
+  function announcementRegion(run: WebviewRun): Record<string, unknown> {
+    const found = run.elements.filter(
+      (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+    );
+    assert.equal(found.length, 1, "one announcement region");
+    return found[0] ?? {};
+  }
+
+  /** The non-empty texts written to a live region, in order: each is one announcement. */
+  function spoken(region: Record<string, unknown>): string[] {
+    return (region["texts"] as unknown[]).filter((text): text is string => typeof text === "string" && text !== "");
+  }
+
+  /** Types `word`'s hex and presses Enter on the physical keyboard. */
+  function score(run: WebviewRun, word: string): void {
+    for (const key of [...wordToHex(word), "Enter"]) {
+      run.press(key);
+    }
+  }
+
+  /** Types `word` in the decode box and submits the form. */
+  function submitWord(run: WebviewRun, word: string): void {
+    byClass(run, "decode-input")["value"] = word;
+    (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"]?.({ preventDefault() {} });
+  }
+
+  // Criterion 1: names and states.
+
+  const screens: readonly (readonly [string, () => SessionState])[] = [
+    ["mid-game", () => savedAfter(...guess("TEAM"))],
+    ["hints on", () => savedAfter(...guess("TEAM"), toggle)],
+    ["the decode step", () => savedAfter(...guess("TEAM"), ...guess("BYTE"))],
+    ["the result card", () => savedAfter(...guess("BYTE"), decode("BYTE"))],
+  ];
+  for (const [name, saved] of screens) {
+    it(`gives every button an accessible name on ${name}, the disabled ones included`, () => {
+      const run = runWebview(saved());
+      const buttons = run.elements.filter((node) => node["tag"] === "button");
+      // `?`, theme, Hints, 16 keys, DEL, ENTER, Decode, New round, back arrow.
+      assert.equal(buttons.length, 24);
+      for (const button of buttons) {
+        assert.notEqual(spokenText(button).trim(), "", String(button["className"]));
+      }
+    });
+  }
+
+  it("names the disabled `?` at the decode step, and the locked Hints button keeps its name, state and description", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), ...guess("BYTE")));
+    assert.equal(byLabel(run, HOW_TO_PLAY)["disabled"], true);
+    const hints = byClass(run, "hints-button");
+    const attributes = hints["attributes"] as Record<string, string>;
+    assert.equal(hints["disabled"], true);
+    assert.equal(spokenText(hints), "Hints");
+    assert.equal(attributes["aria-pressed"], "false");
+    assert.equal(attributes["aria-describedby"], "hints-locked-note");
+  });
+
+  it("sets aria-pressed on Hints from its state: false, then true when pressed, then false after a scored row", () => {
+    const run = runWebview(savedAfter());
+    const hints = byClass(run, "hints-button");
+    const pressed = (): string | undefined => (hints["attributes"] as Record<string, string>)["aria-pressed"];
+    assert.equal(pressed(), "false");
+    click(hints);
+    assert.equal(pressed(), "true");
+    score(run, "TEAM");
+    assert.equal(pressed(), "false");
+  });
+
+  it("reads the hint strip as one line, with its cells hidden from screen readers", () => {
+    // BITE gets B, T and E fully right in one row; byte 2 (49 against 59) only half.
+    const run = runWebview(savedAfter(...guess("BITE"), toggle));
+    const strip = byClass(run, "hint-strip");
+    assert.equal(strip["hidden"], false);
+    assert.deepEqual(
+      allByClass(run, "hint-cell").map((cell) => cell["textContent"]),
+      ["B", "?", "T", "E"],
+    );
+    assert.equal(spokenText(strip), "Hints: B, unknown, T, E");
+  });
+
+  it("names each scored tile's mark in words, and nothing for an empty tile", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const tiles = allByClass(run, "grid-row").map((row) =>
+      (row["children"] as Record<string, unknown>[]).flatMap((pair) =>
+        (pair["children"] as Record<string, unknown>[]).map((tile) => spokenText(tile)),
+      ),
+    );
+    // TEAM (54 45 41 4D) against BYTE (42 59 54 45).
+    assert.deepEqual(tiles[0], [
+      "5, Wrong spot",
+      "4, Wrong spot",
+      "4, Wrong spot",
+      "5, Wrong spot",
+      "4, Not in word",
+      "1, Not in word",
+      "4, Right spot",
+      "D, Not in word",
+    ]);
+    assert.ok(tiles.slice(1).every((row) => row.every((tile) => tile === "")));
+  });
+
+  it("reads each byte on the result card as one phrase, e.g. 42 is B", () => {
+    const run = runWebview(savedAfter(...guess("BYTE"), decode("BYTE")));
+    assert.deepEqual(allByClass(run, "result-byte").map(spokenText), ["42 is B", "59 is Y", "54 is T", "45 is E"]);
+  });
+
+  it("makes both live regions polite status regions", () => {
+    const run = runWebview(savedAfter());
+    for (const region of [messageRegion(run), announcementRegion(run)]) {
+      assert.equal((region["attributes"] as Record<string, string>)["role"], "status");
+      assert.equal((region["attributes"] as Record<string, string>)["aria-live"], "polite");
+    }
+  });
+
+  // Criterion 2: each event is announced once, through a live region.
+
+  it("announces a scored row, a rejected row, the decode step, a rejected word and a new round once each", () => {
+    const run = runWebview(savedAfter());
+    score(run, "TEAM");
+    score(run, "AAAA");
+    for (let i = 0; i < 8; i++) {
+      run.press("Backspace");
+    }
+    score(run, "BYTE");
+    submitWord(run, "QXZJ");
+    run.send('{"type":"newRound"}');
+    run.press("4");
+    assert.equal(run.frames.length, 0, "no delayed rewrite: nothing was repeated");
+    assert.deepEqual(spoken(announcementRegion(run)), [
+      "Row 1: 1 Right spot, 4 Wrong spot, 3 Not in word",
+      "Row 2: 8 Right spot, 0 Wrong spot, 0 Not in word. Hex solved: decode the word, one try",
+      "New round",
+    ]);
+    assert.deepEqual(spoken(messageRegion(run)), ["AAAA isn't in the word list", "QXZJ isn't in the word list"]);
+  });
+
+  it("announces the decode step after row 6 once, with row 6's marks", () => {
+    const run = runWebview(savedAfter(...firstFive));
+    score(run, "ABLE");
+    const said = spoken(announcementRegion(run));
+    assert.equal(said.length, 1);
+    assert.match(said[0] ?? "", /^Row 6: .*\. Hex locked: one final answer$/);
+    assert.deepEqual(spoken(messageRegion(run)), []);
+  });
+
+  it("announces how the round ended once, behind the result card", () => {
+    const run = runWebview(savedAfter(...guess("BYTE")));
+    submitWord(run, "BYTE");
+    assert.deepEqual(spoken(messageRegion(run)), ["Solved"]);
+  });
+
+  const starts: readonly (readonly [string, (run: WebviewRun) => void])[] = [
+    ["the command", (run) => run.send('{"type":"newRound"}')],
+    ["the New round button", (run) => click(byClass(run, "result-button"))],
+  ];
+  for (const [name, start] of starts) {
+    it(`announces a new round from ${name}, and reads it out again when the command follows at once`, () => {
+      const run = runWebview(savedAfter(...guess("BYTE"), decode("BYTE")));
+      const region = announcementRegion(run);
+      start(run);
+      assert.equal(region["textContent"], "New round");
+      run.send('{"type":"newRound"}');
+      assert.equal(region["textContent"], "", "cleared");
+      run.frames.at(-1)?.();
+      assert.equal(region["textContent"], "New round", "then set again on the next frame");
+      assert.deepEqual(spoken(region), ["New round", "New round"]);
+    });
+  }
+
+  it("drops a queued New round re-announce once the next key clears it", () => {
+    const run = runWebview(savedAfter());
+    const region = announcementRegion(run);
+    run.send('{"type":"newRound"}');
+    run.send('{"type":"newRound"}');
+    const queued = run.frames.at(-1);
+    assert.ok(queued, "a delayed rewrite is queued");
+    run.press("4");
+    queued();
+    assert.equal(region["textContent"], "");
+  });
+
+  it("doesn't announce the first round, which init starts as the panel opens", () => {
+    const run = runWebview(undefined);
+    run.send(initMessage);
+    assert.equal(allByClass(run, "tile tile-empty").length, 48, "the round started");
+    assert.deepEqual(spoken(announcementRegion(run)), []);
+    assert.deepEqual(spoken(messageRegion(run)), []);
+  });
+
+  // Criterion 3: a hide and show doesn't announce a standing message again.
+
+  const shown: readonly (readonly [string, () => SessionState, readonly string[]])[] = [
+    ["a scored row", () => savedAfter(...guess("TEAM")), []],
+    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE")), []],
+    ["the decode step after row 6", () => savedAfter(...firstFive, ...guess("ABLE")), []],
+    ["a new round", () => savedAfter(...guess("TEAM"), { type: "newRound" }), []],
+    ["a rejected row", () => savedAfter(...guess("TEAM"), ...guess("TEAM")), ["You've already tried 54 45 41 4D"]],
+    ["a rejected word", () => savedAfter(...guess("BYTE"), decode("QXZJ")), ["QXZJ isn't in the word list"]],
+    ["a solved round", () => savedAfter(...guess("BYTE"), decode("BYTE")), ["Solved"]],
+    ["a failed round", () => savedAfter(...firstFive, ...guess("ABLE"), decode("ABLE")), ["Out of rows"]],
+  ];
+  for (const [name, saved, standing] of shown) {
+    it(`announces nothing new after a hide and show on ${name}: a standing message is drawn once, as page content`, () => {
+      const run = runWebview(saved());
+      run.send(initMessage);
+      assert.deepEqual(spoken(announcementRegion(run)), [], "screen-reader-only announcements aren't saved");
+      assert.deepEqual(spoken(messageRegion(run)), standing, "written once, by the first render");
+      assert.equal(run.frames.length, 0, "no clear-and-rewrite queued");
+    });
+  }
+
+  // Criterion 4: rows and bytes are described.
+
+  it("groups the grid into rows named Row 1 to Row 6, each of four bytes named Byte 1 to Byte 4", () => {
+    const run = runWebview(savedAfter());
+    const rows = allByClass(run, "grid-row");
+    assert.equal(rows.length, 6);
+    rows.forEach((row, r) => {
+      assert.deepEqual(row["attributes"], { role: "group", "aria-label": `Row ${r + 1}` });
+      const pairs = row["children"] as Record<string, unknown>[];
+      assert.equal(pairs.length, 4);
+      pairs.forEach((pair, b) => {
+        assert.equal(pair["className"], "pair");
+        assert.deepEqual(pair["attributes"], { role: "group", "aria-label": `Byte ${b + 1}` });
+        assert.equal((pair["children"] as unknown[]).length, 2, "two tiles per byte");
+      });
+    });
+  });
+
+  // Criterion 5: the lock message is real text, linked to the disabled box.
+
+  /** The decode box's description: the text of each element its `aria-describedby` names, or null for none. */
+  function description(run: WebviewRun): string[] | null {
+    const ids = (byClass(run, "decode-input")["attributes"] as Record<string, string>)["aria-describedby"];
+    if (ids === undefined) {
+      return null;
+    }
+    return ids.split(" ").map((id) => {
+      const found = run.elements.filter((node) => node["id"] === id);
+      assert.equal(found.length, 1, `one element with id ${id}`);
+      return String(found[0]?.["textContent"]);
+    });
+  }
+
+  it("describes the locked, disabled decode box with the lock's two lines of real text", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    assert.equal(byClass(run, "decode-input")["disabled"], true);
+    assert.deepEqual(description(run), LOCK_TEXT);
+    assert.equal(byClass(run, "lock-title")["tag"], "p");
+    assert.equal(byClass(run, "lock-message")["tag"], "p");
+    assert.equal(byClass(run, "decode-lock")["hidden"], false);
+  });
+
+  it("drops the lock description once the box unlocks, and brings it back with a new round", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    score(run, "BYTE");
+    assert.equal(byClass(run, "decode-input")["disabled"], false);
+    assert.equal(description(run), null);
+    run.send('{"type":"newRound"}');
+    assert.deepEqual(description(run), LOCK_TEXT);
   });
 });

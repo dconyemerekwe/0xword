@@ -131,6 +131,8 @@ let drawnNoticeId = -1;
 let drawnMessage: string | null = null;
 /** Like `drawnMessage`, for the hidden announcement region. */
 let drawnAnnouncement: string | null = null;
+/** Like `messageWrites`, for the hidden announcement region. */
+let announcementWrites = 0;
 /**
  * How to play was opened from the keyboard (Enter or Space on `?`), so
  * closing it gives focus back to `?`. Opened with the mouse, focus goes back
@@ -473,7 +475,10 @@ function buildScreen(app: HTMLElement): Screen {
     row.setAttribute("aria-label", `Row ${r + 1}`);
     const rowTiles: TileElements[] = [];
     for (let pair = 0; pair < WORD_LENGTH; pair++) {
+      // Named like the rows, so a listener knows which byte a tile is in.
       const pairBox = element("div", "pair");
+      pairBox.setAttribute("role", "group");
+      pairBox.setAttribute("aria-label", `Byte ${pair + 1}`);
       for (let half = 0; half < 2; half++) {
         const tile = { box: element("span", "tile"), digit: element("span"), mark: element("span", "sr-only") };
         tile.box.append(tile.digit, tile.mark);
@@ -531,15 +536,16 @@ function buildScreen(app: HTMLElement): Screen {
   const body = element("div", "decode-body");
   body.append(head, decodeRow, foot);
   // A lock badge and two lines of real text, stacked over the faded body in
-  // the same grid cell, so the panel keeps its size.
+  // the same grid cell, so the panel keeps its size. While locked, the two
+  // lines describe the disabled box (`aria-describedby`, set by `render`).
   const decodeLock = element("div", "decode-lock");
   const lockBadge = element("span", "lock-badge");
   lockBadge.append(lockIcon("lock-badge-icon"));
-  decodeLock.append(
-    lockBadge,
-    element("p", "lock-title", DECODE_LOCKED_TITLE),
-    element("p", "lock-message", DECODE_LOCKED_MESSAGE),
-  );
+  const lockTitle = element("p", "lock-title", DECODE_LOCKED_TITLE);
+  lockTitle.id = "decode-lock-title";
+  const lockMessage = element("p", "lock-message", DECODE_LOCKED_MESSAGE);
+  lockMessage.id = "decode-lock-message";
+  decodeLock.append(lockBadge, lockTitle, lockMessage);
   decode.append(body, decodeLock);
   decode.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -552,7 +558,7 @@ function buildScreen(app: HTMLElement): Screen {
   const message = element("p", "message");
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
-  // Nothing shows on screen: scored rows, and the unlock they bring, are read out here.
+  // Nothing shows on screen: scored rows, the unlock they bring, and a new round are read out here.
   const announcement = element("p", "sr-only");
   announcement.setAttribute("role", "status");
   announcement.setAttribute("aria-live", "polite");
@@ -766,6 +772,11 @@ function render(view: ScreenView): void {
   ui.decode.classList.toggle("decode-final", view.hexLocked);
   ui.decode.classList.toggle("decode-locked", view.decodeLocked);
   ui.decodeLock.hidden = !view.decodeLocked;
+  if (view.decodeLocked) {
+    ui.decodeInput.setAttribute("aria-describedby", "decode-lock-title decode-lock-message");
+  } else {
+    ui.decodeInput.removeAttribute("aria-describedby");
+  }
   ui.decodeLabel.textContent = view.panel.heading;
   ui.decodeBadge.textContent = view.panel.badge;
   ui.decodeBadge.hidden = view.panel.badge === "";
@@ -803,9 +814,19 @@ function render(view: ScreenView): void {
   }
   drawnMessage = view.message;
 
-  // Each announcement names a new row (repeats are rejected), and every
-  // other action clears it, so a plain write is always read out.
-  if (view.announcement !== drawnAnnouncement) {
+  // A scored row's announcement names a new row (repeats are rejected), and
+  // every other move clears it, so a plain write is read out. Only New round
+  // twice in a row repeats one: cleared and set again, like the same error.
+  if (freshNotice && view.announcement !== "" && view.announcement === drawnAnnouncement) {
+    const token = ++announcementWrites;
+    ui.announcement.textContent = "";
+    requestAnimationFrame(() => {
+      if (token === announcementWrites) {
+        ui.announcement.textContent = view.announcement;
+      }
+    });
+  } else if (view.announcement !== drawnAnnouncement) {
+    ++announcementWrites;
     ui.announcement.textContent = view.announcement;
   }
   drawnAnnouncement = view.announcement;

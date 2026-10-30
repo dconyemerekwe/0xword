@@ -142,6 +142,13 @@ export const HINT_UNKNOWN = "?";
 /** The result card's only button (page 4). Copy result is on hold (#24). */
 export const NEW_ROUND_BUTTON = "New round";
 
+/**
+ * Read out when a new round replaces the last one, from New round or the New
+ * Round command, since nothing else tells a screen reader the grid was
+ * cleared. The button's own wording (#62).
+ */
+export const NEW_ROUND_ANNOUNCEMENT = NEW_ROUND_BUTTON;
+
 /** Under the result card, in muted text (page 4). */
 export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
 
@@ -266,7 +273,8 @@ export interface ScreenView {
    * Plain text for screen readers only, in a visually hidden live region:
    * the scored row's marks ("Row 2: 4 Right spot, …"), and the decode step
    * when that row opens it. The tile colours show these on screen (owner's
-   * decision, #30).
+   * decision, #30). Also `NEW_ROUND_ANNOUNCEMENT` when a new round replaces
+   * the last one (#62).
    */
   readonly announcement: string;
   /** True if `message` says why an action was rejected. */
@@ -438,7 +446,8 @@ export class GameController {
         return session.ensureRound() ? NO_NOTICE : this.#notice;
       case "newRound":
         session.newRound();
-        return NO_NOTICE;
+        // `init`'s first round isn't announced: the panel has only just opened.
+        return announced(NEW_ROUND_ANNOUNCEMENT);
       case "digit": {
         const digit = action.digit.toUpperCase();
         if (this.#typing() && /^[0-9A-F]$/.test(digit) && session.draft.length < HEX_LENGTH) {
