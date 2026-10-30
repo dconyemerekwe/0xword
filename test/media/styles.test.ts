@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { DECODE_PANEL, FINAL_PANEL } from "../../src/ui/game.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
-import { DARK_PALETTE, LIGHT_PALETTE, isLargeText } from "../../src/ui/palette.ts";
+import { DARK_PALETTE, LIGHT_PALETTE, contrastRatio, isLargeText } from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
 
 const css = readFileSync(new URL(`../../${STYLE_PATH.join("/")}`, import.meta.url), "utf8");
@@ -628,5 +628,127 @@ describe("media/styles.css decode box placeholder (#33)", () => {
         assert.doesNotMatch(body ?? "", /transparent/, selector);
       }
     }
+  });
+});
+
+describe("media/styles.css reduced motion (#63)", () => {
+  const reduced = /@media \(prefers-reduced-motion: reduce\) \{\s*([^{}]*)\{([^{}]*)\}\s*\}/.exec(rules);
+  /** Everything but the reduced-motion rule. */
+  const outsideReduced = rules.replace(reduced?.[0] ?? "", "");
+
+  it("turns off every transition, animation and smooth scroll under reduced motion, on every element and pseudo-element", () => {
+    assert.ok(reduced, "the reduced-motion rule");
+    const selectors = reduced[1]?.split(",").map((selector) => selector.trim());
+    assert.deepEqual(selectors, ["*", "*::before", "*::after"]);
+    for (const declaration of ["transition: none !important;", "animation: none !important;", "scroll-behavior: auto !important;"]) {
+      assert.ok(reduced[2]?.includes(declaration), declaration);
+    }
+  });
+
+  it("moves nothing the reduced-motion rule doesn't turn off: only transitions, animations and scrolling", () => {
+    // Every motion property elsewhere is one the rule resets with a shorthand
+    // or `scroll-behavior`. Motion through anything else would need a new reset.
+    const motion = [...outsideReduced.matchAll(/(?:^|[\s;{])((?:transition|animation|scroll-behavior|offset-path|view-transition-name)[a-z-]*):/g)].map(
+      (match) => match[1] ?? "",
+    );
+    for (const name of motion) {
+      assert.match(name, /^(transition|animation|scroll-behavior)(-[a-z-]+)?$/, name);
+    }
+    assert.doesNotMatch(outsideReduced, /@view-transition/);
+  });
+
+  it("has the tile colour change as its only transition, so the reset is all it needs", () => {
+    const transitions = [...outsideReduced.matchAll(/(?:^|[\s;])(transition[a-z-]*|animation[a-z-]*): ([^;]+);/g)].map((match) => `${match[1]}: ${match[2]}`);
+    assert.deepEqual(transitions, ["transition: background-color 150ms ease-out"]);
+    assert.doesNotMatch(outsideReduced, /@keyframes/);
+  });
+});
+
+/**
+ * A simple selector's specificity as [ids, classes, types]: enough for
+ * compound selectors of types, classes, attributes and pseudo-classes.
+ */
+function specificity(selector: string): readonly [number, number, number] {
+  const ids = selector.match(/#[\w-]+/g)?.length ?? 0;
+  const classes = selector.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):[\w-]+/g)?.length ?? 0;
+  const types = selector.match(/(?:^|[\s>+~])[a-z][\w-]*/g)?.length ?? 0;
+  return [ids, classes, types];
+}
+
+/** Whether specificity `a` beats `b`. */
+function outranks(a: readonly number[], b: readonly number[]): boolean {
+  for (const [index, value] of a.entries()) {
+    const other = b[index] ?? 0;
+    if (value !== other) {
+      return value > other;
+    }
+  }
+  return false;
+}
+
+describe("media/styles.css the focus ring (#63)", () => {
+  /** The rules that set `outline`: their selectors and declarations. */
+  const outlineRules = [...rules.matchAll(/([^{}]+)\{([^{}]*\boutline[^{}]*)\}/g)].map(([, selector, body]) => ({
+    selectors: selector?.split(",").map((part) => part.trim()) ?? [],
+    body: body ?? "",
+  }));
+  const ring = outlineRules[0];
+
+  it("draws one 2px ring in the accent colour, 2px outside every focused control, and no rule removes or changes it", () => {
+    assert.equal(outlineRules.length, 1, "only the ring rule sets outline");
+    assert.deepEqual(ring?.selectors, [":focus-visible", ".decode-input:focus-visible"]);
+    assert.match(ring?.body ?? "", /outline: 2px solid var\(--ox-accent\);/);
+    assert.match(ring?.body ?? "", /outline-offset: 2px;/);
+    assert.doesNotMatch(rules, /outline-(style|width|color)|outline: (none|0)/);
+  });
+
+  it("gives the decode box the same ring, outranking VS Code's default `input:focus` 1px ring", () => {
+    // VS Code's default webview styles, before this stylesheet:
+    // `a:focus, input:focus, select:focus, textarea:focus { outline: 1px solid -webkit-focus-ring-color; outline-offset: -1px; }`
+    const vscodeDefault = specificity("input:focus");
+    assert.deepEqual(vscodeDefault, [0, 1, 1]);
+    assert.ok(!outranks(specificity(":focus-visible"), vscodeDefault), "the plain ring alone would lose to it");
+    assert.ok(outranks(specificity(".decode-input:focus-visible"), vscodeDefault));
+  });
+
+  it("is visible in both palettes, so in both high-contrast themes: at least 3:1 against every surface around a control", () => {
+    // High-contrast dark shows the dark palette and high-contrast light the light one.
+    assert.ok(LIGHT_BODY_CLASSES.includes("vscode-high-contrast-light"));
+    assert.ok(!(LIGHT_BODY_CLASSES as readonly string[]).includes("vscode-high-contrast"));
+    // The ring sits outside the control, so it is seen against what is around it:
+    // the page (header buttons, Hints, keys, DEL, ENTER), the decode panel
+    // (the box and Decode), the final card (the box and Submit) or the result card (New round).
+    for (const palette of [DARK_PALETTE, LIGHT_PALETTE]) {
+      for (const surface of ["background", "panel", "finalCard"] as const) {
+        const ratio = contrastRatio(palette.accent, palette[surface]);
+        assert.ok(ratio >= 3, `${palette.accent} on ${surface} ${palette[surface]}: ${ratio.toFixed(2)}:1`);
+      }
+    }
+  });
+});
+
+describe("media/styles.css a focused key's ring in a 400px panel (#63)", () => {
+  const ringWidth = px(block(":focus-visible,\n.decode-input:focus-visible"), "outline-offset") + 2;
+  const padding = px(block("body"), "padding");
+  const keyGap = px(block(".keypad"), "gap");
+
+  it("fits the keypad in the 400px panel's column, with or without the scrollbar, so no key reaches the edge", () => {
+    const column = 400 - 2 * padding;
+    assert.equal(4 * px(root, "--ox-key-width") + 3 * keyGap, column);
+    // VS Code's 10px scrollbar narrows the column, and the keys shrink to fit it.
+    assert.equal(4 * px(root, "--ox-key-min-width") + 3 * keyGap, column - 10);
+  });
+
+  it("draws the ring within the body's padding at the panel's edges and within the gap between keys", () => {
+    assert.equal(ringWidth, 4);
+    assert.ok(ringWidth <= padding, `a ${ringWidth}px ring in ${padding}px of padding`);
+    assert.ok(ringWidth < keyGap, `a ${ringWidth}px ring in a ${keyGap}px gap`);
+  });
+
+  it("lets nothing clip a ring: no overflow, clipping or paint containment but the screen-reader text and the placeholder", () => {
+    const clipping = [...rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => /(?:^|[\s;])(overflow[a-z-]*|clip-path|clip|contain):/.test(body ?? ""))
+      .map(([, selector]) => selector?.trim());
+    assert.deepEqual(clipping, [".sr-only", ".decode-input::placeholder"]);
   });
 });

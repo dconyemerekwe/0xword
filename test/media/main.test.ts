@@ -34,6 +34,18 @@ describe("media/main.ts", () => {
     assert.doesNotMatch(source, /\.on[a-z]+\s*=/);
   });
 
+  it("adds no motion of its own, so reduced motion is the stylesheet's alone (#63)", () => {
+    for (const pattern of [/\.animate\(/, /scrollIntoView/, /\.scroll(To|By)?\(/, /smooth/, /transition/i, /animation(?!Frame)/i, /@keyframes/]) {
+      assert.doesNotMatch(source, pattern);
+    }
+    // Its only frame callbacks re-set a live region's text, so it is read out again.
+    const frames = [...source.matchAll(/requestAnimationFrame\(\(\) => \{([\s\S]*?)\n {4}\}\);/g)].map((match) => match[1] ?? "");
+    assert.equal(frames.length, source.match(/requestAnimationFrame/g)?.length);
+    for (const body of frames) {
+      assert.match(body, /^\s*if \(token === \w+\) \{\s*ui\.(message|announcement)\.textContent = view\.(message|announcement);\s*\}\s*$/);
+    }
+  });
+
   it("wires events with addEventListener", () => {
     assert.match(source, /addEventListener\("click"/);
     assert.match(source, /addEventListener\("keydown"/);
