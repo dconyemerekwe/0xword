@@ -293,6 +293,10 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
       delete attributes[name];
     },
     focus: () => {
+      // A browser never focuses a disabled control.
+      if (target["disabled"] === true) {
+        return;
+      }
       target["focusCalls"] = Number(target["focusCalls"]) + 1;
       focus.active = node;
     },
@@ -410,6 +414,11 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
     HTMLButtonElement: class {
       static [Symbol.hasInstance](value: unknown): boolean {
         return elements.includes(value as Record<string, unknown>) && (value as Record<string, unknown>)["tag"] === "button";
+      }
+    },
+    HTMLInputElement: class {
+      static [Symbol.hasInstance](value: unknown): boolean {
+        return elements.includes(value as Record<string, unknown>) && (value as Record<string, unknown>)["tag"] === "input";
       }
     },
     Element: class {
@@ -1573,14 +1582,16 @@ describe("media/main.ts: keyboard-only play (#61), run as the bundled webview sc
 
   // A hidden panel's webview is thrown away, so showing it again runs the
   // script afresh from the saved state; How to play isn't saved (#25).
-  for (const [name, saved] of screens.slice(0, 5)) {
-    it(`leaves focus on the page or a control that's there after a hide and show on ${name}`, () => {
+  // Where focus lands on a fresh load: the page mid-game, the decode box at
+  // the decode step, New round on the result card.
+  const focusAfterShow: readonly (string | null)[] = [null, null, "decode-input", "decode-input", "result-button"];
+  screens.slice(0, 5).forEach(([name, saved], i) => {
+    const expected = focusAfterShow[i] ?? null;
+    it(`puts focus on ${expected ?? "the page"} after a hide and show on ${name}`, () => {
       const run = runWebview(saved());
-      const order = tabOrder(run);
-      const active = run.focus.active as Record<string, unknown> | null;
-      assert.ok(active === null || order.includes(active), "focus is on the page or an enabled, shown control");
+      assert.equal(run.focus.active, expected === null ? null : byClass(run, expected));
     });
-  }
+  });
 });
 
 describe("media/main.ts: hostile text is drawn as plain text (security rule 2)", () => {
