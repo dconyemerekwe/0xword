@@ -13,7 +13,7 @@ import { Session, type SessionState } from "../../src/game/session.ts";
 import { EMPTY_STATS, toStatsView } from "../../src/stats.ts";
 import { THEMES, THEME_ATTRIBUTE, THEME_BUTTON_LABEL, type Theme } from "../../src/theme.ts";
 import { GameController, type Action } from "../../src/ui/game.ts";
-import { cheatsheet } from "../../src/ui/howToPlay.ts";
+import { HOW_TO_PLAY, cheatsheet } from "../../src/ui/howToPlay.ts";
 import { WORDS } from "../game/fixtures.ts";
 
 /** The source without comments, so they may mention what the code avoids. */
@@ -261,19 +261,28 @@ interface FocusTracker {
 /**
  * A stand-in DOM node: any property reads as a value set on it, or else a
  * no-op function. `focus()` and `blur()` move `focus.active` and count the
- * node's `focusCalls`.
+ * node's `focusCalls`. `append` and `replaceChildren` record its `children`,
+ * in document order, for `tabOrder`.
  */
 function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { active: null }): Record<string, unknown> {
   const attributes: Record<string, string> = {};
   const listeners: Record<string, (event: unknown) => void> = {};
+  const children: unknown[] = [];
   const target: Record<string, unknown> = {
     ...record,
     attributes,
     listeners,
+    children,
     focusCalls: 0,
     textWrites: 0,
     addEventListener: (type: string, listener: (event: unknown) => void) => {
       listeners[type] = listener;
+    },
+    append: (...nodes: unknown[]) => {
+      children.push(...nodes);
+    },
+    replaceChildren: (...nodes: unknown[]) => {
+      children.splice(0, children.length, ...nodes);
     },
     classList: { toggle() {}, add() {}, remove() {} },
     setAttribute: (name: string, value: string) => {
@@ -343,14 +352,16 @@ interface WebviewRun {
   readonly saves: () => number;
   /** The fake `<body>`, whose attributes hold the theme choice. */
   readonly body: Record<string, unknown>;
+  /** The `#app` element the screen is built in. */
+  readonly app: Record<string, unknown>;
   /** The focused element, or null for the page (`<body>`). */
   readonly focus: FocusTracker;
   /** Callbacks waiting for the next animation frame. */
   readonly frames: (() => void)[];
   /** Sends a message from the host, as JSON. */
   send(json: string): void;
-  /** Presses a physical key wherever focus is. */
-  press(key: string): void;
+  /** Presses a physical key wherever focus is. True if the webview blocked its default. */
+  press(key: string, modifiers?: { readonly shiftKey?: boolean }): boolean;
 }
 
 /**
@@ -364,6 +375,7 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
   let saves = 0;
   const focus: FocusTracker = { active: null };
   const body = fakeNode({ tag: "body" }, focus);
+  const app = fakeNode({ tag: "div" }, focus);
   for (const [name, value] of Object.entries(bodyAttributes)) {
     (body["setAttribute"] as (name: string, value: string) => void)(name, value);
   }
@@ -374,7 +386,7 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
   };
   const document = {
     body,
-    getElementById: (id: string) => (id === "app" ? fakeNode({}, focus) : null),
+    getElementById: (id: string) => (id === "app" ? app : null),
     createElement: (tag: string) => {
       const node = fakeNode({ tag }, focus);
       elements.push(node);
@@ -428,20 +440,27 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
     posts,
     saves: () => saves,
     body,
+    app,
     focus,
     frames,
     send: (json) => fire("message", { data: webviewJson.parse(json) }),
-    press: (key) =>
+    press: (key, modifiers = {}) => {
+      let prevented = false;
       fire("keydown", {
         key,
         ctrlKey: false,
         metaKey: false,
         altKey: false,
+        shiftKey: modifiers.shiftKey ?? false,
         isComposing: false,
         // The focused element, or the page's <body> when nothing is focused.
         target: focus.active ?? fakeNode({ tag: "body" }),
-        preventDefault() {},
-      }),
+        preventDefault() {
+          prevented = true;
+        },
+      });
+      return prevented;
+    },
   };
 }
 
@@ -1373,6 +1392,195 @@ describe("media/main.ts: the theme button (#26), run as the bundled webview scri
     assert.equal(forced(run), "light");
     assert.deepEqual(run.posts, [{ type: "ready" }, { type: "setTheme", theme: "light" }]);
   });
+});
+
+/** A control's name in `tabOrder`: its text, else its `aria-label`, else its class. */
+function controlName(node: Record<string, unknown>): string {
+  const text = node["textContent"];
+  const label = (node["attributes"] as Record<string, string>)["aria-label"];
+  return typeof text === "string" && text !== "" ? text : (label ?? String(node["className"]));
+}
+
+/**
+ * The controls Tab visits, in order: every <button> and <input> under #app in
+ * document order, skipping disabled ones and anything inside a hidden
+ * element. The webview sets no `tabindex`, so this is the browser's order,
+ * and Shift+Tab visits it backwards.
+ */
+function tabOrder(run: WebviewRun): Record<string, unknown>[] {
+  const order: Record<string, unknown>[] = [];
+  const visit = (node: Record<string, unknown>): void => {
+    if (node["hidden"] === true) {
+      return;
+    }
+    if (["button", "input"].includes(String(node["tag"])) && node["disabled"] !== true) {
+      order.push(node);
+    }
+    for (const child of node["children"] as Record<string, unknown>[]) {
+      visit(child);
+    }
+  };
+  visit(run.app);
+  return order;
+}
+
+describe("media/main.ts: keyboard-only play (#61), run as the bundled webview script", () => {
+  const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => guess(w));
+  const toggle = { type: "toggleHints" } as const;
+  const theme = THEME_BUTTON_LABEL.system;
+  const midGame = [HOW_TO_PLAY, theme, "hints-button", ..."0123456789ABCDEF", "DEL", "ENTER"];
+  const decodeStep = [theme, "decode-input", "Submit"];
+
+  /** Each screen, its saved state (answer BYTE), how to reach it, and the Tab order there. */
+  const screens: readonly (readonly [string, () => SessionState, (run: WebviewRun) => void, readonly string[]])[] = [
+    ["mid-game", () => savedAfter(...guess("TEAM")), () => {}, midGame],
+    ["hints on", () => savedAfter(...guess("TEAM"), toggle), () => {}, midGame],
+    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE")), () => {}, decodeStep],
+    ["the decode step after row 6", () => savedAfter(...firstFive, ...guess("ABLE")), () => {}, decodeStep],
+    ["the result card", () => savedAfter(...guess("BYTE"), decode("BYTE")), () => {}, [HOW_TO_PLAY, theme, "New round"]],
+    ["How to play", () => savedAfter(...guess("TEAM")), (run) => keyboardClick(byLabel(run, HOW_TO_PLAY)), ["Back to game"]],
+  ];
+
+  /** Types `word`'s hex and presses Enter on the physical keyboard. */
+  function score(run: WebviewRun, word: string): void {
+    for (const key of [...wordToHex(word), "Enter"]) {
+      run.press(key);
+    }
+  }
+
+  /** Types `word` in the decode box and submits the form, as Enter in the box does. */
+  function submitWord(run: WebviewRun, word: string): void {
+    byClass(run, "decode-input")["value"] = word;
+    (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"]?.({ preventDefault() {} });
+  }
+
+  it("sets no tabindex, so Tab follows the document order", () => {
+    assert.doesNotMatch(source, /tabindex|tabIndex/);
+  });
+
+  for (const [name, saved, reach, expected] of screens) {
+    it(`visits every enabled control on ${name} in order with Tab, skipping disabled and hidden ones`, () => {
+      const run = runWebview(saved());
+      reach(run);
+      const order = tabOrder(run);
+      assert.deepEqual(order.map(controlName), expected);
+      // Focus starts on one of them, or on the page.
+      assert.ok(run.focus.active === null || order.includes(run.focus.active as Record<string, unknown>), "focus is on a reachable control");
+    });
+
+    it(`never blocks Tab or Shift+Tab on ${name}, from the page or any control, so focus is never trapped`, () => {
+      const run = runWebview(saved());
+      reach(run);
+      const count = run.elements.length;
+      const before = snapshot(run);
+      for (const control of [null, ...tabOrder(run)]) {
+        if (control) {
+          (control["focus"] as () => void)();
+        } else {
+          run.focus.active = null;
+        }
+        assert.equal(run.press("Tab"), false, controlName(control ?? { attributes: {}, className: "page" }));
+        assert.equal(run.press("Tab", { shiftKey: true }), false);
+      }
+      assert.equal(snapshot(run, count), before, "Tab changed nothing");
+    });
+  }
+
+  it("moves focus to the decode box when ENTER, reached with Tab and pressed from the keyboard, unlocks it", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const digit of wordToHex("BYTE")) {
+      run.press(digit);
+    }
+    const enter = byLabel(run, "ENTER, enter row");
+    keyboardClick(enter);
+    assert.equal(enter["disabled"], true);
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+    assert.deepEqual(tabOrder(run).map(controlName), decodeStep, "the disabled ? is skipped");
+  });
+
+  it("moves focus to the decode box when the physical Enter scores row 6", () => {
+    const run = runWebview(savedAfter(...firstFive));
+    score(run, "ABLE");
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+    assert.equal(byLabel(run, HOW_TO_PLAY)["disabled"], true);
+  });
+
+  it("keeps 0–9, A–F, Backspace and Enter in the decode box at the decode step: the grid doesn't change", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), ...guess("BYTE")));
+    const input = byClass(run, "decode-input");
+    assert.equal(run.focus.active, input);
+    const count = run.elements.length;
+    const before = snapshot(run);
+    for (const key of [..."42bE09", "Backspace", "Enter"]) {
+      // Not blocked: the box types it, or Enter submits the form.
+      assert.equal(run.press(key), false, key);
+    }
+    assert.equal(snapshot(run, count), before, "the grid and the rest of the screen are unchanged");
+    assert.equal(run.focus.active, input);
+    assert.equal(allByClass(run, "tile tile-typed").length, 0);
+  });
+
+  it("changes nothing when hex keys, Backspace or Enter are pressed on the page after the round ends", () => {
+    const run = runWebview(savedAfter(...guess("BYTE"), decode("BYTE")));
+    run.focus.active = null;
+    const count = run.elements.length;
+    const before = snapshot(run);
+    for (const key of [..."42aF", "Backspace", "Enter", "t"]) {
+      run.press(key);
+    }
+    assert.equal(snapshot(run, count), before);
+    assert.equal(run.focus.active, null, "the hidden decode box never takes focus");
+  });
+
+  it("plays a whole round from the keyboard: hex rows, the decode box, then New round", () => {
+    const run = runWebview(savedAfter());
+    score(run, "TEAM");
+    assert.equal(run.focus.active, null, "the page keeps the keyboard between rows");
+    score(run, "BYTE");
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+    submitWord(run, "byte");
+    const newRound = byClass(run, "result-button");
+    assert.equal(byClass(run, "result")["hidden"], false);
+    assert.equal(run.focus.active, newRound, "New round, on the result card, takes focus");
+    keyboardClick(newRound);
+    assert.equal(byClass(run, "result")["hidden"], true);
+    assert.equal(run.focus.active, null, "focus goes back to the page, not the hidden button");
+    for (const digit of wordToHex("TEAM")) {
+      run.press(digit);
+    }
+    assert.equal(allByClass(run, "tile tile-typed").length, 8, "physical keys drive the new round's grid");
+  });
+
+  // Regression tests: the New Round command at the decode step disabled the
+  // focused decode box or Submit but left focus on it, so physical keys
+  // went to a dead control instead of the new round's grid.
+  for (const name of ["decode-input", "decode-button"]) {
+    it(`gives focus back to the page when the New Round command replaces a round at the decode step, from ${name}`, () => {
+      const run = runWebview(savedAfter(...guess("TEAM"), ...guess("BYTE")));
+      const control = byClass(run, name);
+      (control["focus"] as () => void)();
+      run.send('{"type":"newRound"}');
+      assert.equal(control["disabled"], true);
+      assert.equal(run.focus.active, null, "focus isn't left on the disabled control");
+      for (const digit of wordToHex("TEAM")) {
+        run.press(digit);
+      }
+      assert.equal(allByClass(run, "tile tile-typed").length, 8);
+      run.press("Enter");
+      assert.equal(allByClass(run, "tile tile-typed").length, 0, "the physical Enter scored the row");
+    });
+  }
+
+  // A hidden panel's webview is thrown away, so showing it again runs the
+  // script afresh from the saved state; How to play isn't saved (#25).
+  for (const [name, saved] of screens.slice(0, 5)) {
+    it(`leaves focus on the page or a control that's there after a hide and show on ${name}`, () => {
+      const run = runWebview(saved());
+      const order = tabOrder(run);
+      const active = run.focus.active as Record<string, unknown> | null;
+      assert.ok(active === null || order.includes(active), "focus is on the page or an enabled, shown control");
+    });
+  }
 });
 
 describe("media/main.ts: hostile text is drawn as plain text (security rule 2)", () => {

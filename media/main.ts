@@ -754,6 +754,17 @@ function render(view: ScreenView): void {
   if (!view.decodeAvailable) {
     ui.decodeInput.value = "";
   }
+  // A focused control that has just been disabled lets go of focus, so it
+  // goes back to the page, where physical keys drive the grid (#61). The New
+  // Round command at the decode step disables the decode box or Submit under
+  // the player's focus; at the decode step itself, the decode box takes
+  // focus from a locked key, Hints or `?` below.
+  const controls = [ui.howToPlayButton, ui.hintsButton, ...ui.keys, ui.del, ui.enter, ui.decodeInput, ui.decodeButton];
+  for (const control of controls) {
+    if (control.disabled && document.activeElement === control) {
+      control.blur();
+    }
+  }
   ui.decode.classList.toggle("decode-final", view.hexLocked);
   ui.decode.classList.toggle("decode-locked", view.decodeLocked);
   ui.decodeLock.hidden = !view.decodeLocked;
