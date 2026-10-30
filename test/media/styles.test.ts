@@ -6,12 +6,18 @@ import { describe, it } from "node:test";
 import { DECODE_PANEL, FINAL_PANEL } from "../../src/ui/game.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
 import {
+  CONTRAST_EXCEPTIONS,
   DARK_PALETTE,
   DIMMED_KEY_PAIRS,
+  FADED_TEXT,
   LARGE_TEXT_PAIRS,
   LIGHT_PALETTE,
+  MIN_TEXT_CONTRAST,
+  PALETTES,
   TEXT_PAIRS,
   contrastRatio,
+  fadedColour,
+  fadedPairKey,
   isLargeText,
   type PaletteToken,
 } from "../../src/ui/palette.ts";
@@ -974,6 +980,74 @@ describe("media/styles.css every text and background pair it draws is contrast-c
       }
     }
     assert.deepEqual(problems, []);
+  });
+
+  /**
+   * Each rule that fades its contents with `opacity`, and the audited rules
+   * that draw inside it. The locked decode panel's body holds the heading
+   * (`.decode`'s text), the badge (empty while locked), the disabled box with
+   * its placeholder, the disabled Decode button and the note (pages L1 and
+   * L2). test/media/main.test.ts checks the body holds just those.
+   */
+  const FADED_CONTENTS: Readonly<Record<string, readonly string[]>> = {
+    ".decode-locked .decode-body": [
+      ".decode",
+      ".decode-input",
+      ".decode-input::placeholder",
+      ".decode-input:disabled",
+      ".decode-button:disabled",
+      ".decode-foot",
+    ],
+  };
+
+  // Regression test for #76: the audit ignored opacity, so the locked decode
+  // panel's body, faded to 10%, was checked only at full strength.
+  it("checks text faded with opacity at the colours the player sees, or lists it as an owner's exception (#76)", () => {
+    const faded = ALL_RULES.map(({ selector, body }) => ({
+      selector,
+      opacity: Number(/(?:^|[\s;{])opacity\s*:\s*([\d.]+)/.exec(body)?.[1] ?? "1"),
+    })).filter(({ opacity }) => opacity < 1);
+    assert.deepEqual(
+      faded.map(({ selector }) => selector),
+      Object.keys(FADED_CONTENTS),
+    );
+
+    const problems: string[] = [];
+    for (const { selector, opacity } of faded) {
+      assert.equal(opacity, FADED_TEXT.opacity, selector);
+      const drawn = DRAWN.filter(([rule]) => FADED_CONTENTS[selector]?.includes(rule));
+      for (const [rule, text, background] of drawn) {
+        assert.ok(
+          FADED_TEXT.pairs.some(([fadedText, fadedBackground]) => fadedText === text && fadedBackground === background),
+          `${rule}: ${text}/${background} is faded but not in FADED_TEXT`,
+        );
+      }
+      for (const [name, palette] of Object.entries(PALETTES)) {
+        const seen = (token: PaletteToken): string => fadedColour(palette[token], palette[FADED_TEXT.behind], opacity);
+        for (const [text, background] of FADED_TEXT.pairs) {
+          const key = fadedPairKey(name, text, background, opacity);
+          const ratio = contrastRatio(seen(text), seen(background));
+          if (ratio < MIN_TEXT_CONTRAST && !Object.hasOwn(CONTRAST_EXCEPTIONS, key)) {
+            problems.push(`${key} ${ratio.toFixed(2)}:1`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(problems, []);
+  });
+
+  it("lists every audited rule a faded rule holds", () => {
+    for (const contents of Object.values(FADED_CONTENTS)) {
+      for (const rule of contents) {
+        assert.ok(DRAWN.some(([selector]) => selector === rule), rule);
+      }
+    }
+  });
+
+  it("fades nothing another way: no filter, blend mode, colour mixing or opacity in a percentage", () => {
+    for (const { selector, body } of ALL_RULES) {
+      assert.doesNotMatch(body, /(?:^|[\s;{])(?:filter|backdrop-filter|mix-blend-mode)\s*:|color-mix\(|opacity\s*:\s*[\d.]+%/, selector);
+    }
   });
 
   it("finds rules inside @media and @container, and splits selector lists outside brackets", () => {

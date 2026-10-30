@@ -5,6 +5,7 @@ import {
   CONTRAST_EXCEPTIONS,
   DARK_PALETTE,
   DIMMED_KEY_PAIRS,
+  FADED_TEXT,
   LIGHT_PALETTE,
   MIN_TEXT_CONTRAST,
   LARGE_TEXT_PAIRS,
@@ -13,6 +14,8 @@ import {
   TEXT_PAIRS,
   isLargeText,
   contrastRatio,
+  fadedColour,
+  fadedPairKey,
   relativeLuminance,
   type PaletteToken,
 } from "../../src/ui/palette.ts";
@@ -41,6 +44,27 @@ describe("contrastRatio", () => {
   it("rejects anything but #RRGGBB", () => {
     for (const bad of ["#FFF", "FFFFFF", "#GGGGGG", "white", "#FFFFFF00", ""]) {
       assert.throws(() => relativeLuminance(bad), RangeError, bad);
+    }
+  });
+});
+
+describe("fadedColour", () => {
+  it("draws a colour at an opacity over what's behind it, per sRGB channel", () => {
+    assert.equal(fadedColour("#FFFFFF", "#000000", 0.5), "#808080");
+    assert.equal(fadedColour("#E8EAF0", "#1D2027", 0.1), "#31343B");
+    assert.equal(fadedColour("#A3A9B6", "#1D2027", 0.1), "#2A2E35");
+  });
+
+  it("is the colour itself at 1, and what's behind at 0", () => {
+    assert.equal(fadedColour("#2F6FE4", "#14161B", 1), "#2F6FE4");
+    assert.equal(fadedColour("#2F6FE4", "#14161B", 0), "#14161B");
+  });
+
+  it("rejects anything but #RRGGBB, and an opacity outside 0 to 1", () => {
+    assert.throws(() => fadedColour("#FFF", "#000000", 0.5), RangeError);
+    assert.throws(() => fadedColour("#FFFFFF", "black", 0.5), RangeError);
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      assert.throws(() => fadedColour("#FFFFFF", "#000000", bad), RangeError, String(bad));
     }
   });
 });
@@ -186,9 +210,7 @@ describe("both palettes", () => {
   });
 
   for (const [name, palette] of Object.entries(PALETTES)) {
-    for (const [text, background] of [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS]) {
-      const pair = `${name}:${text}/${background}`;
-      const ratio = contrastRatio(palette[text], palette[background]);
+    for (const { pair, ratio } of checkedPairs(name, palette)) {
       if (Object.hasOwn(CONTRAST_EXCEPTIONS, pair)) {
         it(`${pair} is listed as under ${MIN_TEXT_CONTRAST}:1 for the owner (${ratio.toFixed(2)}:1)`, () => {
           assert.ok(ratio < MIN_TEXT_CONTRAST, `${ratio.toFixed(2)}:1 passes now: take it off CONTRAST_EXCEPTIONS`);
@@ -208,10 +230,8 @@ describe("both palettes", () => {
     }
   }
 
-  it("lists only real pairs as under the minimum, and only page 3's dimmed dark keys", () => {
-    const pairs = Object.keys(PALETTES).flatMap((name) =>
-      [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS].map(([text, background]) => `${name}:${text}/${background}`),
-    );
+  it("lists only real pairs as under the minimum: page 3's dimmed dark keys and the faded locked decode panel", () => {
+    const pairs = Object.entries(PALETTES).flatMap(([name, palette]) => checkedPairs(name, palette).map(({ pair }) => pair));
     for (const listed of Object.keys(CONTRAST_EXCEPTIONS)) {
       assert.ok(pairs.includes(listed), listed);
     }
@@ -219,7 +239,21 @@ describe("both palettes", () => {
       "dark:lockedKeyText/lockedKey",
       "dark:lockedKeyText/lockedKeyRight",
       "dark:lockedKeyText/keyAbsent",
+      "dark:text/panel@0.1",
+      "dark:muted/panel@0.1",
+      "dark:muted/keyAbsent@0.1",
+      "light:text/panel@0.1",
+      "light:muted/panel@0.1",
+      "light:muted/keyAbsent@0.1",
     ]);
+  });
+
+  it("records the faded locked decode panel as the owner's decision on #76", () => {
+    for (const [pair, decision] of Object.entries(CONTRAST_EXCEPTIONS)) {
+      if (pair.includes("@")) {
+        assert.match(decision, /Owner's decision, 2026-10-30 \(#76/, pair);
+      }
+    }
   });
 
   it("records the owner's decision for each accepted exception (#64)", () => {
@@ -258,12 +292,7 @@ describe("contrast in all four VS Code themes (#64)", () => {
 
     it(`lists every pair under ${MIN_TEXT_CONTRAST}:1 in a ${theme} theme, and finds none but the owner's accepted exceptions`, () => {
       const colours = PALETTES[shownPalette("system", bodyClasses)];
-      const failing = [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS]
-        .map(([text, background]) => ({
-          pair: `${palette}:${text}/${background}`,
-          ratio: contrastRatio(colours[text], colours[background]),
-        }))
-        .filter(({ ratio }) => ratio < MIN_TEXT_CONTRAST);
+      const failing = checkedPairs(palette, colours).filter(({ ratio }) => ratio < MIN_TEXT_CONTRAST);
       const unexpected = failing.filter(({ pair }) => !Object.hasOwn(CONTRAST_EXCEPTIONS, pair));
       assert.deepEqual(
         unexpected.map(({ pair, ratio }) => `${pair} ${ratio.toFixed(2)}:1`),
@@ -321,6 +350,26 @@ describe("isLargeText", () => {
     assert.equal(isLargeText(20, 600), false);
   });
 });
+
+/**
+ * Every pair the game draws in `colours`, named `name:text/background`,
+ * with its contrast: the full-strength pairs, then the faded ones at the
+ * colours the player sees (`name:text/background@opacity`).
+ */
+function checkedPairs(name: string, colours: Readonly<Record<PaletteToken, string>>): { pair: string; ratio: number }[] {
+  const { opacity, behind, pairs } = FADED_TEXT;
+  const faded = (token: PaletteToken): string => fadedColour(colours[token], colours[behind], opacity);
+  return [
+    ...[...TEXT_PAIRS, ...DIMMED_KEY_PAIRS].map(([text, background]) => ({
+      pair: `${name}:${text}/${background}`,
+      ratio: contrastRatio(colours[text], colours[background]),
+    })),
+    ...pairs.map(([text, background]) => ({
+      pair: fadedPairKey(name, text, background, opacity),
+      ratio: contrastRatio(faded(text), faded(background)),
+    })),
+  ];
+}
 
 /** `share` of `top` over `base`, per sRGB channel, rounded, as `#RRGGBB`. */
 function mix(top: string, base: string, share: number): string {

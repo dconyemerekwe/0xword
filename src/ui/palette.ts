@@ -246,14 +246,67 @@ export const DIMMED_KEY_PAIRS: readonly (readonly [text: PaletteToken, backgroun
   ["lockedKeyText", "keyAbsent"], // not-in-word keys (struck through)
 ];
 
+/**
+ * Text drawn under `opacity`: the locked decode panel's body (pages L1 and
+ * L2, #46), at `opacity` over `behind`, before the decode step. Its heading
+ * is `text`, its placeholder, disabled box and note `muted` on `panel`, and
+ * its disabled Decode button `muted` on `keyAbsent`. The player sees each at
+ * its `fadedColour`, so that is what's checked. media/styles.css sets the
+ * same opacity (a test checks they match, and that nothing else is faded).
+ */
+export const FADED_TEXT = {
+  opacity: 0.1,
+  behind: "panel",
+  pairs: [
+    ["text", "panel"],
+    ["muted", "panel"],
+    ["muted", "keyAbsent"],
+  ],
+} as const satisfies {
+  readonly opacity: number;
+  readonly behind: PaletteToken;
+  readonly pairs: readonly (readonly [text: PaletteToken, background: PaletteToken])[];
+};
+
+/** A faded pair's key in `CONTRAST_EXCEPTIONS`: `palette:text/background@opacity`. */
+export function fadedPairKey(palette: string, text: PaletteToken, background: PaletteToken, opacity: number): string {
+  return `${palette}:${text}/${background}@${opacity}`;
+}
+
+/**
+ * `colour` drawn at `opacity` over `behind`, per sRGB channel, as the
+ * browser composites a faded element: the colour the player sees.
+ */
+export function fadedColour(colour: string, behind: string, opacity: number): string {
+  if (!HEX_COLOUR.test(colour) || !HEX_COLOUR.test(behind)) {
+    throw new RangeError(`Expected #RRGGBB colours, got "${colour}" and "${behind}"`);
+  }
+  if (!(opacity >= 0 && opacity <= 1)) {
+    throw new RangeError(`Expected an opacity from 0 to 1, got ${opacity}`);
+  }
+  const channel = (value: string, start: number): number => Number.parseInt(value.slice(start, start + 2), 16);
+  return `#${[1, 3, 5]
+    .map((start) => Math.round(opacity * channel(colour, start) + (1 - opacity) * channel(behind, start)))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase()}`;
+}
+
 /** Why page 3's dimmed dark keys may stay under the minimum: the owner's decision (#64). */
 const DIMMED_KEYS_DECISION =
   "Owner's decision, 2026-10-30 (#64): kept as drawn on page 3, an accepted exception. " +
   "Disabled controls are exempt, and the dimming shows they're locked.";
 
+/** Why the locked decode panel's faded body may stay under the minimum: the owner's decision (#76). */
+const FADED_DECODE_DECISION =
+  "Owner's decision, 2026-10-30 (#76, design from #46): the locked decode panel's body stays faded to 10%, " +
+  "an accepted exception. It's inactive (its box and button are disabled), and the lock's title and message " +
+  "on top are the readable content, at full contrast.";
+
 /**
  * The owner's accepted exceptions: pairs under `MIN_TEXT_CONTRAST`, as
- * `palette:text/background`, each with the owner's decision. Any other pair
+ * `palette:text/background` (or `fadedPairKey` for faded text, checked at
+ * what the player sees), each with the owner's decision. Any other pair
  * under the minimum fails the tests. They're never changed to pass (CLAUDE.md
  * Design: raise accessibility conflicts with the owner), and a test checks
  * each one really is under the minimum, so the list can't go stale.
@@ -268,6 +321,13 @@ export const CONTRAST_EXCEPTIONS: Readonly<Record<string, string>> = {
   "dark:lockedKeyText/lockedKey": DIMMED_KEYS_DECISION,
   "dark:lockedKeyText/lockedKeyRight": DIMMED_KEYS_DECISION,
   "dark:lockedKeyText/keyAbsent": DIMMED_KEYS_DECISION,
+  // The locked decode panel's body at 10% (#76): 1.14 to 1.31:1.
+  "dark:text/panel@0.1": FADED_DECODE_DECISION,
+  "dark:muted/panel@0.1": FADED_DECODE_DECISION,
+  "dark:muted/keyAbsent@0.1": FADED_DECODE_DECISION,
+  "light:text/panel@0.1": FADED_DECODE_DECISION,
+  "light:muted/panel@0.1": FADED_DECODE_DECISION,
+  "light:muted/keyAbsent@0.1": FADED_DECODE_DECISION,
 };
 
 /**

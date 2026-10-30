@@ -2050,3 +2050,30 @@ describe("media/main.ts: colour is never the only cue (#64), run as the bundled 
     });
   });
 });
+
+describe("media/main.ts: the faded locked decode body (#76), run as the bundled webview script", () => {
+  /** The classes of `node`'s descendants, depth first. */
+  function classesUnder(node: Record<string, unknown>): string[] {
+    return (node["children"] as Record<string, unknown>[]).flatMap((child) => [
+      typeof child["className"] === "string" ? child["className"] : "",
+      ...classesUnder(child),
+    ]);
+  }
+
+  it("holds only the heading, the empty badge, the disabled box and button, and the note, so the contrast audit's faded list is complete", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const body = byClass(run, "decode-body");
+    assert.deepEqual(classesUnder(body).filter((name) => name !== ""), [
+      "decode-head",
+      "decode-label",
+      "decode-badge",
+      "decode-row",
+      "decode-input",
+      "decode-button",
+      "decode-foot",
+    ]);
+    assert.equal(byClass(run, "decode-badge")["textContent"], "");
+    assert.equal(byClass(run, "decode-input")["disabled"], true);
+    assert.equal(byClass(run, "decode-button")["disabled"], true);
+  });
+});
