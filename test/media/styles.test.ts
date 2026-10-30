@@ -633,16 +633,46 @@ describe("media/styles.css decode box placeholder (#33)", () => {
 
 describe("media/styles.css reduced motion (#63)", () => {
   const reduced = /@media \(prefers-reduced-motion: reduce\) \{\s*([^{}]*)\{([^{}]*)\}\s*\}/.exec(rules);
-  /** Everything but the reduced-motion rule. */
-  const outsideReduced = rules.replace(reduced?.[0] ?? "", "");
+  /** VS Code's Reduce Motion setting's rule (#74): its selector list and declarations. */
+  const vscodeReduced = /(?:^|\})\s*([^{}@]*body\.vscode-reduce-motion[^{}]*)\{([^{}]*)\}/.exec(rules);
+  /** Everything but the two reduced-motion rules. */
+  const outsideReduced = rules
+    .replace(reduced?.[0] ?? "", "")
+    .replace(vscodeReduced ? `${vscodeReduced[1]}{${vscodeReduced[2]}}` : "", "");
+  const resets = ["transition: none !important;", "animation: none !important;", "scroll-behavior: auto !important;"];
 
   it("turns off every transition, animation and smooth scroll under reduced motion, on every element and pseudo-element", () => {
     assert.ok(reduced, "the reduced-motion rule");
     const selectors = reduced[1]?.split(",").map((selector) => selector.trim());
     assert.deepEqual(selectors, ["*", "*::before", "*::after"]);
-    for (const declaration of ["transition: none !important;", "animation: none !important;", "scroll-behavior: auto !important;"]) {
+    for (const declaration of resets) {
       assert.ok(reduced[2]?.includes(declaration), declaration);
     }
+  });
+
+  it("turns off every transition and animation when VS Code marks the body `vscode-reduce-motion` (#74)", () => {
+    // VS Code adds this body class when `workbench.reduceMotion` is "on" (or "auto"
+    // with the OS setting), even when the OS's prefers-reduced-motion is off.
+    assert.ok(vscodeReduced, "a rule for body.vscode-reduce-motion");
+    const selectors = vscodeReduced[1]?.split(",").map((selector) => selector.trim());
+    assert.deepEqual(selectors, [
+      "body.vscode-reduce-motion",
+      "body.vscode-reduce-motion *",
+      "body.vscode-reduce-motion *::before",
+      "body.vscode-reduce-motion *::after",
+    ]);
+    for (const declaration of resets) {
+      assert.ok(vscodeReduced[2]?.includes(declaration), declaration);
+    }
+  });
+
+  it("has just these two reduced-motion rules, with the same reset, and nothing else forces a value", () => {
+    assert.equal(rules.match(/prefers-reduced-motion/g)?.length, 1, "one media query");
+    assert.equal(rules.match(/\{[^{}]*\}/g)?.filter((rule) => rule.includes("!important")).length, 3, "the two resets and [hidden]");
+    const declarations = (body: string | undefined): string[] =>
+      (body ?? "").split(";").map((part) => part.trim()).filter(Boolean).sort();
+    assert.deepEqual(declarations(vscodeReduced?.[2]), declarations(reduced?.[2]));
+    assert.doesNotMatch(outsideReduced.replace(/\[hidden\]\s*\{[^}]*\}/, ""), /!important|vscode-reduce-motion/);
   });
 
   it("moves nothing the reduced-motion rule doesn't turn off: only transitions, animations and scrolling", () => {
@@ -702,9 +732,12 @@ describe("media/styles.css the focus ring (#63)", () => {
     assert.doesNotMatch(rules, /outline-(style|width|color)|outline: (none|0)/);
   });
 
-  it("gives the decode box the same ring, outranking VS Code's default `input:focus` 1px ring", () => {
-    // VS Code's default webview styles, before this stylesheet:
-    // `a:focus, input:focus, select:focus, textarea:focus { outline: 1px solid -webkit-focus-ring-color; outline-offset: -1px; }`
+  it("gives the decode box the ring by specificity too, in case VS Code's default `input:focus` ring is ever unlayered", () => {
+    // VS Code's default webview styles, before this stylesheet, include
+    // `a:focus, input:focus, select:focus, textarea:focus { outline: 1px solid -webkit-focus-ring-color; outline-offset: -1px; }`.
+    // Current VS Code puts them in `@layer vscode-default`, so this unlayered
+    // stylesheet wins whatever the specificity; the extra selector only
+    // matters in a build without that layer.
     const vscodeDefault = specificity("input:focus");
     assert.deepEqual(vscodeDefault, [0, 1, 1]);
     assert.ok(!outranks(specificity(":focus-visible"), vscodeDefault), "the plain ring alone would lose to it");
