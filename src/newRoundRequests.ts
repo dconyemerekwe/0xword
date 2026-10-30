@@ -13,7 +13,7 @@
 // - a generation, bumped whenever the webview starts or stops listening
 //
 // A message the webview didn't get (the post resolved false, rejected or
-// threw) is posted again up to NEW_ROUND_RETRIES times per load. A `newRound`
+// threw) is posted again up to POST_RETRIES times per load. A `newRound`
 // is then queued for the next `ready`, and an `init` is dropped. Neither is
 // ever retried forever, and a `newRound` is never sent twice.
 import { deliver, type PostMessage } from "./post.ts";
@@ -24,7 +24,7 @@ import { handleWebviewMessage, type HostHandlers, type HostMessage, type InitMes
  * load of the webview: 2 retries, 3 posts in all. A `newRound` is then queued
  * for the next `ready`; an `init` is dropped.
  */
-export const NEW_ROUND_RETRIES = 2;
+export const POST_RETRIES = 2;
 
 export class NewRoundRequests {
   #view = 0;
@@ -115,14 +115,14 @@ export class NewRoundRequests {
    * generation to post it again under, or null if the run was queued for the
    * next `ready`:
    * - same load, retries left: post again to it;
-   * - same load, NEW_ROUND_RETRIES retries used up: queue the run and stop
+   * - same load, POST_RETRIES retries used up: queue the run and stop
    *   sending to that load, so later runs wait for its next `ready` too;
    * - an earlier load: post to the newer load if it's listening, which starts
    *   a new count of attempts (a new load comes only from a hide and show or a
    *   reload, so this can't go on forever), or queue the run if it isn't.
    */
   retryOrQueue(generation: number, attempt: number): number | null {
-    if (generation === this.#generation && attempt > NEW_ROUND_RETRIES) {
+    if (generation === this.#generation && attempt > POST_RETRIES) {
       this.#stopListening();
       this.#pending++;
       return null;
@@ -183,7 +183,7 @@ export async function sendNewRound(
 
 /**
  * Posts `init` to the webview that sent `ready`, and posts it again up to
- * NEW_ROUND_RETRIES times while it fails and that load, `generation`, is
+ * POST_RETRIES times while it fails and that load, `generation`, is
  * still listening. With `generation` null (that view's `ready` was ignored as
  * stale) it's posted once. Resolves true if it was delivered; never rejects,
  * and logs nothing. An `init` that still fails is dropped: the next load's
@@ -199,7 +199,7 @@ export async function sendInit(
   message: InitMessage,
   generation: number | null,
 ): Promise<boolean> {
-  for (let attempt = 1; attempt <= NEW_ROUND_RETRIES + 1; attempt++) {
+  for (let attempt = 1; attempt <= POST_RETRIES + 1; attempt++) {
     if (await deliver(post, message)) {
       return true;
     }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  NEW_ROUND_RETRIES,
+  POST_RETRIES,
   NewRoundRequests,
   answerWebview,
   messagesAfter,
@@ -165,7 +165,7 @@ describe("NewRoundRequests", () => {
       let view = 0;
       assert.doesNotThrow(() => {
         requests.reset(view);
-        requests.retryOrQueue(requests.generation, NEW_ROUND_RETRIES + 1);
+        requests.retryOrQueue(requests.generation, POST_RETRIES + 1);
         requests.ready(view);
         view = requests.attach();
         requests.ready(view);
@@ -332,8 +332,10 @@ function scriptedPost(
   const sent: HostMessage[] = [];
   const post: PostMessage = (message) => {
     sent.push(message);
-    before?.(sent.length);
-    const outcome = outcomes[Math.min(sent.length, outcomes.length) - 1] ?? "delivered";
+    // Taken before `before` runs, since it may post too.
+    const call = sent.length;
+    before?.(call);
+    const outcome = outcomes[Math.min(call, outcomes.length) - 1] ?? "delivered";
     switch (outcome) {
       case "delivered":
         return Promise.resolve(true);
@@ -376,10 +378,10 @@ async function consoleCallsDuring(body: () => Promise<void>): Promise<unknown[]>
   return calls;
 }
 
-describe("NEW_ROUND_RETRIES", () => {
+describe("POST_RETRIES", () => {
   it("is a small fixed number, so a failed newRound is never retried forever", () => {
-    assert.ok(Number.isInteger(NEW_ROUND_RETRIES));
-    assert.ok(NEW_ROUND_RETRIES >= 1 && NEW_ROUND_RETRIES <= 5);
+    assert.ok(Number.isInteger(POST_RETRIES));
+    assert.ok(POST_RETRIES >= 1 && POST_RETRIES <= 5);
   });
 });
 
@@ -388,7 +390,7 @@ describe("NewRoundRequests.retryOrQueue", () => {
     const { requests } = readyRequests();
     const generation = requests.request();
     assert.ok(generation !== null);
-    for (let attempt = 1; attempt <= NEW_ROUND_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= POST_RETRIES; attempt++) {
       assert.equal(requests.retryOrQueue(generation, attempt), generation);
     }
     assert.equal(requests.isReady, true);
@@ -399,7 +401,7 @@ describe("NewRoundRequests.retryOrQueue", () => {
     const { requests, view } = readyRequests();
     const generation = requests.request();
     assert.ok(generation !== null);
-    assert.equal(requests.retryOrQueue(generation, NEW_ROUND_RETRIES + 1), null);
+    assert.equal(requests.retryOrQueue(generation, POST_RETRIES + 1), null);
     assert.equal(requests.isReady, false);
     assert.equal(requests.pending, 1);
     assert.equal(requests.request(), null, "later runs wait for the next ready too");
@@ -432,7 +434,7 @@ describe("NewRoundRequests.retryOrQueue", () => {
     requests.reset(view);
     requests.ready(view);
     const live = requests.generation;
-    assert.equal(requests.retryOrQueue(generation, NEW_ROUND_RETRIES + 1), live);
+    assert.equal(requests.retryOrQueue(generation, POST_RETRIES + 1), live);
     assert.equal(requests.isReady, true);
     assert.equal(requests.generation, live);
     assert.equal(requests.pending, 0);
@@ -461,7 +463,7 @@ describe("sendNewRound", () => {
     const { requests, view } = readyRequests();
     const { post, sent } = scriptedPost(["false"]);
     await sendNewRound(requests, post, requests.request());
-    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(newRounds(sent), POST_RETRIES + 1);
     assert.equal(requests.isReady, false);
     assert.equal(requests.pending, 1);
     // The panel's next `ready` starts exactly that one round.
@@ -475,7 +477,7 @@ describe("sendNewRound", () => {
     const { requests, view } = readyRequests();
     const { post, sent } = scriptedPost(["reject"]);
     await assert.doesNotReject(sendNewRound(requests, post, requests.request()));
-    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(newRounds(sent), POST_RETRIES + 1);
     assert.equal(requests.pending, 1);
     assert.equal(requests.ready(view), 1);
   });
@@ -484,7 +486,7 @@ describe("sendNewRound", () => {
     const { requests } = readyRequests();
     const { post, sent } = scriptedPost(["throw"]);
     await assert.doesNotReject(sendNewRound(requests, post, requests.request()));
-    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(newRounds(sent), POST_RETRIES + 1);
     assert.equal(requests.pending, 1);
   });
 
@@ -513,7 +515,7 @@ describe("sendNewRound", () => {
       sendNewRound(requests, post, requests.request()),
       sendNewRound(requests, post, requests.request()),
     ]);
-    assert.equal(newRounds(sent), 2 * (NEW_ROUND_RETRIES + 1));
+    assert.equal(newRounds(sent), 2 * (POST_RETRIES + 1));
     assert.equal(requests.ready(view), 2);
     assert.equal(requests.pending, 0);
   });
@@ -522,13 +524,13 @@ describe("sendNewRound", () => {
     const { requests, view } = readyRequests();
     // The panel is hidden and shown again while the last attempt is in flight.
     const { post, sent } = scriptedPost(["false"], (call) => {
-      if (call === NEW_ROUND_RETRIES + 1) {
+      if (call === POST_RETRIES + 1) {
         requests.reset(view);
         requests.ready(view);
       }
     });
     await sendNewRound(requests, post, requests.request());
-    assert.equal(newRounds(sent), 2 * (NEW_ROUND_RETRIES + 1));
+    assert.equal(newRounds(sent), 2 * (POST_RETRIES + 1));
     assert.equal(requests.isReady, false);
     assert.equal(requests.pending, 1);
     assert.equal(requests.ready(view), 1);
@@ -586,7 +588,7 @@ describe("sendInit", () => {
     const { requests, message, generation } = readyInit();
     const { post, sent } = scriptedPost(["false"]);
     assert.equal(await sendInit(requests, post, message, generation), false);
-    assert.equal(sent.length, NEW_ROUND_RETRIES + 1);
+    assert.equal(sent.length, POST_RETRIES + 1);
     assert.equal(requests.isReady, true, "a failed init doesn't stop New Round runs");
   });
 
@@ -594,7 +596,7 @@ describe("sendInit", () => {
     const { requests, message, generation } = readyInit();
     const { post, sent } = scriptedPost(["reject"]);
     assert.equal(await sendInit(requests, post, message, generation), false);
-    assert.equal(sent.length, NEW_ROUND_RETRIES + 1);
+    assert.equal(sent.length, POST_RETRIES + 1);
   });
 
   it("stops retrying once init is delivered", async () => {
@@ -644,10 +646,10 @@ describe("answerWebview", () => {
     const requests = new NewRoundRequests();
     requests.request();
     const view = requests.attach();
-    const failures: Outcome[] = Array.from({ length: NEW_ROUND_RETRIES + 1 }, () => "reject");
+    const failures: Outcome[] = Array.from({ length: POST_RETRIES + 1 }, () => "reject");
     const { post, sent } = scriptedPost([...failures, "delivered"]);
     await assert.doesNotReject(answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post));
-    assert.equal(sent.filter((message) => message.type === "init").length, NEW_ROUND_RETRIES + 1);
+    assert.equal(sent.filter((message) => message.type === "init").length, POST_RETRIES + 1);
     assert.equal(newRounds(sent), 1);
     assert.equal(requests.pending, 0);
   });
@@ -661,6 +663,24 @@ describe("answerWebview", () => {
     assert.deepEqual(sent, [init()]);
     assert.equal(requests.pending, 1);
     assert.equal(requests.ready(view), 1);
+  });
+
+  it("posts a run made while init is being retried at once, and still starts exactly one round", async () => {
+    const requests = new NewRoundRequests();
+    const view = requests.attach();
+    let run: Promise<void> | undefined;
+    // "0xWORD: New Round" runs while the first init post is in flight.
+    const { post, sent } = scriptedPost(["false", "delivered"], (call) => {
+      if (call === 1) {
+        run = sendNewRound(requests, post, requests.request());
+      }
+    });
+    await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+    await run;
+    // The webview's `ensureRound` does nothing on the late init, as a round exists.
+    assert.deepEqual(sent, [init(), { type: "newRound" }, init()]);
+    assert.equal(newRounds(sent), 1);
+    assert.equal(requests.pending, 0);
   });
 
   it("answers the panel's next ready with init again after a dropped init", async () => {
