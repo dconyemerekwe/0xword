@@ -608,9 +608,12 @@ function buildScreen(app: HTMLElement): Screen {
   resultNote.hidden = true;
 
   const game = element("div", "game");
-  game.append(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, announcement, keypad);
+  game.append(header, statusBar, grid, hintStrip, legend, decode, result, resultNote, message, keypad);
   const howToPlay = buildHowToPlay();
-  app.replaceChildren(game, howToPlay.section);
+  // The announcement region sits outside the game, so a New Round command
+  // that arrives while How to play hides the game is still read out. It's
+  // visually hidden and absolutely positioned, so it takes no room here.
+  app.replaceChildren(game, howToPlay.section, announcement);
 
   document.addEventListener("keydown", (event) => {
     if (event.isComposing) {

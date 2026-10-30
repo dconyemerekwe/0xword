@@ -199,7 +199,7 @@ describe("media/main.ts", () => {
     assert.match(source, /ui\.legend\.hidden = result !== null/);
     assert.match(source, /ui\.decode\.hidden = result !== null/);
     assert.match(source, /ui\.keypad\.hidden = result !== null/);
-    assert.match(source, /game\.append\([^)]*decode, result, resultNote, message, announcement, keypad\)/);
+    assert.match(source, /game\.append\([^)]*decode, result, resultNote, message, keypad\)/);
   });
 
   it("makes `?` and the back arrow real <button>s that dispatch through the controller", () => {
@@ -231,7 +231,8 @@ describe("media/main.ts", () => {
   });
 
   it("puts the game and How to play side by side in the app, one hidden at a time", () => {
-    assert.match(source, /app\.replaceChildren\(game, howToPlay\.section\)/);
+    // The announcement region is outside both, so it's never hidden (#62).
+    assert.match(source, /app\.replaceChildren\(game, howToPlay\.section, announcement\)/);
     assert.match(source, /ui\.game\.hidden = view\.howToPlayOpen/);
     assert.match(source, /ui\.howToPlay\.hidden = !view\.howToPlayOpen/);
   });
@@ -1668,8 +1669,41 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
     return found[0] ?? {};
   }
 
-  /** The non-empty texts written to a live region, in order: each is one announcement. */
-  function spoken(region: Record<string, unknown>): string[] {
+  /**
+   * The elements from #app down to `node`, both included, or null if `node`
+   * isn't on the page.
+   */
+  function pathTo(run: WebviewRun, node: Record<string, unknown>): Record<string, unknown>[] | null {
+    const search = (current: Record<string, unknown>): Record<string, unknown>[] | null => {
+      if (current === node) {
+        return [current];
+      }
+      for (const child of current["children"] as Record<string, unknown>[]) {
+        const path = search(child);
+        if (path) {
+          return [current, ...path];
+        }
+      }
+      return null;
+    };
+    return search(run.app);
+  }
+
+  /** True if `node` is on the page with no `hidden` element above it, so a screen reader hears it. */
+  function isShown(run: WebviewRun, node: Record<string, unknown>): boolean {
+    const path = pathTo(run, node);
+    return path !== null && path.every((element) => element["hidden"] !== true);
+  }
+
+  /**
+   * The non-empty texts written to a live region, in order: each is one
+   * announcement. None while the region, or anything above it, is hidden,
+   * since a hidden region isn't read out.
+   */
+  function spoken(run: WebviewRun, region: Record<string, unknown>): string[] {
+    if (!isShown(run, region)) {
+      return [];
+    }
     return (region["texts"] as unknown[]).filter((text): text is string => typeof text === "string" && text !== "");
   }
 
@@ -1788,27 +1822,27 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
     run.send('{"type":"newRound"}');
     run.press("4");
     assert.equal(run.frames.length, 0, "no delayed rewrite: nothing was repeated");
-    assert.deepEqual(spoken(announcementRegion(run)), [
+    assert.deepEqual(spoken(run, announcementRegion(run)), [
       "Row 1: 1 Right spot, 4 Wrong spot, 3 Not in word",
       "Row 2: 8 Right spot, 0 Wrong spot, 0 Not in word. Hex solved: decode the word, one try",
       "New round",
     ]);
-    assert.deepEqual(spoken(messageRegion(run)), ["AAAA isn't in the word list", "QXZJ isn't in the word list"]);
+    assert.deepEqual(spoken(run, messageRegion(run)), ["AAAA isn't in the word list", "QXZJ isn't in the word list"]);
   });
 
   it("announces the decode step after row 6 once, with row 6's marks", () => {
     const run = runWebview(savedAfter(...firstFive));
     score(run, "ABLE");
-    const said = spoken(announcementRegion(run));
+    const said = spoken(run, announcementRegion(run));
     assert.equal(said.length, 1);
     assert.match(said[0] ?? "", /^Row 6: .*\. Hex locked: one final answer$/);
-    assert.deepEqual(spoken(messageRegion(run)), []);
+    assert.deepEqual(spoken(run, messageRegion(run)), []);
   });
 
   it("announces how the round ended once, behind the result card", () => {
     const run = runWebview(savedAfter(...guess("BYTE")));
     submitWord(run, "BYTE");
-    assert.deepEqual(spoken(messageRegion(run)), ["Solved"]);
+    assert.deepEqual(spoken(run, messageRegion(run)), ["Solved"]);
   });
 
   const starts: readonly (readonly [string, (run: WebviewRun) => void])[] = [
@@ -1825,7 +1859,7 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
       assert.equal(region["textContent"], "", "cleared");
       run.frames.at(-1)?.();
       assert.equal(region["textContent"], "New round", "then set again on the next frame");
-      assert.deepEqual(spoken(region), ["New round", "New round"]);
+      assert.deepEqual(spoken(run, region), ["New round", "New round"]);
     });
   }
 
@@ -1841,12 +1875,34 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
     assert.equal(region["textContent"], "");
   });
 
+  it("announces a New Round command that arrives while How to play hides the game", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    click(byLabel(run, HOW_TO_PLAY));
+    assert.equal(byClass(run, "game")["hidden"], true);
+    run.send('{"type":"newRound"}');
+    const region = announcementRegion(run);
+    assert.equal(byClass(run, "how-to-play")["hidden"], false, "How to play stays open");
+    assert.ok(isShown(run, region), "the region has no hidden element above it");
+    assert.equal(region["textContent"], "New round");
+    assert.deepEqual(spoken(run, region), ["New round"]);
+  });
+
+  it("keeps the announcement region outside the game and How to play, so it's shown on every screen", () => {
+    const run = runWebview(savedAfter());
+    const children = run.app["children"] as Record<string, unknown>[];
+    assert.deepEqual(
+      children.map((child) => child["className"]),
+      ["game", "how-to-play", "sr-only"],
+    );
+    assert.equal(children[2], announcementRegion(run));
+  });
+
   it("doesn't announce the first round, which init starts as the panel opens", () => {
     const run = runWebview(undefined);
     run.send(initMessage);
     assert.equal(allByClass(run, "tile tile-empty").length, 48, "the round started");
-    assert.deepEqual(spoken(announcementRegion(run)), []);
-    assert.deepEqual(spoken(messageRegion(run)), []);
+    assert.deepEqual(spoken(run, announcementRegion(run)), []);
+    assert.deepEqual(spoken(run, messageRegion(run)), []);
   });
 
   // Criterion 3: a hide and show doesn't announce a standing message again.
@@ -1865,8 +1921,8 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
     it(`announces nothing new after a hide and show on ${name}: a standing message is drawn once, as page content`, () => {
       const run = runWebview(saved());
       run.send(initMessage);
-      assert.deepEqual(spoken(announcementRegion(run)), [], "screen-reader-only announcements aren't saved");
-      assert.deepEqual(spoken(messageRegion(run)), standing, "written once, by the first render");
+      assert.deepEqual(spoken(run, announcementRegion(run)), [], "screen-reader-only announcements aren't saved");
+      assert.deepEqual(spoken(run, messageRegion(run)), standing, "written once, by the first render");
       assert.equal(run.frames.length, 0, "no clear-and-rewrite queued");
     });
   }
