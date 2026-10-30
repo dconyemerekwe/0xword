@@ -5,7 +5,16 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { DECODE_PANEL, FINAL_PANEL } from "../../src/ui/game.ts";
 import { LIGHT_BODY_CLASSES, THEME_ATTRIBUTE, THEME_ICON } from "../../src/theme.ts";
-import { DARK_PALETTE, LIGHT_PALETTE, contrastRatio, isLargeText } from "../../src/ui/palette.ts";
+import {
+  DARK_PALETTE,
+  DIMMED_KEY_PAIRS,
+  LARGE_TEXT_PAIRS,
+  LIGHT_PALETTE,
+  TEXT_PAIRS,
+  contrastRatio,
+  isLargeText,
+  type PaletteToken,
+} from "../../src/ui/palette.ts";
 import { STYLE_PATH } from "../../src/webview/html.ts";
 
 const css = readFileSync(new URL(`../../${STYLE_PATH.join("/")}`, import.meta.url), "utf8");
@@ -783,5 +792,127 @@ describe("media/styles.css a focused key's ring in a 400px panel (#63)", () => {
       .filter(([, , body]) => /(?:^|[\s;])(overflow[a-z-]*|clip-path|clip|contain):/.test(body ?? ""))
       .map(([, selector]) => selector?.trim());
     assert.deepEqual(clipping, [".sr-only", ".decode-input::placeholder"]);
+  });
+});
+
+describe("media/styles.css every text and background pair it draws is contrast-checked (#64)", () => {
+  /**
+   * Every rule that draws text or an icon, with the colour it's drawn in and
+   * the fill it sits on (its own, or the one behind it): the audit for #64.
+   * Each rule names at least one of the two tokens itself.
+   */
+  const DRAWN: readonly (readonly [selector: string, text: PaletteToken, background: PaletteToken])[] = [
+    ["body", "text", "background"],
+    [".icon-button", "icon", "background"],
+    [".icon-button:disabled", "hintsLockedText", "background"],
+    [".title-hex", "right", "background"],
+    [".status", "muted", "background"],
+    [".hints-button", "hintsText", "background"],
+    ['.hints-button[aria-pressed="true"]', "hintsOnText", "hintsOn"],
+    [".hints-button:disabled", "hintsLockedText", "background"],
+    [".tile", "text", "background"],
+    [".tile-right", "onRight", "right"],
+    [".tile-wrong", "onWrong", "wrong"],
+    [".tile-absent", "onAbsent", "absent"],
+    [".grid-locked .tile-right", "onRight", "lockedRight"],
+    [".grid-locked .tile-wrong", "onWrong", "lockedWrong"],
+    [".hint-cell", "text", "background"],
+    [".hint-unknown", "stripUnknown", "background"],
+    [".legend", "muted", "background"],
+    [".lock-badge", "text", "lockBadge"],
+    [".lock-title", "text", "panel"],
+    [".lock-message", "lockMessage", "panel"],
+    [".decode", "text", "panel"],
+    [".decode-badge", "wrongText", "finalCard"],
+    [".decode-input", "text", "panel"],
+    [".decode-input::placeholder", "muted", "panel"],
+    [".decode-input:disabled", "muted", "panel"],
+    [".decode-button", "onRight", "right"],
+    [".decode-button:disabled", "muted", "keyAbsent"],
+    [".decode-foot", "muted", "panel"],
+    [".decode-final", "text", "finalCard"],
+    // The box's typed text and its placeholder, on the page colour in the card.
+    [".decode-final .decode-input", "text", "background"],
+    [".decode-final .decode-input", "muted", "background"],
+    [".decode-final .decode-button", "onWrong", "wrong"],
+    [".decode-final .decode-foot", "finalNote", "finalCard"],
+    [".result", "text", "panel"],
+    [".result-outcome", "muted", "panel"],
+    [".result-heading", "text", "panel"],
+    [".result-line", "muted", "panel"],
+    [".result-byte", "text", "byteTile"],
+    [".result-hex", "byteHex", "byteTile"],
+    [".result-arrow", "muted", "byteTile"],
+    [".result-letter", "text", "byteTile"],
+    [".result-button", "onRight", "right"],
+    [".result-note", "muted", "background"],
+    [".how-to-play-heading", "text", "background"],
+    [".section-heading", "muted", "background"],
+    [".rules", "text", "background"],
+    [".chip-right", "onRight", "right"],
+    [".chip-wrong", "onWrong", "wrong"],
+    [".chip-absent", "chipOnAbsent", "absent"],
+    [".cheatsheet-line", "text", "background"],
+    [".code", "cheatHex", "background"],
+    [".cheat-card", "text", "panel"],
+    [".cheat-letter", "text", "panel"],
+    [".cheat-hex", "cheatHex", "panel"],
+    [".message", "text", "background"],
+    [".message-error", "wrongText", "background"],
+    [".key", "text", "key"],
+    [".key-right", "onRight", "right"],
+    [".key-wrong", "onWrong", "wrong"],
+    [".key-absent", "muted", "keyAbsent"],
+    [".key:disabled:not(.key-right, .key-wrong, .key-absent)", "muted", "key"],
+    [".keypad-locked .key:disabled", "lockedKeyText", "lockedKey"],
+    [".keypad-locked .key-right:disabled", "lockedKeyText", "lockedKeyRight"],
+    [".keypad-locked .key-wrong:disabled", "onWrong", "lockedWrong"],
+    [".keypad-locked .key-absent:disabled", "lockedKeyText", "keyAbsent"],
+  ];
+  const checked = [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS, ...LARGE_TEXT_PAIRS].map(([text, background]) => `${text}/${background}`);
+
+  for (const [selector, text, background] of DRAWN) {
+    it(`checks ${selector}: ${text} on ${background}`, () => {
+      const body = block(selector);
+      assert.ok(
+        body.includes(`var(${property(text)})`) || body.includes(`var(${property(background)})`),
+        `${selector} names neither colour: ${body}`,
+      );
+      assert.ok(checked.includes(`${text}/${background}`), `${text}/${background} isn't in TEXT_PAIRS`);
+    });
+  }
+
+  it("draws text and icons only in colours the audit lists", () => {
+    const listed = new Set(DRAWN.map(([, text]) => property(text)));
+    const used = [...outsidePalettes.matchAll(/(?:^|[\s;{])(?:color|stroke): var\((--ox-[a-z-]+)\)/g)].map((match) => match[1]);
+    assert.ok(used.length > 0);
+    for (const colour of used) {
+      assert.ok(colour && listed.has(colour), `${colour} is drawn as text but not audited`);
+    }
+  });
+
+  it("checks no pair the stylesheet doesn't draw", () => {
+    const drawn = new Set(DRAWN.map(([, text, background]) => `${text}/${background}`));
+    assert.deepEqual(
+      checked.filter((pair) => !drawn.has(pair)),
+      [],
+    );
+  });
+});
+
+describe("media/styles.css colour is never the only cue (#64)", () => {
+  it("strikes through not-in-word keys, and keeps them struck through when the hex locks", () => {
+    assert.match(block(".key-absent"), /text-decoration: line-through;/);
+    assert.doesNotMatch(block(".keypad-locked .key-absent:disabled"), /text-decoration/);
+  });
+
+  it("dashes the disabled decode box's outline", () => {
+    assert.match(block(".decode-input:disabled"), /border-style: dashed;/);
+  });
+
+  it("draws the lock icons in their text's colour, so they show wherever that text does", () => {
+    for (const selector of [".status-icon", ".hints-icon", ".lock-badge-icon"]) {
+      assert.match(block(selector), /stroke: currentColor;/, selector);
+    }
   });
 });

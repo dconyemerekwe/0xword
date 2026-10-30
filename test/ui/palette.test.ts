@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
-  BELOW_MIN_CONTRAST,
+  CONTRAST_EXCEPTIONS,
   DARK_PALETTE,
   DIMMED_KEY_PAIRS,
   LIGHT_PALETTE,
@@ -16,6 +16,7 @@ import {
   relativeLuminance,
   type PaletteToken,
 } from "../../src/ui/palette.ts";
+import { shownPalette } from "../../src/theme.ts";
 
 describe("contrastRatio", () => {
   it("is 21 for black on white and 1 for a colour on itself", () => {
@@ -188,9 +189,9 @@ describe("both palettes", () => {
     for (const [text, background] of [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS]) {
       const pair = `${name}:${text}/${background}`;
       const ratio = contrastRatio(palette[text], palette[background]);
-      if (BELOW_MIN_CONTRAST.includes(pair)) {
+      if (Object.hasOwn(CONTRAST_EXCEPTIONS, pair)) {
         it(`${pair} is listed as under ${MIN_TEXT_CONTRAST}:1 for the owner (${ratio.toFixed(2)}:1)`, () => {
-          assert.ok(ratio < MIN_TEXT_CONTRAST, `${ratio.toFixed(2)}:1 passes now: take it off BELOW_MIN_CONTRAST`);
+          assert.ok(ratio < MIN_TEXT_CONTRAST, `${ratio.toFixed(2)}:1 passes now: take it off CONTRAST_EXCEPTIONS`);
         });
       } else {
         it(`${pair} has a contrast of at least ${MIN_TEXT_CONTRAST}:1`, () => {
@@ -211,14 +212,83 @@ describe("both palettes", () => {
     const pairs = Object.keys(PALETTES).flatMap((name) =>
       [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS].map(([text, background]) => `${name}:${text}/${background}`),
     );
-    for (const listed of BELOW_MIN_CONTRAST) {
+    for (const listed of Object.keys(CONTRAST_EXCEPTIONS)) {
       assert.ok(pairs.includes(listed), listed);
     }
-    assert.deepEqual(BELOW_MIN_CONTRAST, [
+    assert.deepEqual(Object.keys(CONTRAST_EXCEPTIONS), [
       "dark:lockedKeyText/lockedKey",
       "dark:lockedKeyText/lockedKeyRight",
       "dark:lockedKeyText/keyAbsent",
     ]);
+  });
+
+  it("records the owner's decision for each accepted exception (#64)", () => {
+    for (const [pair, decision] of Object.entries(CONTRAST_EXCEPTIONS)) {
+      assert.match(decision, /^Owner's decision, 2026-10-30 \(#64\): kept as drawn on page 3, an accepted exception\./, pair);
+    }
+  });
+
+  it("checks the decode lock's icon and the result card's arrows too, though they're icons", () => {
+    const pairs = TEXT_PAIRS.map(([text, background]) => `${text}/${background}`);
+    assert.ok(pairs.includes("text/lockBadge"));
+    assert.ok(pairs.includes("muted/byteTile"));
+  });
+});
+
+/**
+ * VS Code's four kinds of theme, by the class it puts on the webview's
+ * `<body>`. The high-contrast themes show the dark and light palettes (#26),
+ * so each is checked through that mapping rather than with a palette of its own.
+ */
+const VSCODE_THEMES = [
+  { theme: "light", bodyClass: "vscode-light", palette: "light" },
+  { theme: "dark", bodyClass: "vscode-dark", palette: "dark" },
+  { theme: "high-contrast dark", bodyClass: "vscode-high-contrast", palette: "dark" },
+  { theme: "high-contrast light", bodyClass: "vscode-high-contrast-light", palette: "light" },
+] as const;
+
+describe("contrast in all four VS Code themes (#64)", () => {
+  for (const { theme, bodyClass, palette } of VSCODE_THEMES) {
+    it(`shows the ${palette} palette in a ${theme} theme`, () => {
+      assert.equal(shownPalette("system", [bodyClass]), palette);
+    });
+
+    it(`lists every pair under ${MIN_TEXT_CONTRAST}:1 in a ${theme} theme, and finds none but the owner's accepted exceptions`, () => {
+      const colours = PALETTES[shownPalette("system", [bodyClass])];
+      const failing = [...TEXT_PAIRS, ...DIMMED_KEY_PAIRS]
+        .map(([text, background]) => ({
+          pair: `${palette}:${text}/${background}`,
+          ratio: contrastRatio(colours[text], colours[background]),
+        }))
+        .filter(({ ratio }) => ratio < MIN_TEXT_CONTRAST);
+      const unexpected = failing.filter(({ pair }) => !Object.hasOwn(CONTRAST_EXCEPTIONS, pair));
+      assert.deepEqual(
+        unexpected.map(({ pair, ratio }) => `${pair} ${ratio.toFixed(2)}:1`),
+        [],
+        `under ${MIN_TEXT_CONTRAST}:1 in a ${theme} theme`,
+      );
+      const expected = Object.keys(CONTRAST_EXCEPTIONS).filter((pair) => pair.startsWith(`${palette}:`));
+      assert.deepEqual(
+        failing.map(({ pair }) => pair),
+        expected,
+      );
+    });
+  }
+
+  it("covers each of VS Code's theme kinds once", () => {
+    assert.deepEqual(
+      VSCODE_THEMES.map(({ bodyClass }) => bodyClass),
+      ["vscode-light", "vscode-dark", "vscode-high-contrast", "vscode-high-contrast-light"],
+    );
+  });
+
+  it("puts the design table's dark placeholder at 3.94:1, and the placeholder the game draws over the minimum (#64)", () => {
+    // The owner accepted #757578 on #14161B as an exception, but it isn't in
+    // the palette: the placeholder is `muted` (test/media/styles.test.ts).
+    assert.equal(contrastRatio("#757578", "#14161B").toFixed(2), "3.94");
+    assert.ok(!Object.values<string>(DARK_PALETTE).includes("#757578"));
+    assert.ok(contrastRatio(DARK_PALETTE.muted, DARK_PALETTE.panel) >= MIN_TEXT_CONTRAST);
+    assert.ok(contrastRatio(DARK_PALETTE.muted, DARK_PALETTE.background) >= MIN_TEXT_CONTRAST);
   });
 });
 
