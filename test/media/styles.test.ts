@@ -811,6 +811,7 @@ describe("media/styles.css every text and background pair it draws is contrast-c
     ['.hints-button[aria-pressed="true"]', "hintsOnText", "hintsOn"],
     [".hints-button:disabled", "hintsLockedText", "background"],
     [".tile", "text", "background"],
+    [".tile-typed", "text", "background"],
     [".tile-right", "onRight", "right"],
     [".tile-wrong", "onWrong", "wrong"],
     [".tile-absent", "onAbsent", "absent"],
@@ -878,21 +879,71 @@ describe("media/styles.css every text and background pair it draws is contrast-c
     return [...body.matchAll(pattern)].map((match) => match[1] ?? "");
   }
 
+  /**
+   * Fills with no text or icon on them, so no pair to check: each with why.
+   * A new one joins here only with a reason.
+   */
+  const FILL_ONLY: Readonly<Record<string, string>> = {
+    ".swatch-right": "the legend's colour square: no text on it, its name is beside it",
+    ".swatch-wrong": "the legend's colour square: no text on it, its name is beside it",
+    ".swatch-absent": "the legend's colour square: no text on it, its name is beside it",
+  };
+
+  /** Every selector in a selector list, splitting only on commas outside brackets. */
+  function selectorParts(list: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (const char of list) {
+      depth += char === "(" || char === "[" ? 1 : char === ")" || char === "]" ? -1 : 0;
+      if (char === "," && depth === 0) {
+        parts.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    return [...parts, current].map((part) => part.trim().replace(/\s+/g, " ")).filter((part) => part !== "");
+  }
+
+  /**
+   * Every rule outside the two palette rules, inside `@media` and
+   * `@container` too, once per selector in its list, in stylesheet order.
+   */
+  const ALL_RULES = [...outsidePalettes.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(([, list, body]) =>
+    selectorParts(list ?? "").map((selector) => ({ selector, body: body ?? "" })),
+  );
+
+  /** The declarations of every rule for `selector`, wherever it appears. */
+  function allBlocks(selector: string): string {
+    return ALL_RULES.filter((rule) => rule.selector === selector)
+      .map((rule) => rule.body)
+      .join("\n");
+  }
+
+  /**
+   * What's wrong with `selector` setting `foregrounds` and `fills`, given
+   * its rows in DRAWN: a colour that isn't one of its rows' text colours, or
+   * a fill that isn't one of their backgrounds. A rule listed twice (the
+   * final card's box) draws two texts on one fill.
+   */
+  function mismatches(selector: string, foregrounds: readonly string[], fills: readonly string[]): string[] {
+    const rows = DRAWN.filter(([other]) => other === selector);
+    const texts = rows.map(([, rowText]) => property(rowText));
+    const backgrounds = rows.map(([, , rowBackground]) => property(rowBackground));
+    return [
+      ...foregrounds.filter((colour) => !texts.includes(colour)).map((colour) => `${selector} draws in ${colour}, not ${texts.join(" or ")}`),
+      ...fills.filter((fill) => !backgrounds.includes(fill)).map((fill) => `${selector} fills with ${fill}, not ${backgrounds.join(" or ")}`),
+    ];
+  }
+
   for (const [selector, text, background] of DRAWN) {
     it(`checks ${selector}: ${text} on ${background}`, () => {
-      const body = block(selector);
-      // A rule listed twice (the final card's box) draws two texts on one fill.
-      const rows = DRAWN.filter(([other]) => other === selector);
-      const texts = rows.map(([, rowText]) => property(rowText));
-      const backgrounds = rows.map(([, , rowBackground]) => property(rowBackground));
+      const body = allBlocks(selector);
+      assert.notEqual(body, "", `no rule for ${selector}`);
       const foregrounds = declared(body, "foreground");
       const fills = declared(body, "background");
-      for (const colour of foregrounds) {
-        assert.ok(texts.includes(colour), `${selector} draws in ${colour}, not ${texts.join(" or ")}`);
-      }
-      for (const fill of fills) {
-        assert.ok(backgrounds.includes(fill), `${selector} fills with ${fill}, not ${backgrounds.join(" or ")}`);
-      }
+      assert.deepEqual(mismatches(selector, foregrounds, fills), []);
       if (foregrounds.length === 0 && fills.length === 0) {
         // Both colours come from the rules behind it: it must still name one.
         assert.ok(
@@ -903,6 +954,39 @@ describe("media/styles.css every text and background pair it draws is contrast-c
       assert.ok(checked.includes(`${text}/${background}`), `${text}/${background} isn't in TEXT_PAIRS`);
     });
   }
+
+  it("audits every rule that sets a palette colour: in @media, in selector lists and repeated selectors too", () => {
+    const problems: string[] = [];
+    for (const { selector, body } of ALL_RULES) {
+      const foregrounds = declared(body, "foreground");
+      const fills = declared(body, "background");
+      if (foregrounds.length === 0 && fills.length === 0) {
+        continue;
+      }
+      if (Object.hasOwn(FILL_ONLY, selector)) {
+        if (foregrounds.length > 0) {
+          problems.push(`${selector} is listed as a fill only, but draws in ${foregrounds.join(", ")}`);
+        }
+      } else if (!DRAWN.some(([other]) => other === selector)) {
+        problems.push(`${selector} sets ${[...foregrounds, ...fills].join(", ")} but isn't in DRAWN`);
+      } else {
+        problems.push(...mismatches(selector, foregrounds, fills));
+      }
+    }
+    assert.deepEqual(problems, []);
+  });
+
+  it("finds rules inside @media and @container, and splits selector lists outside brackets", () => {
+    assert.ok(ALL_RULES.some((rule) => rule.selector === "*::before" && rule.body.includes("transition")));
+    assert.ok(ALL_RULES.some((rule) => rule.selector === ".decode-input:focus::placeholder"));
+    assert.deepEqual(selectorParts(".a:not(.b, .c),\n.d [x=\",\"]"), [".a:not(.b, .c)", '.d [x=","]']);
+  });
+
+  it("lists as fills only rules that really are in the stylesheet", () => {
+    for (const selector of Object.keys(FILL_ONLY)) {
+      assert.ok(ALL_RULES.some((rule) => rule.selector === selector), selector);
+    }
+  });
 
   it("draws text and icons only in colours the audit lists", () => {
     const listed = new Set(DRAWN.map(([, text]) => property(text)));
@@ -925,13 +1009,13 @@ describe("media/styles.css every text and background pair it draws is contrast-c
 describe("media/styles.css colour is never the only cue (#64)", () => {
   it("strikes through not-in-word keys, and keeps them struck through when the hex locks", () => {
     assert.match(block(".key-absent"), /text-decoration: line-through;/);
-    // No other rule that can reach a key (by its classes, as a button, or
-    // any element) sets text-decoration, so none can take the line away.
-    const reachesKeys = /\.key(?![a-z])|\bbutton\b|\*|(?:^|,)\s*:/;
+    // No other rule anywhere sets text-decoration, so none can take the
+    // line away. A rule that needs to joins this list, with why: empty for now.
+    const ALSO_DECORATES: Readonly<Record<string, string>> = {};
     const decorating = [...rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, selector, body]) => reachesKeys.test(selector ?? "") && /(?:^|[\s;])text-decoration[a-z-]*\s*:/.test(body ?? ""))
-      .map(([, selector]) => selector?.trim());
-    assert.deepEqual(decorating, [".key-absent"]);
+      .filter(([, , body]) => /(?:^|[\s;])text-decoration(?:-[a-z-]+)?\s*:/.test(body ?? ""))
+      .map(([, selector]) => selector?.trim().replace(/\s+/g, " "));
+    assert.deepEqual(decorating, [".key-absent", ...Object.keys(ALSO_DECORATES)]);
   });
 
   it("dashes the disabled decode box's outline", () => {
