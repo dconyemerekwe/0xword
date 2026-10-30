@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { NewRoundRequests, messagesAfter, sendNewRound, viewVisibilityChanged } from "./newRoundRequests.ts";
-import { deliver, type PostMessage } from "./post.ts";
+import { NewRoundRequests, answerWebview, sendNewRound, viewVisibilityChanged } from "./newRoundRequests.ts";
+import type { PostMessage } from "./post.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { StatsStore } from "./stats.ts";
 import { ThemeStore } from "./theme.ts";
@@ -62,18 +62,18 @@ class GameViewProvider implements vscode.WebviewViewProvider {
     };
     // Listen before setting the HTML, so the webview's `ready` can't be missed.
     // Every message goes through the protocol's validator; invalid ones are ignored.
-    // `messagesAfter` decides what to post back, in order: `init`, then the
-    // rounds requested while the panel was closed. Neither `deliver` nor
-    // `sendNewRound` ever rejects, so `void` leaves no unhandled rejection. An
-    // `init` that fails is dropped: the webview asks again with its next `ready`.
+    // `answerWebview` posts the answer, in order: `init` (retried a few times
+    // if it fails), then the rounds requested while the panel was closed. It
+    // never rejects, so `void` leaves no unhandled rejection.
     const listener = webview.onDidReceiveMessage((raw: unknown) => {
-      for (const message of messagesAfter(raw, this.#handlers, this.#requests, id)) {
-        if (message.type === "newRound") {
-          void sendNewRound(this.#requests, this.#postToView, this.#requests.generation);
-        } else {
-          void deliver((reply) => post(webview, reply), message);
-        }
-      }
+      void answerWebview(
+        raw,
+        this.#handlers,
+        this.#requests,
+        id,
+        (message) => post(webview, message),
+        this.#postToView,
+      );
     });
     // A hidden view's webview is unloaded, and sends `ready` again when shown.
     // Its HTML is rebuilt while hidden, so the next show opens in the current
