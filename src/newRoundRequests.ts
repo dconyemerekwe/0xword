@@ -11,7 +11,20 @@
 // Two numbers keep those from touching the live webview:
 // - a view id, one per `attach` (one per `resolveWebviewView`)
 // - a generation, bumped whenever the webview starts or stops listening
-import { handleWebviewMessage, type HostHandlers, type HostMessage } from "./protocol.ts";
+//
+// A message the webview didn't get (the post resolved false, rejected or
+// threw) is posted again up to POST_RETRIES times per load. A `newRound`
+// is then queued for the next `ready`, and an `init` is dropped. Neither is
+// ever retried forever, and a `newRound` is never sent twice.
+import { deliver, type PostMessage } from "./post.ts";
+import { handleWebviewMessage, type HostHandlers, type HostMessage, type InitMessage } from "./protocol.ts";
+
+/**
+ * How many times a failed `newRound` or `init` is posted again to the same
+ * load of the webview: 2 retries, 3 posts in all. A `newRound` is then queued
+ * for the next `ready`; an `init` is dropped.
+ */
+export const POST_RETRIES = 2;
 
 export class NewRoundRequests {
   #view = 0;
@@ -84,14 +97,35 @@ export class NewRoundRequests {
   }
 
   /**
-   * A `newRound` posted under `generation` didn't reach the webview. If that
-   * is still the current load, it isn't listening: stop sending to it. Then
-   * the request is made again, so it's neither lost nor sent twice. Returns
-   * the generation to post it again under now, or null if it was queued.
+   * The generation of view `view`'s current load if it's listening, or null
+   * if it isn't (not ready yet, stopped, or no longer the current view).
    */
-  undelivered(generation: number): number | null {
-    if (generation === this.#generation) {
+  listeningGeneration(view: number): number | null {
+    return this.#ready && view === this.#view ? this.#generation : null;
+  }
+
+  /** True while the load that `generation` came from is listening. */
+  isListening(generation: number): boolean {
+    return this.#ready && generation === this.#generation;
+  }
+
+  /**
+   * Post number `attempt` (1 for the first, counted per load) of one run's
+   * `newRound`, made under `generation`, didn't reach the webview. Returns the
+   * generation to post it again under, or null if the run was queued for the
+   * next `ready`:
+   * - same load, retries left: post again to it;
+   * - same load, POST_RETRIES retries used up: queue the run and stop
+   *   sending to that load, so later runs wait for its next `ready` too;
+   * - an earlier load: post to the newer load if it's listening, which starts
+   *   a new count of attempts (a new load comes only from a hide and show or a
+   *   reload, so this can't go on forever), or queue the run if it isn't.
+   */
+  retryOrQueue(generation: number, attempt: number): number | null {
+    if (generation === this.#generation && attempt > POST_RETRIES) {
       this.#stopListening();
+      this.#pending++;
+      return null;
     }
     return this.request();
   }
@@ -120,6 +154,92 @@ export function viewVisibilityChanged(requests: NewRoundRequests, view: number, 
   }
   requests.reset(view);
   return true;
+}
+
+/**
+ * Sends one run's `newRound`: posts it under `generation` (null means the run
+ * was queued, so nothing is posted), and after each failed post either posts
+ * it again or leaves it queued, as `retryOrQueue` decides. `post` posts to the
+ * current view's webview, or resolves false if there's none. Resolves once the
+ * run is delivered or queued; never rejects, and logs nothing.
+ */
+export async function sendNewRound(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  generation: number | null,
+): Promise<void> {
+  let current = generation;
+  let attempt = 1;
+  while (current !== null) {
+    if (await deliver(post, { type: "newRound" })) {
+      return;
+    }
+    const next = requests.retryOrQueue(current, attempt);
+    // Attempts are counted per load: a newer load starts again from 1.
+    attempt = next === current ? attempt + 1 : 1;
+    current = next;
+  }
+}
+
+/**
+ * Posts `init` to the webview that sent `ready`, and posts it again up to
+ * POST_RETRIES times while it fails and that load, `generation`, is
+ * still listening. With `generation` null (that view's `ready` was ignored as
+ * stale) it's posted once. Resolves true if it was delivered; never rejects,
+ * and logs nothing. An `init` that still fails is dropped: the next load's
+ * `ready` asks again.
+ *
+ * Posting `init` twice is harmless: the webview starts a round on `init` only
+ * if it has none, and applies the theme only if the player hasn't chosen one
+ * since that load.
+ */
+export async function sendInit(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  message: InitMessage,
+  generation: number | null,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= POST_RETRIES + 1; attempt++) {
+    if (await deliver(post, message)) {
+      return true;
+    }
+    if (generation === null || !requests.isListening(generation)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Answers a message from view `view`, as `messagesAfter` decides: `init`
+ * posted to that view's webview with `sendInit`, then, once it has been
+ * delivered or given up, one `sendNewRound` per round queued while the webview
+ * wasn't listening. Each queued round is recorded again as a run (`request`),
+ * so it's posted if the webview is still listening, or queued again if it
+ * stopped while `init` was being retried. `toSender` posts to the webview that
+ * sent the message, `toView` to the current view's. Never rejects.
+ */
+export async function answerWebview(
+  raw: unknown,
+  handlers: HostHandlers,
+  requests: NewRoundRequests,
+  view: number,
+  toSender: PostMessage,
+  toView: PostMessage,
+): Promise<void> {
+  const [reply, ...rounds] = messagesAfter(raw, handlers, requests, view);
+  if (!reply) {
+    return;
+  }
+  if (reply.type !== "init") {
+    // Only `init` is a reply today; anything else is posted once.
+    await deliver(toSender, reply);
+    return;
+  }
+  await sendInit(requests, toSender, reply, requests.listeningGeneration(view));
+  for (let i = 0; i < rounds.length; i++) {
+    await sendNewRound(requests, toView, requests.request());
+  }
 }
 
 /**
