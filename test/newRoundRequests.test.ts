@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NewRoundRequests, messagesAfter, viewVisibilityChanged } from "../src/newRoundRequests.ts";
-import type { HostHandlers, RoundFinishedMessage } from "../src/protocol.ts";
+import {
+  NEW_ROUND_RETRIES,
+  NewRoundRequests,
+  messagesAfter,
+  sendNewRound,
+  viewVisibilityChanged,
+} from "../src/newRoundRequests.ts";
+import { deliver, type PostMessage } from "../src/post.ts";
+import type { HostHandlers, HostMessage, RoundFinishedMessage } from "../src/protocol.ts";
 import { EMPTY_STATS, toStatsView, type Stats } from "../src/stats.ts";
 
 /** A tracker with one resolved view whose webview has said `ready`. */
@@ -338,5 +345,242 @@ describe("viewVisibilityChanged", () => {
     viewVisibilityChanged(requests, view, false);
     viewVisibilityChanged(requests, view, false);
     assert.equal(requests.pending, 1);
+  });
+});
+
+/** What a scripted post does on each call: deliver, return false, reject or throw. */
+type Outcome = "delivered" | "false" | "reject" | "throw";
+
+/**
+ * A post that follows `outcomes` in order (the last one repeats) and records
+ * every message. `before` runs at the start of each call, to simulate events
+ * that arrive while a post is in flight.
+ */
+function scriptedPost(outcomes: Outcome[], before?: () => void): { post: PostMessage; sent: HostMessage[] } {
+  const sent: HostMessage[] = [];
+  const post: PostMessage = (message) => {
+    sent.push(message);
+    before?.();
+    const outcome = outcomes[Math.min(sent.length, outcomes.length) - 1] ?? "delivered";
+    switch (outcome) {
+      case "delivered":
+        return Promise.resolve(true);
+      case "false":
+        return Promise.resolve(false);
+      case "reject":
+        return Promise.reject(new Error("postMessage failed"));
+      case "throw":
+        throw new Error("Webview is disposed");
+    }
+  };
+  return { post, sent };
+}
+
+/** How many `newRound` messages were posted. */
+function newRounds(sent: HostMessage[]): number {
+  return sent.filter((message) => message.type === "newRound").length;
+}
+
+/** Runs `body` with the console silenced, and returns every console call it made. */
+async function consoleCallsDuring(body: () => Promise<void>): Promise<unknown[]> {
+  const calls: unknown[] = [];
+  const methods = ["log", "info", "warn", "error", "debug", "trace"] as const;
+  const saved = methods.map((name) => console[name]);
+  for (const name of methods) {
+    console[name] = (...args: unknown[]) => {
+      calls.push([name, ...args]);
+    };
+  }
+  try {
+    await body();
+  } finally {
+    methods.forEach((name, i) => {
+      const original = saved[i];
+      if (original) {
+        console[name] = original;
+      }
+    });
+  }
+  return calls;
+}
+
+describe("NEW_ROUND_RETRIES", () => {
+  it("is a small fixed number, so a failed newRound is never retried forever", () => {
+    assert.ok(Number.isInteger(NEW_ROUND_RETRIES));
+    assert.ok(NEW_ROUND_RETRIES >= 1 && NEW_ROUND_RETRIES <= 5);
+  });
+});
+
+describe("NewRoundRequests.retryOrQueue", () => {
+  it("asks to post again under the same generation while retries are left and the webview listens", () => {
+    const { requests } = readyRequests();
+    const generation = requests.request();
+    assert.ok(generation !== null);
+    for (let attempt = 1; attempt <= NEW_ROUND_RETRIES; attempt++) {
+      assert.equal(requests.retryOrQueue(generation, attempt), generation);
+    }
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.pending, 0);
+  });
+
+  it("queues the run and stops sending to that load once the retries are used up", () => {
+    const { requests, view } = readyRequests();
+    const generation = requests.request();
+    assert.ok(generation !== null);
+    assert.equal(requests.retryOrQueue(generation, NEW_ROUND_RETRIES + 1), null);
+    assert.equal(requests.isReady, false);
+    assert.equal(requests.pending, 1);
+    assert.equal(requests.request(), null, "later runs wait for the next ready too");
+    assert.equal(requests.ready(view), 2);
+  });
+
+  it("queues the run on the first failure if nothing is listening", () => {
+    const { requests, view } = readyRequests();
+    const generation = requests.request();
+    assert.ok(generation !== null);
+    requests.reset(view);
+    assert.equal(requests.retryOrQueue(generation, 1), null);
+    assert.equal(requests.pending, 1);
+  });
+
+  it("retries an earlier load's failed post on the newer load that is listening", () => {
+    const { requests, view } = readyRequests();
+    const generation = requests.request();
+    assert.ok(generation !== null);
+    requests.reset(view);
+    requests.ready(view);
+    assert.equal(requests.retryOrQueue(generation, 1), requests.generation);
+    assert.equal(requests.isReady, true);
+  });
+
+  it("gives up on an earlier load's post without stopping the newer load", () => {
+    const { requests, view } = readyRequests();
+    const generation = requests.request();
+    assert.ok(generation !== null);
+    requests.reset(view);
+    requests.ready(view);
+    const live = requests.generation;
+    assert.equal(requests.retryOrQueue(generation, NEW_ROUND_RETRIES + 1), null);
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.generation, live);
+    assert.equal(requests.pending, 1);
+  });
+});
+
+describe("sendNewRound", () => {
+  it("posts newRound once when the webview gets it", async () => {
+    const { requests } = readyRequests();
+    const { post, sent } = scriptedPost(["delivered"]);
+    await sendNewRound(requests, post, requests.request());
+    assert.deepEqual(sent, [{ type: "newRound" }]);
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.pending, 0);
+  });
+
+  it("posts nothing for a run that was queued", async () => {
+    const requests = new NewRoundRequests();
+    const { post, sent } = scriptedPost(["delivered"]);
+    await sendNewRound(requests, post, requests.request());
+    assert.deepEqual(sent, []);
+    assert.equal(requests.pending, 1);
+  });
+
+  it("retries a false result for a listening panel a fixed number of times, then queues it", async () => {
+    const { requests, view } = readyRequests();
+    const { post, sent } = scriptedPost(["false"]);
+    await sendNewRound(requests, post, requests.request());
+    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(requests.isReady, false);
+    assert.equal(requests.pending, 1);
+    // The panel's next `ready` starts exactly that one round.
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
+      init(),
+      { type: "newRound" },
+    ]);
+  });
+
+  it("retries a rejected newRound post a fixed number of times, then queues it", async () => {
+    const { requests, view } = readyRequests();
+    const { post, sent } = scriptedPost(["reject"]);
+    await assert.doesNotReject(sendNewRound(requests, post, requests.request()));
+    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(requests.pending, 1);
+    assert.equal(requests.ready(view), 1);
+  });
+
+  it("retries a post that throws, then queues it", async () => {
+    const { requests } = readyRequests();
+    const { post, sent } = scriptedPost(["throw"]);
+    await assert.doesNotReject(sendNewRound(requests, post, requests.request()));
+    assert.equal(newRounds(sent), NEW_ROUND_RETRIES + 1);
+    assert.equal(requests.pending, 1);
+  });
+
+  it("stops retrying once a retry is delivered, and starts only that one round", async () => {
+    const { requests } = readyRequests();
+    const { post, sent } = scriptedPost(["false", "reject", "delivered"]);
+    await sendNewRound(requests, post, requests.request());
+    assert.equal(newRounds(sent), 3);
+    assert.equal(requests.isReady, true);
+    assert.equal(requests.pending, 0);
+  });
+
+  it("queues without retrying when the panel stopped listening while the post was in flight", async () => {
+    const { requests, view } = readyRequests();
+    const { post, sent } = scriptedPost(["false"], () => requests.reset(view));
+    await sendNewRound(requests, post, requests.request());
+    assert.equal(newRounds(sent), 1);
+    assert.equal(requests.pending, 1);
+    assert.equal(requests.ready(view), 1);
+  });
+
+  it("starts exactly one round per run when two quick runs both fail", async () => {
+    const { requests, view } = readyRequests();
+    const { post, sent } = scriptedPost(["false"]);
+    await Promise.all([
+      sendNewRound(requests, post, requests.request()),
+      sendNewRound(requests, post, requests.request()),
+    ]);
+    assert.ok(newRounds(sent) <= 2 * (NEW_ROUND_RETRIES + 1));
+    assert.equal(requests.ready(view), 2);
+    assert.equal(requests.pending, 0);
+  });
+
+  it("delivers the queued round once on ready even if init is rejected", async () => {
+    const requests = new NewRoundRequests();
+    requests.request();
+    const view = requests.attach();
+    const [reply, ...rounds] = messagesAfter({ type: "ready" }, recordingHandlers(), requests, view);
+    assert.ok(reply);
+    const { post, sent } = scriptedPost(["reject", "delivered"]);
+    // As the host does: init first, then one sendNewRound per queued run.
+    assert.equal(await deliver(post, reply), false);
+    for (const _round of rounds) {
+      await sendNewRound(requests, post, requests.generation);
+    }
+    assert.deepEqual(sent, [init(), { type: "newRound" }]);
+    assert.equal(requests.pending, 0);
+  });
+
+  it("answers the panel's next ready with init again after a rejected init", async () => {
+    const requests = new NewRoundRequests();
+    const view = requests.attach();
+    const [first] = messagesAfter({ type: "ready" }, recordingHandlers(), requests, view);
+    assert.ok(first);
+    assert.equal(await deliver(() => Promise.reject(new Error("rejected")), first), false);
+    // Hidden and shown: the reloaded webview asks again.
+    viewVisibilityChanged(requests, view, false);
+    assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [init()]);
+    assert.equal(requests.isReady, true);
+  });
+
+  it("logs nothing when posts fail", async () => {
+    const calls = await consoleCallsDuring(async () => {
+      for (const outcome of ["false", "reject", "throw"] as const) {
+        const { requests } = readyRequests();
+        await sendNewRound(requests, scriptedPost([outcome]).post, requests.request());
+      }
+    });
+    assert.deepEqual(calls, []);
   });
 });
