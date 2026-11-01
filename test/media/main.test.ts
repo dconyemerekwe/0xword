@@ -12,7 +12,7 @@ import { wordToHex } from "../../src/game/hex.ts";
 import { Session, type SessionState } from "../../src/game/session.ts";
 import { EMPTY_STATS, toStatsView } from "../../src/stats.ts";
 import { THEMES, THEME_ATTRIBUTE, THEME_BUTTON_LABEL, type Theme } from "../../src/theme.ts";
-import { GameController, type Action } from "../../src/ui/game.ts";
+import { GameController, HEX_LOCKED_STATUS, HINT_UNKNOWN, MARK_NAMES, type Action } from "../../src/ui/game.ts";
 import { HOW_TO_PLAY, cheatsheet } from "../../src/ui/howToPlay.ts";
 import { WORDS } from "../game/fixtures.ts";
 
@@ -417,7 +417,7 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
       namespaces.push({ tag, ns });
       return fakeNode({ tag }, focus);
     },
-    createTextNode: () => fakeNode({}, focus),
+    createTextNode: (text: string) => fakeNode({ textContent: text }, focus),
     addEventListener: listen,
     get activeElement() {
       return focus.active;
@@ -1988,5 +1988,92 @@ describe("media/main.ts: screen-reader names and announcements (#62), run as the
     assert.equal(description(run), null);
     run.send('{"type":"newRound"}');
     assert.deepEqual(description(run), LOCK_TEXT);
+  });
+});
+
+describe("media/main.ts: colour is never the only cue (#64), run as the bundled webview script", () => {
+  const MARKS = Object.keys(MARK_NAMES) as (keyof typeof MARK_NAMES)[];
+
+  it("names each marked key's mark, so right-spot, wrong-spot and not-in-word keys differ by more than colour", () => {
+    // TEAM (54 45 41 4D) against BYTE (42 59 54 45): 4 right, 5 wrong, 1 and D not in the word.
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    for (const mark of MARKS) {
+      const keys = allByClass(run, `key key-${mark}`);
+      assert.ok(keys.length > 0, mark);
+      for (const key of keys) {
+        assert.equal(spokenText(key), `${String(key["textContent"])}, ${MARK_NAMES[mark]}`);
+      }
+    }
+  });
+
+  it("keeps each scored tile's mark in its name once the hex locks and the grid dims after row 6", () => {
+    const rows = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((word) => guess(word));
+    const run = runWebview(savedAfter(...rows));
+    for (const mark of MARKS) {
+      const tiles = allByClass(run, `tile tile-${mark}`);
+      assert.ok(tiles.length > 0, mark);
+      for (const tile of tiles) {
+        assert.match(spokenText(tile), new RegExp(`^[0-9A-F], ${MARK_NAMES[mark]}$`));
+      }
+    }
+  });
+
+  it("says the hex is locked in words after row 6, and locks Hints with a description", () => {
+    const rows = ["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((word) => guess(word));
+    const run = runWebview(savedAfter(...rows));
+    assert.ok(run.elements.some((node) => node["textContent"] === HEX_LOCKED_STATUS));
+    const hints = byClass(run, "hints-button");
+    assert.equal(hints["disabled"], true);
+    assert.equal((hints["attributes"] as Record<string, string>)["aria-describedby"], "hints-locked-note");
+  });
+
+  it("shows a byte not yet decoded as `?` in the hint strip, not only in a muted colour", () => {
+    // BITE gets B, T and E fully right in one row; byte 2 only half.
+    const run = runWebview(savedAfter(...guess("BITE"), { type: "toggleHints" }));
+    const cells = allByClass(run, "hint-cell").map((cell) => cell["textContent"]);
+    assert.deepEqual(cells, ["B", HINT_UNKNOWN, "T", "E"]);
+    assert.equal(HINT_UNKNOWN, "?");
+  });
+
+  it("names every legend swatch's mark in words beside it", () => {
+    const run = runWebview(savedAfter());
+    const items = byClass(run, "legend")["children"] as Record<string, unknown>[];
+    assert.equal(items.length, MARKS.length);
+    items.forEach((item, i) => {
+      const mark = MARKS[i];
+      assert.ok(mark);
+      const [swatch, name] = item["children"] as Record<string, unknown>[];
+      assert.equal(swatch?.["className"], `swatch swatch-${mark}`);
+      assert.equal((swatch?.["attributes"] as Record<string, string>)["aria-hidden"], "true");
+      assert.equal(name?.["textContent"], MARK_NAMES[mark]);
+      assert.equal(spokenText(item), MARK_NAMES[mark]);
+    });
+  });
+});
+
+describe("media/main.ts: the faded locked decode body (#76), run as the bundled webview script", () => {
+  /** The classes of `node`'s descendants, depth first. */
+  function classesUnder(node: Record<string, unknown>): string[] {
+    return (node["children"] as Record<string, unknown>[]).flatMap((child) => [
+      typeof child["className"] === "string" ? child["className"] : "",
+      ...classesUnder(child),
+    ]);
+  }
+
+  it("holds only the heading, the empty badge, the disabled box and button, and the note, so the contrast audit's faded list is complete", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    const body = byClass(run, "decode-body");
+    assert.deepEqual(classesUnder(body).filter((name) => name !== ""), [
+      "decode-head",
+      "decode-label",
+      "decode-badge",
+      "decode-row",
+      "decode-input",
+      "decode-button",
+      "decode-foot",
+    ]);
+    assert.equal(byClass(run, "decode-badge")["textContent"], "");
+    assert.equal(byClass(run, "decode-input")["disabled"], true);
+    assert.equal(byClass(run, "decode-button")["disabled"], true);
   });
 });

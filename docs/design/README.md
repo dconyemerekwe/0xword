@@ -88,7 +88,7 @@ On page 3 the scored tiles are also drawn dimmed (right spot about `#2754A8`, wr
 
 #### Light values derived for screens drawn only in dark (#26)
 
-Pages 1–3 and 5 exist only in dark, so their light values are derived from the page 4 values above. Each is another page 4 value, or a mix of two of them ("50% A over B", per sRGB channel), never a new hue. A unit test (`test/ui/palette.test.ts`) recomputes every one. **The owner should confirm them.**
+Pages 1–3 and 5 exist only in dark, so their light values are derived from the page 4 values above. Each is another page 4 value, or a mix of two of them ("50% A over B", per sRGB channel), never a new hue. A unit test (`test/ui/palette.test.ts`) recomputes every one. **Confirmed by the owner (2026-10-30, #64):** every row in this table.
 
 | Token (`src/ui/palette.ts`) | Used for | Light value | Derived as |
 |---|---|---|---|
@@ -128,11 +128,33 @@ Three tokens were added so the light theme can differ where the dark theme reuse
 - **System** (the default): VS Code's dark and high-contrast dark themes (`body.vscode-dark`, `vscode-high-contrast`) get the dark palette; its light and high-contrast light themes (`vscode-light`, `vscode-high-contrast-light`) get the light one. VS Code changes these classes live, so the panel follows a theme change at once.
 - **Light** or **Dark**: forced with the theme button in the header, next to `?`. It cycles System → Light → Dark → System. It shows a sun while the dark palette is showing and a moon while the light one is, and its accessible name says what the next press does ("Switch to light theme", "Switch to dark theme", "Follow VS Code's theme"). The choice is kept in VS Code's `globalState`, so it applies in every workspace.
 
-**Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (about 4.1:1). Placeholder text is a hint, not content; raise it with the owner before changing it.
+**Contrast:** every text pair above meets 4.5:1, except the dark-theme placeholder `#757578` on `#14161B` (3.94:1 by the WCAG formula the tests use; noted earlier as about 4.1:1). **Owner's decision (2026-10-30, #64): keep it as is, an accepted exception.** Placeholder text is a hint, not content, and the mock-up draws it. The game itself draws no `#757578`: since #21 the placeholder is `muted` (`#A3A9B6`), 6.92:1 on the decode panel `#1D2027` and 7.68:1 on the page colour `#14161B` inside the final-answer card. See [Contrast in all four themes (#64)](#contrast-in-all-four-themes-64).
 
 The decode lock's text (#46) meets 4.5:1 in both themes: the title `text` on the panel is 13.55:1 (dark) and 17.82:1 (light), the message 10.47:1 and 6.06:1, and the locked Hints text, though `disabled`, 5.64:1 (`#8A909C`) and 5.62:1 on the page.
 
-The palette unit test checks every text pair the game draws in both palettes (`TEXT_PAIRS` and `DIMMED_KEY_PAIRS` in `src/ui/palette.ts`). All of them meet 4.5:1 except page 3's dimmed keys in the dark theme, which are listed for the owner rather than changed (#26): the locked digit `#6B7180` is 3.42:1 on a neutral key `#1B1E24`, 2.45:1 on a right-spot key `#1E3660` and 3.80:1 on an absent key `#111318`. The keys are `disabled`, so WCAG sets them no minimum. The light theme's dimmed keys all meet 4.5:1.
+The palette unit test checks every text pair the game draws in both palettes (`TEXT_PAIRS` and `DIMMED_KEY_PAIRS` in `src/ui/palette.ts`), and text faded with `opacity` at the colour the player sees (`FADED_TEXT`, below). At full strength, all of them meet 4.5:1 except page 3's dimmed keys in the dark theme (#26): the locked digit `#6B7180` is 3.42:1 on a neutral key `#1B1E24`, 2.45:1 on a right-spot key `#1E3660` and 3.80:1 on an absent key `#111318`. **Owner's decision (2026-10-30, #64): keep them as is, an accepted exception.** The keys are `disabled`, which WCAG exempts, and the dimming shows they're locked. The light theme's dimmed keys all meet 4.5:1.
+
+#### Contrast in all four themes (#64)
+
+VS Code's high-contrast dark theme shows the dark palette and its high-contrast light theme the light one (see [Which palette shows](#which-palette-shows-26)), so the four themes use two palettes. `test/ui/palette.test.ts` checks every pair in each of the four themes through that mapping, and lists by name and ratio any pair under 4.5:1 that isn't one of the owner's accepted exceptions (`CONTRAST_EXCEPTIONS` in `src/ui/palette.ts`, each with the decision). `test/media/styles.test.ts` ties every stylesheet rule that draws text or an icon to its checked pair, so a new text colour or pair fails until it's checked. The audit added two icon pairs, both well over 4.5:1: the decode lock's padlock (`text` on `lockBadge`, 11.30:1 dark, 14.04:1 light) and the result card's down arrows (`muted` on `byteTile`, 6.05:1 and 5.43:1).
+
+**Faded text (#76).** The audit first missed text faded with `opacity`. The only such fade is the locked decode panel's body (`.decode-locked .decode-body { opacity: 0.1 }`, #46): its heading, its disabled box with the placeholder, its disabled Decode button and its note, drawn before the decode step under the lock. Each is now checked at the colour the player sees, the text and its fill composited at 10% over the panel (`FADED_TEXT` and `fadedColour` in `src/ui/palette.ts`), and the stylesheet test fails if anything else is faded with `opacity`, or by any other means (`filter`, blend modes, `color-mix`). The faded body is 1.31:1 (`text`), 1.20:1 (`muted`) and 1.21:1 (`muted` on the disabled button) in the dark theme, and 1.23, 1.15 and 1.14:1 in the light theme. Page 3's dimmed grid and keypad use their own colours, not `opacity`, so their figures above are unchanged.
+
+The owner's decisions on the three known gaps, and the faded text found in QA (#76), all on 2026-10-30, with no colour changed:
+
+| Gap | Numbers | Decision |
+|---|---|---|
+| Dark placeholder `#757578` on `#14161B` | 3.94:1 | Keep as is, an accepted exception: placeholder text is a hint, not content, and the mock-up draws it. The game draws `muted` instead (above). |
+| Page 3's dimmed dark keys (`disabled`) | 3.42, 2.45 and 3.80:1 | Keep as is, an accepted exception: disabled controls are exempt, and the dimming shows they're locked. |
+| Light values derived for screens drawn only in dark (#26) | all meet 4.5:1 | Confirmed: see [the derived table](#light-values-derived-for-screens-drawn-only-in-dark-26). |
+| The locked decode panel's body, faded to 10% (#76, design from #46) | dark 1.31, 1.20 and 1.21:1; light 1.23, 1.15 and 1.14:1 | Keep the 10% fade, an accepted exception: the body is inactive (its box and button are disabled), and the lock's title and message on top are the readable content, at full contrast. |
+
+**Colour is never the only cue.** Not-in-word keys are struck through, in the locked keypad too. Every marked key and scored tile names its mark in its accessible name ("4, Right spot"), in the dimmed grid too. The legend names each swatch in words. The hint strip shows `?` for a byte not yet decoded. The locked states say so in words or with an icon: the decode panel's lock badge and two lines, "Hex locked · all 6 rows used" with a padlock, and the locked Hints button's padlock and description. The disabled decode box has a dashed outline. Tests in `test/media/styles.test.ts` and `test/media/main.test.ts` check these.
+
+**Accepted by the owner (2026-10-30, #64), with no design or colour change:** two places show their meaning on screen by colour alone.
+
+- **Right-spot and wrong-spot tiles and keypad keys** are blue or orange, with no other visual mark. The blue and orange differ in lightness as well as hue, though not by much: relative luminance 0.176 for `#2F6FE4` against 0.442 for `#F0A04B` in the dark theme (2.18:1), and 0.152 for `#2463EA` against 0.461 for `#F3A524` in the light theme (2.52:1). The legend names each colour in words, and screen readers say each tile's and key's mark ("4, Right spot").
+- **The disabled `?` at the decode step** is only greyed out (#53's design). It is `disabled`, which is exposed to assistive technology.
 
 ## Shared layout (pages 1–4)
 

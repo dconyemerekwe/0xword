@@ -196,7 +196,7 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["text", "panel"], // the decode panel and its text box
   ["text", "key"], // unmarked keypad keys, DEL and ENTER
   ["muted", "background"], // status line, legend
-  ["muted", "panel"], // placeholder, disabled decode box
+  ["muted", "panel"], // placeholder, disabled decode box (the design table's #757578 isn't used: see CONTRAST_EXCEPTIONS)
   ["muted", "key"], // disabled unmarked keys
   ["muted", "keyAbsent"], // absent keypad keys, the disabled Decode button
   ["onRight", "right"], // right-spot tiles and keys, the Decode button
@@ -214,11 +214,13 @@ export const TEXT_PAIRS: readonly (readonly [text: PaletteToken, background: Pal
   ["stripUnknown", "background"], // the hint strip's `?` (its letters are `text` on `background`)
   // The decode lock's title is `text` on `panel`: checked above.
   ["lockMessage", "panel"], // the decode lock's message
+  ["text", "lockBadge"], // the decode lock's icon (an icon, checked as text)
   ["hintsLockedText", "background"], // the locked Hints button and the locked `?` (#53) (disabled, but checked anyway)
   // The result card's heading and line are `text` and `muted` on `panel`, and
   // the note under it `muted` on `background`: all checked above.
   ["byteHex", "byteTile"], // a result byte tile's hex
   ["text", "byteTile"], // a result byte tile's letter
+  ["muted", "byteTile"], // a result byte tile's down arrow (an icon, checked as text)
   // How to play: the heading, rules and card letters are `text`, and the
   // section headings `muted`, on `background` or `panel`: checked above. The
   // "blue" and "orange" chips are `onRight`/`right` and `onWrong`/`wrong`.
@@ -235,7 +237,7 @@ export const MIN_TEXT_CONTRAST = 4.5;
  * The dimmed keys while the hex is locked (page 3), with their background.
  * They are `disabled`, so WCAG sets them no contrast minimum, but #26 asks
  * for `MIN_TEXT_CONTRAST` here too. Those that miss it are listed in
- * `BELOW_MIN_CONTRAST`.
+ * `CONTRAST_EXCEPTIONS`.
  */
 export const DIMMED_KEY_PAIRS: readonly (readonly [text: PaletteToken, background: PaletteToken])[] = [
   ["lockedKeyText", "lockedKey"], // unmarked keys, DEL and ENTER
@@ -245,18 +247,88 @@ export const DIMMED_KEY_PAIRS: readonly (readonly [text: PaletteToken, backgroun
 ];
 
 /**
- * Pairs knowingly under `MIN_TEXT_CONTRAST`, as `palette:text/background`.
- * Each is a design value the owner decides on: they're reported, never
- * changed to pass (CLAUDE.md Design: raise accessibility conflicts with the
- * owner). A test checks each one really is under the minimum, so the list
- * can't go stale.
+ * Text drawn under `opacity`: the locked decode panel's body (pages L1 and
+ * L2, #46), at `opacity` over `behind`, before the decode step. Its heading
+ * is `text`, its placeholder, disabled box and note `muted` on `panel`, and
+ * its disabled Decode button `muted` on `keyAbsent`. The player sees each at
+ * its `fadedColour`, so that is what's checked. media/styles.css sets the
+ * same opacity (a test checks they match, and that nothing else is faded).
  */
-export const BELOW_MIN_CONTRAST: readonly string[] = [
-  // Owner decision: page 3's dimmed dark keys, as built in #22 (3.42, 2.45 and 3.80:1).
-  "dark:lockedKeyText/lockedKey",
-  "dark:lockedKeyText/lockedKeyRight",
-  "dark:lockedKeyText/keyAbsent",
-];
+export const FADED_TEXT = {
+  opacity: 0.1,
+  behind: "panel",
+  pairs: [
+    ["text", "panel"],
+    ["muted", "panel"],
+    ["muted", "keyAbsent"],
+  ],
+} as const satisfies {
+  readonly opacity: number;
+  readonly behind: PaletteToken;
+  readonly pairs: readonly (readonly [text: PaletteToken, background: PaletteToken])[];
+};
+
+/** A faded pair's key in `CONTRAST_EXCEPTIONS`: `palette:text/background@opacity`. */
+export function fadedPairKey(palette: string, text: PaletteToken, background: PaletteToken, opacity: number): string {
+  return `${palette}:${text}/${background}@${opacity}`;
+}
+
+/**
+ * `colour` drawn at `opacity` over `behind`, per sRGB channel, as the
+ * browser composites a faded element: the colour the player sees.
+ */
+export function fadedColour(colour: string, behind: string, opacity: number): string {
+  if (!HEX_COLOUR.test(colour) || !HEX_COLOUR.test(behind)) {
+    throw new RangeError(`Expected #RRGGBB colours, got "${colour}" and "${behind}"`);
+  }
+  if (!(opacity >= 0 && opacity <= 1)) {
+    throw new RangeError(`Expected an opacity from 0 to 1, got ${opacity}`);
+  }
+  const channel = (value: string, start: number): number => Number.parseInt(value.slice(start, start + 2), 16);
+  return `#${[1, 3, 5]
+    .map((start) => Math.round(opacity * channel(colour, start) + (1 - opacity) * channel(behind, start)))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase()}`;
+}
+
+/** Why page 3's dimmed dark keys may stay under the minimum: the owner's decision (#64). */
+const DIMMED_KEYS_DECISION =
+  "Owner's decision, 2026-10-30 (#64): kept as drawn on page 3, an accepted exception. " +
+  "Disabled controls are exempt, and the dimming shows they're locked.";
+
+/** Why the locked decode panel's faded body may stay under the minimum: the owner's decision (#76). */
+const FADED_DECODE_DECISION =
+  "Owner's decision, 2026-10-30 (#76, design from #46): the locked decode panel's body stays faded to 10%, " +
+  "an accepted exception. It's inactive (its box and button are disabled), and the lock's title and message " +
+  "on top are the readable content, at full contrast.";
+
+/**
+ * The owner's accepted exceptions: pairs under `MIN_TEXT_CONTRAST`, as
+ * `palette:text/background` (or `fadedPairKey` for faded text, checked at
+ * what the player sees), each with the owner's decision. Any other pair
+ * under the minimum fails the tests. They're never changed to pass (CLAUDE.md
+ * Design: raise accessibility conflicts with the owner), and a test checks
+ * each one really is under the minimum, so the list can't go stale.
+ *
+ * The owner also accepted the design table's dark placeholder `#757578` on
+ * `#14161B` (3.94:1) as an exception (#64), but the game doesn't draw it:
+ * since #21 the placeholder is `muted` on `panel`, or on `background` in the
+ * final-answer card, and both meet the minimum. So it has no entry here.
+ */
+export const CONTRAST_EXCEPTIONS: Readonly<Record<string, string>> = {
+  // Page 3's dimmed dark keys, as built in #22: 3.42, 2.45 and 3.80:1.
+  "dark:lockedKeyText/lockedKey": DIMMED_KEYS_DECISION,
+  "dark:lockedKeyText/lockedKeyRight": DIMMED_KEYS_DECISION,
+  "dark:lockedKeyText/keyAbsent": DIMMED_KEYS_DECISION,
+  // The locked decode panel's body at 10% (#76): 1.14 to 1.31:1.
+  "dark:text/panel@0.1": FADED_DECODE_DECISION,
+  "dark:muted/panel@0.1": FADED_DECODE_DECISION,
+  "dark:muted/keyAbsent@0.1": FADED_DECODE_DECISION,
+  "light:text/panel@0.1": FADED_DECODE_DECISION,
+  "light:muted/panel@0.1": FADED_DECODE_DECISION,
+  "light:muted/keyAbsent@0.1": FADED_DECODE_DECISION,
+};
 
 /**
  * Text colours drawn only as WCAG large text (at least 24px, or at least
