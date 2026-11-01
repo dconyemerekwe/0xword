@@ -317,6 +317,21 @@ These reuse the existing tokens where the draft visibly does: the panel, the pag
 - **`?` locks at the decode step (#53).** The draft keeps it usable on L3 and page 3; the owner locked it so the cheatsheet can't be read while decoding.
 - **The highlight on unlock is the page 3 card.** The draft shows no extra animation. Any transition must respect `prefers-reduced-motion`.
 
+## Icons (#84)
+
+The owner's icon mock-ups (2026-11-01) are in [`icons/`](icons/):
+
+| File | Shows | Icon it defines |
+|---|---|---|
+| [`sidebar-4.9.pdf`](icons/sidebar-4.9.pdf), [`sidebar-4.9@2x.png`](icons/sidebar-4.9@2x.png) ("Mockup · 4.9 in the side bar") | A whole VS Code window (dark theme) with the 0xWORD panel open mid-game. The 0xWORD icon is the selected one in the activity bar on the left. The PNG is the same screen at 2× (2560 × 1880 px), which agents can view. | The activity-bar icon, `media/icon.svg` |
+| [`marketplace-9.1.pdf`](icons/marketplace-9.1.pdf) ("Mockup · 9.1 on the Marketplace") | The extension's Marketplace page: the icon large at the top, smaller beside the README's `0xWORD` wordmark, in the "In search results" card and in the search results row. The PDF holds one 3840 × 3540 px image (with an invisible text layer). | The Marketplace icon, `media/icon.png` (128 × 128), which the README header (#85) also uses |
+
+**Activity-bar icon** (`media/icon.svg`, 24 × 24 viewBox). Measured from `sidebar-4.9@2x.png`, where the 48px activity bar is 96px wide: a 2 × 2 grid of rounded tiles, 21 units across and centred (1.5 units of margin). Each tile is 9.5 units square with a 2.25-unit corner radius, 2 units apart. The top-left tile is the same colour at 35% opacity (the mock-up draws `#5B5E62`, which is `#E8EAF0` at 35% over the bar's `#101216`); the top-right and bottom-left tiles are solid; **the bottom-right tile is an outline**, 1.5 units thick, drawn inside the tile's edge. Everything is `currentColor`: VS Code draws activity-bar icons as a mask in its own foreground colour, so the icon follows the theme and the selected and unselected states, and the opacity keeps the top-left tile dimmed in each.
+
+**Marketplace icon** (`media/icon.png`, 128 × 128). Measured from the large icon in `marketplace-9.1.pdf`, where it's 384px across (a 3× scale): a rounded square the full 128px, corner radius 28, in the page colour `#14161B`; 20px of padding; four 40px tiles 8px apart, corner radius 9. Top left `#343944` (not in word), top right `#2F6FE4` (right spot), bottom left `#F0A04B` (wrong spot), bottom right empty: the square's colour inside a 6px outline in `#7B8190`, the typed-tile outline from the [dark table](#dark-theme-pages-13-and-5) (the mock-up reads `#7B8093` to `#7D838F`). Outside the square the PNG is transparent. The measured colours match the table's within 2 units: no new colour.
+
+**Regenerating the PNG.** Its source is [`icons/marketplace-icon.svg`](icons/marketplace-icon.svg). After changing it, run `node scripts/render-icon.ts` (optionally with the path to `msedge.exe` or Chrome). It uses only Node's built-ins and a locally installed Edge or Chrome in headless mode to screenshot the SVG at 128 × 128 on a transparent background, writes `media/icon.png` and checks its size. CI never runs it; commit the new PNG. `test/media/icons.test.ts` checks the PNG's size and the colour of each tile, so a stale PNG with different colours fails.
+
 ## Accessibility
 
 These apply to every screen and come from CLAUDE.md's Design section:

@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "publisher": "dconyemerekwe",
   "license": "MIT",
+  "icon": "media/icon.png",
   "private": true,
   "type": "module",
   "repository": {

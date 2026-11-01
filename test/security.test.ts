@@ -62,6 +62,7 @@ const ALLOWED_MEDIA = [
   "media/fonts/JetBrainsMono-OFL.txt",
   "media/fonts/JetBrainsMono-Variable.ttf",
   "media/fonts/README.md",
+  "media/icon.png", // the Marketplace icon in package.json
   "media/icon.svg", // the activity-bar icon in package.json
   "media/main.ts", // source of the bundle
   "media/styles.css", // STYLE_PATH
@@ -219,6 +220,8 @@ describe("security audit: what media/ holds", () => {
     assert.ok(existsSync(new URL(STYLE_PATH.join("/"), root)));
     assert.ok(read("package.json").includes('"icon": "media/icon.svg"'));
     assert.ok(existsSync(new URL("media/icon.svg", root)));
+    assert.ok(read("package.json").includes('"icon": "media/icon.png"'));
+    assert.ok(existsSync(new URL("media/icon.png", root)));
     for (const [, font] of read(STYLE_PATH.join("/")).matchAll(/url\("([^"]+)"\)/g)) {
       assert.ok(existsSync(new URL(`media/${font}`, root)), `${font}`);
     }

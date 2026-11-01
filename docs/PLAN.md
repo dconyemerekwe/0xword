@@ -155,7 +155,7 @@ Phase 3 is finished, so this phase starts from a green `develop` (typecheck clea
 
 ## Phase 5: Packaging
 
-- A 128×128 PNG icon, a README with screenshots, and a CHANGELOG.
+- A 128×128 PNG icon, a README with screenshots, and a CHANGELOG. **Icons built (#84):** `media/icon.png` (the Marketplace icon, `icon` in `package.json`) and a new activity-bar `media/icon.svg`, both from the owner's mock-ups in `docs/design/icons/` (see [docs/design/README.md](design/README.md#icons-84)). The PNG is drawn from `docs/design/icons/marketplace-icon.svg` with `node scripts/render-icon.ts`, which uses a local Edge or Chrome, not a new dependency.
 - A `.vscodeignore` that leaves out `src/`, tests, `scripts/`, source maps and `.git`.
 - Run `vsce package`, install the `.vsix` locally ("Extensions: Install from VSIX…"), and test it.
 - **Release workflow, first part** (see [release-pipeline.md](release-pipeline.md)): add `on: workflow_call` to `ci.yml`, and a `release.yml` with `verify-tag` → `ci` → `github-release`. A `v*` tag then checks the tag against `package.json` and `main`, runs CI, and creates a GitHub Release with the `.vsix`. It needs no secrets, so it's tried with a test tag before anything is published. It's here because what it tests is packaging.
