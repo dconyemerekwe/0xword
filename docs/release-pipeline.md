@@ -68,6 +68,14 @@ Each arrow is a `needs:` link: a job runs only if the one before it passed. If a
 - **`ci` fails:** the same as a red PR. Fix it through a PR into `develop`, release again, and use a new tag.
 - **`publish` fails after approval:** read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number.
 
+## `"private": true` in `package.json`
+
+`package.json` keeps `"private": true`. It's an npm setting, not a Marketplace one:
+
+- **npm:** `npm publish` refuses to publish the package, so 0xWORD can't be pushed to the npm registry by mistake.
+- **`vsce package` and `vsce publish`:** no effect. `@vscode/vsce` (the version pinned in `package-lock.json`) never reads the field: it isn't checked when packaging or publishing and isn't written into the `.vsix`'s `extension.vsixmanifest`. Checked by searching vsce's code in `node_modules/@vscode/vsce/out/` (#83).
+- **The Marketplace:** the extension is public once published. `private` doesn't hide it. The shipped `package.json` still contains the field, which VS Code ignores.
+
 ## The design
 
 These are the files as they'll be added. Actions marked `<full-sha>` get pinned to a full commit SHA, as `ci.yml` already does.
