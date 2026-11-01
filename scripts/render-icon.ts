@@ -37,8 +37,13 @@ try {
     `<!doctype html><style>html,body{margin:0;background:transparent}img{display:block}</style>` +
       `<img width="${SIZE}" height="${SIZE}" src="data:image/svg+xml;base64,${svg}">`,
   );
+  // Remove the old PNG first, so a browser that writes nothing fails below.
+  rmSync(OUTPUT, { force: true });
   execFileSync(browser, [
     "--headless=new",
+    "--no-first-run",
+    "--disable-background-networking",
+    "--disable-extensions",
     "--disable-gpu",
     "--hide-scrollbars",
     "--force-device-scale-factor=1",
@@ -50,6 +55,10 @@ try {
   ]);
 } finally {
   rmSync(work, { recursive: true, force: true });
+}
+
+if (!existsSync(OUTPUT)) {
+  throw new Error(`The browser exited without writing ${OUTPUT}.`);
 }
 
 // The PNG's IHDR chunk starts at byte 8; its width and height follow the type.
