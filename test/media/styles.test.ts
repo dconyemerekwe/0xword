@@ -582,6 +582,10 @@ describe("media/styles.css fits the game in the panel's height (#80)", () => {
   const round = (value: number): number => Math.round(value * 1000) / 1000;
 
   // Every size in the model comes from the stylesheet itself.
+  /** The width of a `border: 2px solid ...` (or dashed) declaration, or NaN. */
+  function border(body: string): number {
+    return Number(/(?:^|[\s;])border: ([\d.]+)px (?:solid|dashed)/.exec(body)?.[1]);
+  }
   const touch = px(root, "--ox-touch");
   const bodyPadding = px(block("body"), "padding");
   const fontSize = px(block("body"), "font-size");
@@ -593,16 +597,19 @@ describe("media/styles.css fits the game in the panel's height (#80)", () => {
   const tileRowGap = px(block(".grid"), "gap");
   const pairColumnGap = px(block(".grid-row"), "gap");
   const pairGap = px(block(".pair"), "gap");
-  const tileMin = round(18 * 1.4 + 2 * 2);
+  const tileMinParts = /--ox-tile-min: calc\(([\d.]+)px \* ([\d.]+) \+ (\d+) \* ([\d.]+)px\);/.exec(root);
+  const tileMin = round(Number(tileMinParts?.[1]) * Number(tileMinParts?.[2]) + Number(tileMinParts?.[3]) * Number(tileMinParts?.[4]));
   const keyGap = px(block(".keypad"), "gap");
+  const keyMinWidth = px(root, "--ox-key-min-width");
   const fitChrome = px(root, "--ox-fit-chrome");
 
   const header = Math.max(touch, px(block(".title"), "font-size") * number(block(".title"), "line-height"));
   /** The status line: as tall as the Hints button, the taller of its two items. */
   const statusLine = touch;
-  const hintStrip = Math.max(px(block(".hint-cell"), "min-height"), line(px(block(".hint-cell"), "font-size")) + 2 * 1);
+  const hintCell = block(".hint-cell");
+  const hintStrip = Math.max(px(hintCell, "min-height"), line(px(hintCell, "font-size")) + 2 * border(hintCell));
   const legend = line(px(block(".legend"), "font-size"));
-  const decodeFrame = 2 * 2 + 2 * px(block(".decode"), "padding");
+  const decodeFrame = 2 * border(block(".decode")) + 2 * px(block(".decode"), "padding");
   const label = Number(/--ox-label-font: 700 (\d+)px\/([\d.]+)/.exec(root)?.[1]) * lineHeight;
   const decodeGap = px(block(".decode-body"), "gap");
   /** Before the decode step: the lock (badge, title, message) is taller than the faded body, whose note is empty. */
@@ -614,27 +621,52 @@ describe("media/styles.css fits the game in the panel's height (#80)", () => {
   const finalCard = decodeFrame + label + decodeGap + touch + decodeGap + line(px(block(".decode-foot"), "font-size"));
   const message = line(fontSize);
   const keypad = 5 * touch + 4 * keyGap;
-  /** The result card, with its note under it on two lines, to be safe. */
+  const resultHeadGap = px(block(".result-head"), "gap");
+  const resultHead =
+    line(px(block(".result-outcome"), "font-size")) + resultHeadGap
+    + px(block(".result-heading"), "font-size") * number(block(".result-heading"), "line-height") + resultHeadGap
+    + line(fontSize);
+  const resultBytePadding = Number(/(?:^|[\s;])padding: ([\d.]+)px [\d.]+px;/.exec(block(".result-byte"))?.[1]);
+  const resultByteGap = px(block(".result-byte"), "gap");
+  const resultByte =
+    2 * resultBytePadding + line(px(block(".result-hex"), "font-size")) + resultByteGap + px(block(".result-arrow"), "height")
+    + resultByteGap + px(block(".result-letter"), "font-size") * number(block(".result-letter"), "line-height");
   const resultCard =
-    2 * 2 + 2 * px(block(".result"), "padding") + 2 * px(block(".result"), "gap")
-    + line(px(block(".result-outcome"), "font-size")) + 4
-    + px(block(".result-heading"), "font-size") * number(block(".result-heading"), "line-height") + 4 + line(fontSize)
-    + 2 * 12 + line(px(block(".result-hex"), "font-size")) + 2 + 12 + 2
-    + px(block(".result-letter"), "font-size") * number(block(".result-letter"), "line-height")
-    + touch;
+    2 * border(block(".result")) + 2 * px(block(".result"), "padding") + 2 * px(block(".result"), "gap")
+    + resultHead + resultByte + touch;
+  /** The note under the result card, on two lines, to be safe. */
   const resultNote = 2 * line(fontSize);
 
-  /** A screen's height with tiles of `tile` px: its sections, the gaps between them and the body's padding. */
-  function stack(sections: number[]): number {
+  /** The game's sections, in `media/main.ts`'s `game.append(...)` order. */
+  const GAME_SECTIONS = ["header", "statusBar", "grid", "hintStrip", "legend", "decode", "result", "resultNote", "message", "keypad"] as const;
+  type Section = (typeof GAME_SECTIONS)[number];
+  /** Each section's height with tiles of `tile` px, and `decode` as the locked panel or the final card. */
+  function heights(tile: number, decode: number): Record<Section, number> {
+    return {
+      header,
+      statusBar: statusLine,
+      grid: 6 * tile + 5 * tileRowGap,
+      hintStrip,
+      legend,
+      decode,
+      result: resultCard,
+      resultNote,
+      message,
+      keypad,
+    };
+  }
+  /** A screen's height: the sections it shows, the gaps between them and the body's padding. */
+  function stack(tile: number, decode: number, shown: readonly Section[]): number {
+    const sections = GAME_SECTIONS.filter((section) => shown.includes(section)).map((section) => heights(tile, decode)[section]);
     return round(2 * bodyPadding + (sections.length - 1) * sectionGap + sections.reduce((sum, height) => sum + height, 0));
   }
-  const grid = (tile: number): number => 6 * tile + 5 * tileRowGap;
+  const playing: readonly Section[] = ["header", "statusBar", "grid", "legend", "decode", "message", "keypad"];
   const screens = {
-    "mid-game": (tile: number) => stack([header, statusLine, grid(tile), legend, lockedPanel, message, keypad]),
-    "mid-game, Hints on": (tile: number) => stack([header, statusLine, grid(tile), hintStrip, legend, lockedPanel, message, keypad]),
-    "the decode step": (tile: number) => stack([header, statusLine, grid(tile), legend, finalCard, message, keypad]),
+    "mid-game": (tile: number) => stack(tile, lockedPanel, playing),
+    "mid-game, Hints on": (tile: number) => stack(tile, lockedPanel, [...playing, "hintStrip"]),
+    "the decode step": (tile: number) => stack(tile, finalCard, playing),
     // The message line is screen-reader text there: it takes no room.
-    "the result card": (tile: number) => stack([header, statusLine, grid(tile), resultCard, resultNote]),
+    "the result card": (tile: number) => stack(tile, finalCard, ["header", "statusBar", "grid", "result", "resultNote"]),
   };
   const tallest = (tile: number): number => Math.max(...Object.values(screens).map((height) => height(tile)));
 
@@ -681,14 +713,26 @@ describe("media/styles.css fits the game in the panel's height (#80)", () => {
     assert.equal(chrome("mid-game, Hints on"), 647.6);
     assert.equal(chrome("the decode step"), 618.8);
     assert.ok(chrome("mid-game") < chrome("mid-game, Hints on"));
+    // An upper bound (the note on two lines): headless Edge measured 485.1px with its one line at 400px wide.
+    assert.equal(chrome("the result card"), 509.5);
     assert.ok(chrome("the result card") < chrome("mid-game, Hints on"));
     assert.equal(round(tallest(0)), chrome("mid-game, Hints on"));
     assert.ok(fitChrome >= tallest(0) && fitChrome - tallest(0) < 1, `${fitChrome}px for ${tallest(0)}px`);
     assert.equal(fitChrome, 648);
   });
 
-  it("fits every screen, keypad, DEL and ENTER included, in any panel tall enough for it, at any width", () => {
-    for (let width = 300; width <= 800; width += 20) {
+  it("models the game's sections in media/main.ts's order, so a new section fails until it's modelled", () => {
+    const main = readFileSync(new URL("../../media/main.ts", import.meta.url), "utf8");
+    const appended = /\bgame\.append\(([^)]*)\);/.exec(main)?.[1]?.split(",").map((name) => name.trim());
+    assert.deepEqual(appended, [...GAME_SECTIONS]);
+  });
+
+  it("fits every screen, keypad, DEL and ENTER included, in any panel tall enough for it, at any width without sideways scrolling", () => {
+    // Below this width the keypad overflows the column and a horizontal
+    // scrollbar takes height that 100vh still counts: a known limit.
+    const noSidewaysScroll = 2 * bodyPadding + 4 * keyMinWidth + 3 * keyGap;
+    assert.equal(noSidewaysScroll, 390);
+    for (let width = noSidewaysScroll; width <= 800; width += 10) {
       for (let height = Math.ceil(tallest(tileMin)); height <= 1400; height += 7) {
         const size = tile(width, height);
         for (const [name, screen] of Object.entries(screens)) {
