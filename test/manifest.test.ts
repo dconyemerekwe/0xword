@@ -26,6 +26,14 @@ interface Command {
 }
 
 interface Manifest {
+  name?: string;
+  publisher?: string;
+  description?: string;
+  categories?: string[];
+  keywords?: string[];
+  homepage?: string;
+  bugs?: { url?: string };
+  galleryBanner?: { color?: string; theme?: string };
   activationEvents?: string[];
   capabilities?: { untrustedWorkspaces?: { supported?: unknown } };
   contributes?: {
@@ -35,7 +43,8 @@ interface Manifest {
   };
 }
 
-const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as Manifest;
+const manifestText = readFileSync(new URL("package.json", root), "utf8");
+const manifest = JSON.parse(manifestText) as Manifest;
 const container = manifest.contributes?.viewsContainers?.activitybar?.[0];
 const extensionSource = readFileSync(new URL("src/extension.ts", root), "utf8");
 
@@ -76,6 +85,85 @@ describe("package.json", () => {
 
   it("supports untrusted workspaces", () => {
     assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, true);
+  });
+});
+
+describe("package.json Marketplace listing", () => {
+  const repo = "https://github.com/dconyemerekwe/0xword";
+
+  it("uses the owner's Marketplace line as the description", () => {
+    assert.equal(
+      manifest.description,
+      "Guess 8 hex digits that spell a real 4-letter word, then decode it. In your side bar while your agent works.",
+    );
+  });
+
+  it('has keywords that a search for "hex word game" matches', () => {
+    const keywords = manifest.keywords ?? [];
+    for (const keyword of ["hex", "word game", "game", "puzzle", "ascii"]) {
+      assert.ok(keywords.includes(keyword), `missing keyword ${keyword}`);
+    }
+  });
+
+  it("stays within the Marketplace's limit of 30 keywords, with no duplicates", () => {
+    const keywords = manifest.keywords ?? [];
+    assert.ok(keywords.length <= 30, String(keywords.length));
+    assert.equal(new Set(keywords).size, keywords.length);
+  });
+
+  it("links the homepage and bug reports to the GitHub repository", () => {
+    assert.equal(manifest.homepage, `${repo}#readme`);
+    assert.equal(manifest.bugs?.url, `${repo}/issues`);
+  });
+
+  it("gives the gallery banner the dark page background from the design palette", () => {
+    const design = readFileSync(new URL("docs/design/README.md", root), "utf8");
+    // The dark-theme colour table's page row: "| Page | `#14161B` | `#E8EAF0` | |".
+    const darkPage = /^\| Page \| `(#[0-9A-F]{6})` \|/m.exec(design)?.[1];
+    assert.ok(darkPage);
+    assert.equal(manifest.galleryBanner?.color, darkPage);
+    assert.equal(manifest.galleryBanner?.theme, "dark");
+  });
+
+  it("keeps the identifier <publisher>.0xword", () => {
+    // The Marketplace identifier is "<publisher>.<name>".
+    assert.ok(manifest.publisher);
+    assert.equal(manifest.name, "0xword");
+  });
+
+  it("keeps the single category Other", () => {
+    assert.deepEqual(manifest.categories, ["Other"]);
+  });
+});
+
+/** Ordinary English words that end in "dle" and aren't a game's name. */
+const ORDINARY_DLE_WORDS: ReadonlySet<string> = new Set(["bundle", "handle", "idle", "middle"]);
+
+/**
+ * Every use of "Wordle" or a "-dle" name (CLAUDE.md trademark rule) in the
+ * text, in any letter case, apart from the ordinary words above.
+ */
+function trademarkHits(text: string): string[] {
+  return (text.match(/[a-z0-9]*dle\b/gi) ?? []).filter(
+    (word) => !ORDINARY_DLE_WORDS.has(word.toLowerCase()),
+  );
+}
+
+describe("package.json trademark", () => {
+  it('never uses the name "Wordle" or a "-dle" suffix', () => {
+    assert.deepEqual(trademarkHits(manifestText), []);
+  });
+
+  describe("the check catches", () => {
+    for (const text of ['"Wordle"', '"WORDLE clone"', '"Hexdle"', '"0xdle"', '"keywords": ["hex-dle"]']) {
+      it(text, () => {
+        assert.notDeepEqual(trademarkHits(text), []);
+      });
+    }
+
+    it("but not ordinary words like bundle, handle, idle or middle", () => {
+      assert.deepEqual(trademarkHits('"bundle the handle while idle in the middle"'), []);
+    });
   });
 });
 
