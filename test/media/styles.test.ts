@@ -534,13 +534,12 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
     assert.match(block(".hint-strip"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-pair-min\), 1fr\)\);/);
   });
 
-  it("keeps every key at its 400px size, shrinking only to fit the column a scrollbar narrows: no fr, percentage or viewport widths", () => {
-    // Exactly this range and nothing else: 89.5px at most, 87px at least.
+  it("never grows a key past its 400px size and shrinks it only to fit a narrower column, down to 44px: no fr, percentage or viewport widths", () => {
+    // Exactly this range and nothing else: 89.5px at most, the 44px touch target at least (#65).
     const columns = "minmax(var(--ox-key-min-width), var(--ox-key-width))";
     assert.match(block(".keypad"), /grid-template-columns: repeat\(4, minmax\(var\(--ox-key-min-width\), var\(--ox-key-width\)\)\);/);
     assert.equal(px(root, "--ox-key-width"), (column400 - 3 * keyGap) / 4);
-    // VS Code's 10px scrollbar takes the 400px panel's column from 376px to 366px.
-    assert.equal(px(root, "--ox-key-min-width"), (column400 - 10 - 3 * keyGap) / 4);
+    assert.match(root, /--ox-key-min-width: var\(--ox-touch\);/);
     assert.match(block(".key-wide"), /grid-column: span 2;/);
     for (const selector of [".keypad", ".key", ".key-wide"]) {
       const body = block(selector).replace(columns, "");
@@ -550,7 +549,7 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
     assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
   });
 
-  it("centres the keypad in a wider panel and lets it overflow to the right in a narrower one, never squashed", () => {
+  it("centres the keypad in a wider panel and starts it at the left in a column too narrow for 44px keys", () => {
     // Auto margins centre it, and drop to 0 when it doesn't fit, so it starts at
     // the left and the panel scrolls sideways; centring with `align-self` or
     // `justify-content` would push its left side out of reach instead.
@@ -569,7 +568,6 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
     const pairMin = 2 * 29.2 + pairGap;
     assert.ok(4 * pairMin + 3 * rowGap <= column400, `${4 * pairMin + 3 * rowGap}px in ${column400}px`);
     assert.equal(px(root, "--ox-key-width"), 89.5);
-    assert.equal(px(root, "--ox-key-min-width"), 87);
   });
 });
 
@@ -775,16 +773,94 @@ describe("media/styles.css the focus ring (#63)", () => {
   });
 });
 
+/** The narrowest and widest a keypad key may be, from `.keypad`'s `minmax()` columns. */
+function keyRange(): readonly [min: number, max: number] {
+  assert.match(root, /--ox-key-min-width: var\(--ox-touch\);/);
+  return [px(root, "--ox-touch"), px(root, "--ox-key-width")];
+}
+
+/**
+ * The keypad's width in a game column, as the stylesheet sizes it: auto
+ * margins make it fit its content, so it is as wide as the column, but never
+ * wider than its 89.5px keys nor narrower than its 44px ones.
+ */
+function keypadWidth(column: number): number {
+  const [min, max] = keyRange();
+  const gaps = 3 * px(block(".keypad"), "gap");
+  return Math.min(4 * max + gaps, Math.max(4 * min + gaps, column));
+}
+
+describe("media/styles.css a focused key's ring in a narrow panel (#65)", () => {
+  const ringWidth = px(block(":focus-visible,\n.decode-input:focus-visible"), "outline-offset") + 2;
+  const padding = px(block("body"), "padding");
+  const keyGap = px(block(".keypad"), "gap");
+  const [keyMin, keyMax] = keyRange();
+  /** The grid's narrowest width: 4 pairs of two 29.2px tiles, with the gaps. */
+  const gridMin = 4 * (2 * (18 * 1.4 + 2 * 2) + px(block(".pair"), "gap")) + 3 * px(block(".grid-row"), "gap");
+  /** Game columns to check, from one too narrow for 44px keys up to the widest (#app's 400px). */
+  const COLUMNS = [150, 194, 250, 281.6, 300, 320, 340, 361, 366, 376, 400] as const;
+
+  /** A right-hand key's ring edge, from the page's left: the keypad starts at the left when it overflows. */
+  function ringRight(column: number): number {
+    const width = keypadWidth(column);
+    return padding + Math.max(0, (column - width) / 2) + width + ringWidth;
+  }
+
+  it("keeps the 400px panel's keys with no scrollbar: 89.5px wide, DEL and ENTER 185px, at least 44px tall", () => {
+    const keypad = keypadWidth(400 - 2 * padding);
+    assert.equal(keypad, 376);
+    assert.equal((keypad - 3 * keyGap) / 4, 89.5);
+    assert.equal(2 * 89.5 + keyGap, 185);
+    assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
+  });
+
+  it("never makes a key narrower than the 44px touch target, at any column width", () => {
+    assert.equal(keyMin, 44);
+    assert.match(block(".key"), /min-width: var\(--ox-touch\);/);
+    for (const column of COLUMNS) {
+      const key = (keypadWidth(column) - 3 * keyGap) / 4;
+      assert.ok(key >= keyMin && key <= keyMax, `${key}px keys in a ${column}px column`);
+    }
+  });
+
+  it("fits the keypad in every column from 194px, so a right-hand key's ring stays in the body's padding, whatever the scrollbar", () => {
+    for (const column of COLUMNS.filter((width) => width >= 4 * keyMin + 3 * keyGap)) {
+      assert.ok(keypadWidth(column) <= column, `the keypad fits a ${column}px column`);
+      // The panel is the column and the padding on each side; the ring stops 8px short of its right edge.
+      assert.ok(ringRight(column) <= column + 2 * padding - (padding - ringWidth), `${column}px column`);
+    }
+  });
+
+  it("shows the ring scrolled fully right in every column: the grid, never the keypad, sets the scroll edge", () => {
+    for (const column of COLUMNS) {
+      // The page scrolls as far as its widest content (the body's right padding isn't counted, to be safe).
+      const scrollEdge = Math.max(column + 2 * padding, padding + Math.max(gridMin, column));
+      assert.ok(ringRight(column) <= scrollEdge, `ring at ${ringRight(column)}px, scroll edge at ${scrollEdge}px, ${column}px column`);
+    }
+    // In a column too narrow for 44px keys, the grid overflows well past the keypad and its ring.
+    assert.ok(4 * keyMin + 3 * keyGap + ringWidth < gridMin, `${gridMin}px grid`);
+  });
+
+  it("gives the keys the column a 15px scrollbar leaves in a 400px panel: 361px, so 85.75px keys", () => {
+    const column = 400 - 15 - 2 * padding;
+    assert.equal(column, 361);
+    assert.equal((keypadWidth(column) - 3 * keyGap) / 4, 85.75);
+    assert.equal(ringRight(column), 400 - 15 - padding + ringWidth);
+  });
+});
+
 describe("media/styles.css a focused key's ring in a 400px panel (#63)", () => {
   const ringWidth = px(block(":focus-visible,\n.decode-input:focus-visible"), "outline-offset") + 2;
   const padding = px(block("body"), "padding");
   const keyGap = px(block(".keypad"), "gap");
 
-  it("fits the keypad in the 400px panel's column, with or without the scrollbar, so no key reaches the edge", () => {
+  it("fits the keypad in the 400px panel's column, with or without a scrollbar, so no key reaches the edge", () => {
     const column = 400 - 2 * padding;
     assert.equal(4 * px(root, "--ox-key-width") + 3 * keyGap, column);
-    // VS Code's 10px scrollbar narrows the column, and the keys shrink to fit it.
-    assert.equal(4 * px(root, "--ox-key-min-width") + 3 * keyGap, column - 10);
+    // A vertical scrollbar of any width narrows the column, and the keys shrink to fit it (#65).
+    for (const scrollbar of [10, 15, 17]) {
+      assert.equal(keypadWidth(column - scrollbar), column - scrollbar, `a ${scrollbar}px scrollbar`);
+    }
   });
 
   it("draws the ring within the body's padding at the panel's edges and within the gap between keys", () => {
