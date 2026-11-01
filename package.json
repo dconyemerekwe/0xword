@@ -1,7 +1,7 @@
 {
   "name": "0xword",
   "displayName": "0xWORD",
-  "description": "Decode a hidden 4-letter word from its ASCII hex while your AI agent works.",
+  "description": "Guess 8 hex digits that make a real 4-letter word, then decode it. In your side bar while your agent works.",
   "version": "0.0.1",
   "publisher": "dconyemerekwe",
   "license": "MIT",
@@ -11,12 +11,29 @@
     "type": "git",
     "url": "https://github.com/dconyemerekwe/0xword.git"
   },
+  "homepage": "https://github.com/dconyemerekwe/0xword#readme",
+  "bugs": {
+    "url": "https://github.com/dconyemerekwe/0xword/issues"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "hex",
+    "hexadecimal",
+    "ascii",
+    "word game",
+    "word",
+    "game",
+    "puzzle"
+  ],
+  "galleryBanner": {
+    "color": "#14161B",
+    "theme": "dark"
+  },
   "activationEvents": [],
   "main": "./dist/extension.cjs",
   "capabilities": {
