@@ -3,3 +3,7 @@
 # their SHA-256 checksums match media/fonts/README.md on every checkout.
 media/fonts/*.ttf binary
 media/fonts/*.txt -text
+# Images and PDFs (mock-ups, icons) are binary: never touch their line endings.
+*.png binary
+*.pdf binary
+*.jpg binary
