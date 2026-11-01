@@ -110,8 +110,18 @@
    * decode step's final card is 11.2px taller than the locked panel, but
    * the hint strip and its gap (40px) are gone by then; the result card
    * and How to play are shorter still. Rounded up to 648px, so sub-pixel
-   * rounding never adds a scrollbar. Every screen uses the same figure, so
-   * the tiles don't change size when Hints is pressed or the hex locks.
+   * rounding never adds a scrollbar.
+   *
+   * Steady tiles (owner's decision, 2026-11-01): every screen uses the same
+   * figure, so the tiles never change size when Hints is pressed or the hex
+   * locks. The cost: a panel that fitted mid-game with Hints off but not
+   * with Hints on (about 854px to 893px tall at 400px wide) now has smaller
+   * tiles all the time, e.g. 41px → 35.3px at 400 × 860.
+   *
+   * Known limit: in a panel under 390px wide the keypad overflows the
+   * column, and the horizontal scrollbar takes height that `100vh` still
+   * counts, so a panel just tall enough can still scroll by about that
+   * scrollbar's height (e.g. about 9px at 380 × 880).
    *
    * The grid and the hint strip are at most 8 such tiles, their 4 pair gaps
    * (3px) and 3 gaps between pairs (12px) wide. Where the column is
@@ -998,7 +1008,10 @@ body {
  * Known limits: below about 366px, with the page scrolled fully right, the
  * right-hand keys' focus ring can be cut at the scroll edge. From about 424px
  * wide, the 376px keypad is narrower than the 400px grid and centred, so
- * their edges no longer line up.
+ * their edges no longer line up. Under 390px wide (a 366px column), the
+ * horizontal scrollbar from that overflow takes height `100vh` doesn't
+ * leave out, so the height fit (#80, `--ox-fit-chrome`) can be off by about
+ * that scrollbar's height.
  */
 .keypad {
   display: grid;
