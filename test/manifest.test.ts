@@ -140,13 +140,18 @@ describe("package.json Marketplace listing", () => {
 const ORDINARY_DLE_WORDS: ReadonlySet<string> = new Set(["bundle", "handle", "idle", "middle"]);
 
 /**
- * Every use of "Wordle" or a "-dle" name (CLAUDE.md trademark rule) in the
- * text, in any letter case, apart from the ordinary words above.
+ * Every use of "Wordle" or a "-dle" name (CLAUDE.md trademark rule) in a
+ * JSON document, in any letter case, apart from the ordinary words above.
+ * The match stops at "dle", so "Wordles" is caught as "Wordle" and
+ * "handles" passes as "handle". The document is scanned as written and
+ * again decoded, so a name with a letter written as a JSON unicode escape
+ * is caught too.
  */
-function trademarkHits(text: string): string[] {
-  return (text.match(/[a-z0-9]*dle\b/gi) ?? []).filter(
-    (word) => !ORDINARY_DLE_WORDS.has(word.toLowerCase()),
-  );
+function trademarkHits(json: string): string[] {
+  const decoded = JSON.stringify(JSON.parse(json));
+  return [json, decoded]
+    .flatMap((text) => text.match(/[a-z0-9]*dle/gi) ?? [])
+    .filter((word) => !ORDINARY_DLE_WORDS.has(word.toLowerCase()));
 }
 
 describe("package.json trademark", () => {
@@ -155,14 +160,28 @@ describe("package.json trademark", () => {
   });
 
   describe("the check catches", () => {
-    for (const text of ['"Wordle"', '"WORDLE clone"', '"Hexdle"', '"0xdle"', '"keywords": ["hex-dle"]']) {
-      it(text, () => {
-        assert.notDeepEqual(trademarkHits(text), []);
+    const caught: readonly string[] = [
+      '{"displayName": "Wordle"}',
+      '{"description": "A WORDLE clone"}',
+      '{"displayName": "Hexdle"}',
+      '{"name": "0xdle"}',
+      '{"keywords": ["hex-dle"]}',
+      '{"description": "Like Wordles"}',
+      '{"displayName": "WordleGame"}',
+      '{"name": "0xdleMode"}',
+      '{"displayName": "Word\\u006ce"}',
+    ];
+    for (const json of caught) {
+      it(json, () => {
+        assert.notDeepEqual(trademarkHits(json), []);
       });
     }
 
-    it("but not ordinary words like bundle, handle, idle or middle", () => {
-      assert.deepEqual(trademarkHits('"bundle the handle while idle in the middle"'), []);
+    it("but not ordinary words like bundle, handles, idle or middleware", () => {
+      assert.deepEqual(
+        trademarkHits('{"description": "bundle the handles while idle in the middleware"}'),
+        [],
+      );
     });
   });
 });
