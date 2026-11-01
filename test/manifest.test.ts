@@ -88,14 +88,49 @@ describe("package.json", () => {
   });
 });
 
+/**
+ * Words that make `vsce package` add a Marketplace tag when they appear in
+ * the description, copied from `TagsProcessor.Keywords` in
+ * node_modules/@vscode/vsce/out/package.js (vsce 4.0.0). None fits 0xWORD:
+ * "spell", for example, adds the tag `markdown`.
+ */
+const DESCRIPTION_TAG_WORDS: readonly string[] = [
+  "git", "npm", "spell", "bootstrap", "lint", "linting", "react", "js", "node", "c++",
+  "Cplusplus", "xml", "angular", "jquery", "php", "python", "latex", "ruby", "java",
+  "erlang", "sql", "nodejs", "c#", "css", "javascript", "ftp", "haskell", "unity",
+  "terminal", "powershell", "laravel", "meteor", "emmet", "eslint", "tfs", "rust",
+];
+
+/** How vsce matches one of those words: whole word, any letter case. */
+function descriptionTagPattern(word: string): RegExp {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:${escaped})(?!\\w)`, "i");
+}
+
 describe("package.json Marketplace listing", () => {
   const repo = "https://github.com/dconyemerekwe/0xword";
 
   it("uses the owner's Marketplace line as the description", () => {
     assert.equal(
       manifest.description,
-      "Guess 8 hex digits that spell a real 4-letter word, then decode it. In your side bar while your agent works.",
+      "Guess 8 hex digits that make a real 4-letter word, then decode it. In your side bar while your agent works.",
     );
+  });
+
+  it("has no word in the description that makes vsce add an unrelated tag", () => {
+    const description = manifest.description ?? "";
+    const hits = DESCRIPTION_TAG_WORDS.filter((word) => descriptionTagPattern(word).test(description));
+    assert.deepEqual(hits, []);
+  });
+
+  it("would catch a description that makes vsce add a tag, like spell adding markdown", () => {
+    for (const text of ["Guess digits that spell a word.", "Spell it out", "A node and npm game"]) {
+      assert.ok(
+        DESCRIPTION_TAG_WORDS.some((word) => descriptionTagPattern(word).test(text)),
+        text,
+      );
+    }
+    assert.ok(!descriptionTagPattern("spell").test("Guess digits that make a word, spelling aside."));
   });
 
   it('has keywords that a search for "hex word game" matches', () => {

@@ -1,7 +1,7 @@
 {
   "name": "0xword",
   "displayName": "0xWORD",
-  "description": "Guess 8 hex digits that spell a real 4-letter word, then decode it. In your side bar while your agent works.",
+  "description": "Guess 8 hex digits that make a real 4-letter word, then decode it. In your side bar while your agent works.",
   "version": "0.0.1",
   "publisher": "dconyemerekwe",
   "license": "MIT",
