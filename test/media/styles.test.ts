@@ -573,6 +573,169 @@ describe("media/styles.css grid tiles and keypad keep their shape (#33)", () => 
   });
 });
 
+describe("media/styles.css fits the game in the panel's height (#80)", () => {
+  /** A unitless value from a declaration such as `line-height: 1.4;`, or NaN. */
+  function number(body: string, property: string): number {
+    return Number(new RegExp(`(?:^|[\\s;])${property}: ([\\d.]+);`).exec(body)?.[1]);
+  }
+  /** Rounded to 1/1000px, so sums of `14px × 1.4` and the like compare exactly. */
+  const round = (value: number): number => Math.round(value * 1000) / 1000;
+
+  // Every size in the model comes from the stylesheet itself.
+  const touch = px(root, "--ox-touch");
+  const bodyPadding = px(block("body"), "padding");
+  const fontSize = px(block("body"), "font-size");
+  const lineHeight = number(block("body"), "line-height");
+  const line = (size: number): number => size * lineHeight;
+  const game = /(?:^|\})\s*\.game,\s*\.how-to-play\s*\{([^}]*)\}/.exec(rules)?.[1] ?? "";
+  const sectionGap = px(game, "gap");
+  const appMaxWidth = px(block("#app"), "max-width");
+  const tileRowGap = px(block(".grid"), "gap");
+  const pairColumnGap = px(block(".grid-row"), "gap");
+  const pairGap = px(block(".pair"), "gap");
+  const tileMin = round(18 * 1.4 + 2 * 2);
+  const keyGap = px(block(".keypad"), "gap");
+  const fitChrome = px(root, "--ox-fit-chrome");
+
+  const header = Math.max(touch, px(block(".title"), "font-size") * number(block(".title"), "line-height"));
+  /** The status line: as tall as the Hints button, the taller of its two items. */
+  const statusLine = touch;
+  const hintStrip = Math.max(px(block(".hint-cell"), "min-height"), line(px(block(".hint-cell"), "font-size")) + 2 * 1);
+  const legend = line(px(block(".legend"), "font-size"));
+  const decodeFrame = 2 * 2 + 2 * px(block(".decode"), "padding");
+  const label = Number(/--ox-label-font: 700 (\d+)px\/([\d.]+)/.exec(root)?.[1]) * lineHeight;
+  const decodeGap = px(block(".decode-body"), "gap");
+  /** Before the decode step: the lock (badge, title, message) is taller than the faded body, whose note is empty. */
+  const lockedPanel = decodeFrame + Math.max(
+    px(block(".lock-badge"), "height") + 2 * px(block(".decode-lock"), "gap") + 2 * line(fontSize),
+    label + decodeGap + touch + decodeGap + 0,
+  );
+  /** At the decode step: the final card, with its note "Type with your keyboard" under the box. */
+  const finalCard = decodeFrame + label + decodeGap + touch + decodeGap + line(px(block(".decode-foot"), "font-size"));
+  const message = line(fontSize);
+  const keypad = 5 * touch + 4 * keyGap;
+  /** The result card, with its note under it on two lines, to be safe. */
+  const resultCard =
+    2 * 2 + 2 * px(block(".result"), "padding") + 2 * px(block(".result"), "gap")
+    + line(px(block(".result-outcome"), "font-size")) + 4
+    + px(block(".result-heading"), "font-size") * number(block(".result-heading"), "line-height") + 4 + line(fontSize)
+    + 2 * 12 + line(px(block(".result-hex"), "font-size")) + 2 + 12 + 2
+    + px(block(".result-letter"), "font-size") * number(block(".result-letter"), "line-height")
+    + touch;
+  const resultNote = 2 * line(fontSize);
+
+  /** A screen's height with tiles of `tile` px: its sections, the gaps between them and the body's padding. */
+  function stack(sections: number[]): number {
+    return round(2 * bodyPadding + (sections.length - 1) * sectionGap + sections.reduce((sum, height) => sum + height, 0));
+  }
+  const grid = (tile: number): number => 6 * tile + 5 * tileRowGap;
+  const screens = {
+    "mid-game": (tile: number) => stack([header, statusLine, grid(tile), legend, lockedPanel, message, keypad]),
+    "mid-game, Hints on": (tile: number) => stack([header, statusLine, grid(tile), hintStrip, legend, lockedPanel, message, keypad]),
+    "the decode step": (tile: number) => stack([header, statusLine, grid(tile), legend, finalCard, message, keypad]),
+    // The message line is screen-reader text there: it takes no room.
+    "the result card": (tile: number) => stack([header, statusLine, grid(tile), resultCard, resultNote]),
+  };
+  const tallest = (tile: number): number => Math.max(...Object.values(screens).map((height) => height(tile)));
+
+  /** The tile size in a `width` × `height` panel: the stylesheet's rule, by the width and by the height. */
+  function tile(width: number, height: number): number {
+    const column = Math.min(width - 2 * bodyPadding, appMaxWidth);
+    const byWidth = (column - 3 * pairColumnGap - 4 * pairGap) / 8;
+    const byHeight = (height - fitChrome) / 6;
+    return Math.max(tileMin, Math.min(byWidth, byHeight));
+  }
+  /** The tile size before #80: the width alone. */
+  function tileBefore(width: number): number {
+    const column = Math.min(width - 2 * bodyPadding, appMaxWidth);
+    return Math.max(tileMin, (column - 3 * pairColumnGap - 4 * pairGap) / 8);
+  }
+
+  it("caps the tiles by the panel's height with one formula, never below the tile minimum", () => {
+    assert.match(root, /--ox-tile-fit: max\(var\(--ox-tile-min\), \(100vh - var\(--ox-fit-chrome\)\) \/ 6\);/);
+    // 8 tiles, a 3px gap in each of the 4 pairs and 3 gaps of 12px between them: the grid's own widths.
+    assert.match(
+      root,
+      new RegExp(`--ox-grid-max: calc\\(8 \\* var\\(--ox-tile-fit\\) \\+ 4 \\* ${pairGap}px \\+ 3 \\* ${pairColumnGap}px\\);`),
+    );
+    // `vh` is the only viewport unit, and only here.
+    assert.equal([...rules.matchAll(/\d+v[hw]\b|\bv(?:min|max)\b/g)].length, 1);
+  });
+
+  it("caps the grid and the hint strip at the same width, centred, so the strip's columns stay under the byte pairs", () => {
+    for (const selector of [".grid", ".hint-strip"]) {
+      const body = block(selector);
+      assert.match(body, /(?:^|\s)width: 100%;/, selector);
+      assert.match(body, /max-width: var\(--ox-grid-max\);/, selector);
+      assert.match(body, /margin-inline: auto;/, selector);
+    }
+    // The same columns as the rows, as #33 set them.
+    assert.equal(
+      /grid-template-columns: ([^;]+);/.exec(block(".hint-strip"))?.[1],
+      /grid-template-columns: ([^;]+);/.exec(block(".grid-row"))?.[1],
+    );
+  });
+
+  it("takes the tallest screen without its tiles, Hints on, rounded up by less than a pixel", () => {
+    const chrome = (name: keyof typeof screens): number => round(screens[name](0));
+    assert.equal(chrome("mid-game, Hints on"), 647.6);
+    assert.equal(chrome("the decode step"), 618.8);
+    assert.ok(chrome("mid-game") < chrome("mid-game, Hints on"));
+    assert.ok(chrome("the result card") < chrome("mid-game, Hints on"));
+    assert.equal(round(tallest(0)), chrome("mid-game, Hints on"));
+    assert.ok(fitChrome >= tallest(0) && fitChrome - tallest(0) < 1, `${fitChrome}px for ${tallest(0)}px`);
+    assert.equal(fitChrome, 648);
+  });
+
+  it("fits every screen, keypad, DEL and ENTER included, in any panel tall enough for it, at any width", () => {
+    for (let width = 300; width <= 800; width += 20) {
+      for (let height = Math.ceil(tallest(tileMin)); height <= 1400; height += 7) {
+        const size = tile(width, height);
+        for (const [name, screen] of Object.entries(screens)) {
+          assert.ok(screen(size) <= height, `${name} at ${width} × ${height}: ${screen(size)}px with ${size}px tiles`);
+        }
+      }
+    }
+  });
+
+  it("shrinks the tiles in a wide but short panel so the game fits, where the width alone cut the keypad off", () => {
+    // About the owner's laptop panel: 520 × 900.
+    assert.equal(tileBefore(520), 44);
+    assert.ok(tallest(44) > 900, "before #80 Hints on didn't fit");
+    assert.equal(tile(520, 900), 42);
+    assert.ok(tallest(tile(520, 900)) <= 900);
+    // 520 × 920 already fitted: unchanged.
+    assert.equal(tile(520, 920), 44);
+  });
+
+  it("keeps every size of a panel that already fits: 41px tiles in a 400px panel on a tall monitor", () => {
+    // The panel heights where the tallest screen fitted with 41px tiles.
+    assert.equal(tileBefore(400), 41);
+    for (let height = Math.ceil(tallest(41)); height <= 1600; height++) {
+      assert.equal(tile(400, height), 41, `400 × ${height}`);
+    }
+    for (const width of [300, 360, 424, 520, 600, 800]) {
+      const height = Math.ceil(tallest(tileBefore(width)));
+      assert.equal(tile(width, height), tileBefore(width), `${width} × ${height}`);
+    }
+    // Keys stay 89.5 × 44px: their rules don't change with the panel's height.
+    assert.equal(px(root, "--ox-key-width"), 89.5);
+    assert.match(block(".key"), /min-height: var\(--ox-touch\);/);
+  });
+
+  it("never takes a tile below 29.2px, and scrolls as before below the height that needs", () => {
+    assert.equal(round(fitChrome + 6 * tileMin), 823.2);
+    for (const height of [200, 500, 700, 750, 800, 823]) {
+      assert.equal(tile(400, height), tileMin, `400 × ${height}`);
+    }
+    // From a 823.2px panel down the tiles stay at their minimum, and a screen taller than the panel scrolls.
+    assert.equal(round(screens["mid-game, Hints on"](tileMin)), 822.8);
+    assert.equal(round(screens["the decode step"](tileMin)), 794);
+    assert.equal(round(screens["mid-game"](tileMin)), 782.8);
+    assert.equal(touch, 44);
+  });
+});
+
 describe("media/styles.css decode box placeholder (#33)", () => {
   /** The `@container (width < Npx)` rules: their width, selector and declarations. */
   const containerRules = [...rules.matchAll(/@container \(width < (\d+)px\) \{\s*([^{}]+?)\s*\{([^{}]*)\}\s*\}/g)].map(

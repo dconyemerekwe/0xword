@@ -94,6 +94,33 @@
   --ox-tile-min: calc(18px * 1.4 + 2 * 2px);
   --ox-pair-min: calc(2 * var(--ox-tile-min) + 3px);
   /*
+   * Tiles fit the panel's height too (#80; `100vh` in a webview is the
+   * panel's height). `--ox-fit-chrome` is the tallest game screen without
+   * its 6 rows of tiles, so the tiles share what the panel has left over,
+   * and never go below `--ox-tile-min` (from a 823.2px panel down, where
+   * the panel scrolls as before).
+   *
+   * The tallest screen is mid-game with Hints on, 647.6px without its
+   * tiles: the body's padding (2 × 12px), 7 gaps of 12px between its 8
+   * sections, the header and status line (44px each), the grid's 5 row gaps
+   * (6px), the hint strip (28px), the legend (12px × 1.4), the locked decode
+   * panel (2 × 2px border, 2 × 12px padding, and the lock: a 38px badge,
+   * title and message at 14px × 1.4, 2 gaps of 4px), the message line
+   * (14px × 1.4) and the keypad (5 rows of 44px, 4 gaps of 6px). The
+   * decode step's final card is 11.2px taller than the locked panel, but
+   * the hint strip and its gap (40px) are gone by then; the result card
+   * and How to play are shorter still. Rounded up to 648px, so sub-pixel
+   * rounding never adds a scrollbar. Every screen uses the same figure, so
+   * the tiles don't change size when Hints is pressed or the hex locks.
+   *
+   * The grid and the hint strip are at most 8 such tiles, their 4 pair gaps
+   * (3px) and 3 gaps between pairs (12px) wide. Where the column is
+   * narrower than that, its width decides, as before.
+   */
+  --ox-fit-chrome: 648px;
+  --ox-tile-fit: max(var(--ox-tile-min), (100vh - var(--ox-fit-chrome)) / 6);
+  --ox-grid-max: calc(8 * var(--ox-tile-fit) + 4 * 3px + 3 * 12px);
+  /*
    * Keypad keys (#33) keep their size in a 400px panel at every width: the
    * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px). When
    * the page scrolls, VS Code's 10px scrollbar narrows that column to 366px,
@@ -369,10 +396,17 @@ body {
 
 /* Grid: 6 rows of 4 byte pairs, with a wider gap between pairs than within one. */
 
+/*
+ * As wide as the column, up to `--ox-grid-max` so the game fits the panel's
+ * height (#80), and centred when that's narrower, like the keypad.
+ */
 .grid {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  max-width: var(--ox-grid-max);
+  margin-inline: auto;
 }
 
 /*
@@ -443,10 +477,14 @@ body {
 
 /* Hint strip (page 2): one dashed cell per byte, in the same columns as the byte pairs. */
 
+/* The same width as the grid, so its columns stay under the byte pairs (#80). */
 .hint-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
   gap: 12px;
+  width: 100%;
+  max-width: var(--ox-grid-max);
+  margin-inline: auto;
 }
 
 .hint-cell {
