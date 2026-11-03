@@ -97,7 +97,7 @@ Nothing else ships: no `src/`, tests, `scripts/`, `docs/`, source maps, TypeScri
 Run this once by hand on a `.vsix` before the first release (#86), and again after a change to packaging. It uses a new, empty VS Code profile, so no other extension or setting affects it.
 
 1. Build the package: `npm run package -- --out 0xword-check.vsix` (or download the `0xword-vsix` artifact from a CI run).
-2. Open an empty folder in a clean profile: `code --profile 0xword-check <empty folder>`. The first time, this creates the profile.
+2. Open an empty folder in a clean profile: `code --profile 0xword-check <empty folder>`. The first time, this creates the profile. If VS Code asks whether you trust the folder, choose **Trust** (the untrusted check comes last).
 3. Run **Extensions: Install from VSIX…** from the Command Palette and choose the `.vsix`.
 4. Check each of these:
 

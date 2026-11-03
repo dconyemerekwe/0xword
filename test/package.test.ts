@@ -107,7 +107,8 @@ before(async () => {
   }
   await Promise.all(
     BUILDS.map((options) =>
-      esbuild.build({ ...options, absWorkingDir: root, outfile: join(checkout, options.outfile ?? ""), logLevel: "silent" }),
+      // From the copy, so the bundles are built from the checked-out files only.
+      esbuild.build({ ...options, absWorkingDir: checkout, logLevel: "silent" }),
     ),
   );
 
@@ -194,6 +195,13 @@ describe("the .vsix contents", () => {
       scripts?: Record<string, string>;
     };
     assert.equal(manifest.scripts?.package, PACKAGE_SCRIPT);
+  });
+
+  it("has no \"vsce\" options in package.json, which the packing here wouldn't apply", () => {
+    // `vsce package` reads a "vsce" block (patchOptionsWithManifest in
+    // node_modules/@vscode/vsce/out/util.js); the `pack` call above skips that step.
+    const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Record<string, unknown>;
+    assert.ok(!("vsce" in manifest));
   });
 });
 
