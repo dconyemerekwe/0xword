@@ -69,6 +69,47 @@ Each arrow is a `needs:` link: a job runs only if the one before it passed. If a
 - **`ci` fails:** the same as a red PR. Fix it through a PR into `develop`, release again, and use a new tag.
 - **`publish` fails after approval:** read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number.
 
+## What the `.vsix` ships
+
+`.vscodeignore` keeps the package to what the extension needs at runtime, plus the files the Marketplace page shows (#86):
+
+| File | Why |
+|---|---|
+| `dist/extension.cjs` | The built extension host (`main` in `package.json`). Its source map stays out. |
+| `media/dist/main.js` | The built webview script. |
+| `media/styles.css` | The webview's stylesheet. |
+| `media/fonts/DMSans-Variable.ttf`, `media/fonts/JetBrainsMono-Variable.ttf` | The bundled fonts. |
+| `media/fonts/DMSans-OFL.txt`, `media/fonts/JetBrainsMono-OFL.txt` | Their OFL licences, which must ship with them. |
+| `media/icon.png`, `media/icon.svg` | The Marketplace icon and the activity-bar icon. |
+| `README.md`, `CHANGELOG.md` | The Marketplace page and its Changelog tab. |
+| `LICENSE`, `package.json` | The licence and the manifest. |
+
+Nothing else ships: no `src/`, tests, `scripts/`, `docs/`, source maps, TypeScript sources or configs (including `media/main.ts`, `media/text.d.ts` and `media/tsconfig.json`), `SECURITY.md`, `media/fonts/README.md`, or dotfiles. The README's images live in `docs/` and still show on the Marketplace, because `vsce` rewrites every relative README link to the repo on `main`.
+
+`test/package.test.ts` checks this in every CI run. It copies the files git tracks to a temporary folder, builds into it with the same esbuild options as `npm run build` (`scripts/builds.ts`), and has `vsce` itself list and pack it. It fails if:
+
+- the package holds a file that isn't on its allowlist, or misses one that is;
+- the `.vsix` is larger than **400 KB**. It was **245.52 KB** when the limit was set (#86); the two fonts are most of it. Raise the limit in the test only on purpose, saying why in the PR;
+- the packaged README still has a relative link, or an image that doesn't point at `https://github.com/dconyemerekwe/0xword/raw/main/`.
+
+## Install check
+
+Run this once by hand on a `.vsix` before the first release (#86), and again after a change to packaging. It uses a new, empty VS Code profile, so no other extension or setting affects it.
+
+1. Build the package: `npm run package -- --out 0xword-check.vsix` (or download the `0xword-vsix` artifact from a CI run).
+2. Open an empty folder in a clean profile: `code --profile 0xword-check <empty folder>`. The first time, this creates the profile.
+3. Run **Extensions: Install from VSIX…** from the Command Palette and choose the `.vsix`.
+4. Check each of these:
+
+- [ ] **The panel opens from the activity bar.** The 0xWORD icon is in the activity bar; clicking it opens the panel with a new round, in the bundled fonts (JetBrains Mono for hex, DM Sans for the rest).
+- [ ] **A round plays through to the result card.** Guess hex rows until the decode step, type the word, and the result card shows each byte decoding to its letter, "N of 6 rows attempted · M hints used" and a New round button.
+- [ ] **The theme follows VS Code.** Switch between a dark and a light colour theme (**Preferences: Color Theme**); the panel follows.
+- [ ] **The sun/moon toggle works.** It switches the panel between light and dark, whatever VS Code's theme is.
+- [ ] **"0xWORD: New Round" works.** Run it from the Command Palette; a new round starts in the panel.
+- [ ] **The panel works in an untrusted workspace.** Run **Workspaces: Manage Workspace Trust**, choose **Don't Trust** (Restricted Mode), reload the window, and check the panel still opens and a round still plays.
+
+Then clean up: uninstall the extension, delete the profile (**Profiles: Delete Profile**), and delete `0xword-check.vsix`.
+
 ## `"private": true` in `package.json`
 
 `package.json` keeps `"private": true`. It's an npm setting, not a Marketplace one:
