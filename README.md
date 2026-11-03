@@ -1,10 +1,80 @@
-# 0xWORD
+<h1>
+  <img src="media/icon.png" width="64" height="64" align="middle" alt="">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/dconyemerekwe/0xword/raw/HEAD/docs/images/wordmark-dark.png">
+    <img src="docs/images/wordmark-light.png" height="44" align="middle" alt="0xWORD">
+  </picture>
+</h1>
 
-Puzzles between prompts. A short word game for VS Code's side panel that you can play while your AI agent works.
+A hex word game for VS Code. Guess the hex, decode the word: blue is right spot, orange is wrong spot, grey is not in the word.
 
-A hidden 4-letter word is shown as ASCII hex, two digits per letter (`BYTE` is `42 59 54 45`). Guess it in hex, one row at a time, and see which digits are in the right spot, in the wrong spot, or not in the word at all. Get a row with every tile blue, or use all 6 rows, to unlock one try at naming the word in plain English. Fewer rows means a better score.
+![The 0xWORD panel in VS Code's side bar, mid-game, beside an editor](docs/screenshots/sidebar.png)
 
-> Status: early development. Not yet published.
+## How to play
+
+1. The hidden word has 4 letters, written as ASCII hex: 2 digits per letter.
+2. Guess 8 hex digits that spell a real 4-letter word.
+3. Each digit turns **blue** right spot, **orange** wrong spot, or **grey** not in the word.
+4. Get a row with every tile blue to unlock Decode. Then you get one try at the English word: a wrong word ends the round.
+5. You can't repeat a hex guess in the same round. A repeat doesn't use up a row.
+6. After 6 rows, the hex keypad locks and Decode unlocks for your one try, even if no row is all blue.
+7. Stuck? Turn on **Hints** to see the letters you've fully decoded. It switches off after each hex row and locks once Decode unlocks. Every use is counted in your result.
+
+These are the rules the game shows under its **?** button. Fewer rows means a better score.
+
+**Mid-game.** Type hex on the keypad or your keyboard. Keys you've tried take their best colour, and digits that aren't in the word are struck through. Decode stays locked until you crack the hex row.
+
+![Mid-game in the dark and light themes: three scored rows and a fourth being typed](docs/screenshots/mid-game.png)
+
+**Hints.** The strip under the grid shows the letter of each byte you've got fully right in one row, and `?` for the rest.
+
+![Hints turned on in the dark and light themes, showing ? ? T E](docs/screenshots/hints.png)
+
+**The decode step.** A row with every tile blue locks the hex, and Hints with it. Type the English word in the Final answer box: you get one try.
+
+![The decode step in the dark and light themes: the grid solved, the Final answer box ready and the keypad locked](docs/screenshots/decode-step.png)
+
+**The result.** Each byte decodes to its letter, with the rows you used and the hints you turned on. Press **New round** to play again.
+
+![The result card in the dark and light themes: Decoded: BYTE, 4 of 6 rows attempted, 1 hint used](docs/screenshots/result.png)
+
+### ASCII cheatsheet
+
+`4_` is A–O, `5_` is P–Z. The second digit counts up from there.
+
+| A | B | C | D | E | F | G | H | I | J | K | L | M |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `41` | `42` | `43` | `44` | `45` | `46` | `47` | `48` | `49` | `4A` | `4B` | `4C` | `4D` |
+
+| N | O | P | Q | R | S | T | U | V | W | X | Y | Z |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `4E` | `4F` | `50` | `51` | `52` | `53` | `54` | `55` | `56` | `57` | `58` | `59` | `5A` |
+
+So `BYTE` is `42 59 54 45`. The game's own cheatsheet is under **?** until you reach the decode step.
+
+## Start a round
+
+Click the 0xWORD icon in the activity bar to open the panel. A round is ready straight away.
+
+Run **0xWORD: New Round** from the Command Palette (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, or <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on macOS) to open the panel and start a fresh round at any time. The round in progress is kept when you hide the panel or reload VS Code.
+
+The sun and moon button switches between the light and dark themes. By default the panel follows your VS Code theme.
+
+## Keyboard play
+
+You can play without a mouse:
+
+- Type `0`–`9` and `A`–`F` (either case) to fill the row, <kbd>Backspace</kbd> to delete a digit and <kbd>Enter</kbd> to score the row.
+- At the decode step, just start typing: the Final answer box takes the letters. Press <kbd>Enter</kbd> to submit your word.
+- <kbd>Tab</kbd> moves through the buttons in the order you see them, and <kbd>Enter</kbd> or <kbd>Space</kbd> presses the focused one. Every control has a visible focus ring.
+- <kbd>Esc</kbd> closes How to play.
+
+## Accessibility
+
+- **Screen readers.** Every button has a name, and Hints says whether it's on. Each tile is read out with its digit and mark, scored rows and messages are announced, the hint strip is read as one line, and the result card reads each byte as "42 is B".
+- **Reduced motion.** The only animation is a short colour change on the tiles. It's turned off when your system asks for reduced motion, or when VS Code's own **Reduce Motion** setting (`workbench.reduceMotion`) is on.
+- **High contrast.** VS Code's high-contrast dark and light themes show the game's dark and light palettes. Text you need to read is checked for at least 4.5:1 contrast in all four kinds of VS Code theme; locked and disabled parts are dimmed on purpose. Absent keys are struck through as well as greyed out, the legend names every colour, and screen readers say each tile's mark.
+- **Touch targets.** Every button is at least 44 by 44 pixels.
 
 ## Play while your agent works
 
