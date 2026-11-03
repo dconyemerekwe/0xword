@@ -9,6 +9,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH, buildCsp, buildHtml, createNonce } from "../src/webview/html.ts";
+import { ALLOWED_MEDIA } from "./media/allowedFiles.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path: string): string => readFileSync(new URL(path, root), "utf8");
@@ -53,22 +54,6 @@ function mediaFiles(): string[] {
     .filter((path) => statSync(new URL(path, root)).isFile())
     .sort();
 }
-
-/** What the panel uses, plus the sources and licences that sit beside it. */
-const ALLOWED_MEDIA = [
-  "media/dist/main.js", // the built webview script (SCRIPT_PATH); gitignored, so it's there after a build
-  "media/fonts/DMSans-OFL.txt",
-  "media/fonts/DMSans-Variable.ttf",
-  "media/fonts/JetBrainsMono-OFL.txt",
-  "media/fonts/JetBrainsMono-Variable.ttf",
-  "media/fonts/README.md",
-  "media/icon.png", // the Marketplace icon in package.json
-  "media/icon.svg", // the activity-bar icon in package.json
-  "media/main.ts", // source of the bundle
-  "media/styles.css", // STYLE_PATH
-  "media/text.d.ts",
-  "media/tsconfig.json",
-];
 
 describe("security audit: the Content Security Policy", () => {
   const nonce = createNonce();

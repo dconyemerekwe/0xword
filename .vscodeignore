@@ -1,15 +1,21 @@
-# Ship only the built extension, the built webview (media/), LICENSE and package.json.
+# Ship only the built extension (dist/), the built webview, its stylesheet,
+# fonts with their licences and icons (media/), README.md, CHANGELOG.md,
+# LICENSE and package.json. test/package.test.ts checks the exact list.
 .claude/**
 .github/**
 .vscode/**
 docs/**
 scripts/**
 src/**
+test/**
 **/*.map
 **/*.ts
 .gitattributes
 .gitignore
 .npmrc
 CLAUDE.md
+SECURITY.md
+# Nested READMEs (media/fonts/README.md); vsce always keeps the root README.md.
+**/README.md
 **/tsconfig.json
 *.vsix
