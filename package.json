@@ -75,7 +75,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p media",
     "test": "node --test \"test/**/*.test.ts\"",
     "verify": "npm run typecheck && npm test && npm run build",
-    "package": "vsce package --no-dependencies",
+    "package": "vsce package --no-dependencies --githubBranch main",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {

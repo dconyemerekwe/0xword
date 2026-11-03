@@ -41,7 +41,9 @@ npm version <bump> --no-git-tag-version
 
 ## 4. Update CHANGELOG.md
 
-Create it if it doesn't exist. The Marketplace shows this file on the extension's Changelog tab. Add the new version at the top:
+Create it if it doesn't exist. The Marketplace shows this file on the extension's Changelog tab.
+
+If it has a `## [Unreleased]` section, rename that heading to `## [<new>] - <YYYY-MM-DD>`, check its entries against the PRs merged since the last tag (below), and add what's missing. Otherwise, add the new version at the top:
 
 ```markdown
 ## [<new>] - <YYYY-MM-DD>
