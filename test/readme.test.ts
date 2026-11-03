@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { describe, it } from "node:test";
 import { CHEATSHEET_LINE, RULES, cheatsheet, plainText } from "../src/ui/howToPlay.ts";
+import { imageLinks } from "./markdown.ts";
 
 const root = new URL("../", import.meta.url);
 const readme = readFileSync(new URL("README.md", root), "utf8");
@@ -41,19 +42,6 @@ function section(markdown: string, heading: string): string[] {
 /** Markdown inline formatting removed: bold and code, as the game draws them in styles. */
 function unformatted(text: string): string {
   return text.replaceAll("**", "").replaceAll("`", "");
-}
-
-/**
- * Every image the README shows, Markdown images and `<img src>`, as written.
- * `vsce package` rewrites each relative one to `<repository>/raw/main/<path>`
- * (`--githubBranch main` in the package script; `guessBaseUrls` in
- * node_modules/@vscode/vsce/out/package.js, vsce 4.0.0).
- */
-function imageLinks(markdown: string): string[] {
-  return [
-    ...[...markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)].map((match) => match[1] ?? ""),
-    ...[...markdown.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1] ?? ""),
-  ];
 }
 
 /** Ordinary English words that end in "dle" and aren't a game's name. */
