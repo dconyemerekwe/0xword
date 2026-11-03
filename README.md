@@ -1,9 +1,6 @@
 <h1>
   <img src="media/icon.png" width="64" height="64" align="middle" alt="">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/dconyemerekwe/0xword/raw/HEAD/docs/images/wordmark-dark.png">
-    <img src="docs/images/wordmark-light.png" height="44" align="middle" alt="0xWORD">
-  </picture>
+  <img src="docs/images/wordmark.png" height="64" align="middle" alt="0xWORD">
 </h1>
 
 A hex word game for VS Code. Guess the hex, decode the word: blue is right spot, orange is wrong spot, grey is not in the word.
@@ -58,7 +55,7 @@ Click the 0xWORD icon in the activity bar to open the panel. A round is ready st
 
 Run **0xWORD: New Round** from the Command Palette (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, or <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on macOS) to open the panel and start a fresh round at any time. The round in progress is kept when you hide the panel or reload VS Code.
 
-The sun and moon button switches between the light and dark themes. By default the panel follows your VS Code theme.
+By default the panel follows your VS Code theme. The sun and moon button cycles through Light, Dark and back to following VS Code.
 
 ## Keyboard play
 
@@ -82,7 +79,7 @@ Planned: 0xWORD will be able to show a "Round ready" notice when you send a prom
 
 ## No telemetry
 
-0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. Your stats (rounds played and solved, average rows, how often you used hints) and the round in progress stay on your machine in VS Code's own storage. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
+0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. The round in progress stays on your machine in VS Code's own storage, and so do a few counts (rounds played and solved, average rows, how often you used hints), kept for a stats screen planned for a later version. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
 
 ## Development
 

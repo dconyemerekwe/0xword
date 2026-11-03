@@ -8,6 +8,7 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace. This is 
 - **A release starts when the owner pushes a version tag** (`v0.1.0`, `v0.2.1`, …) on `main`.
 - **Publishing waits for the owner's approval** in the Actions run.
 - **Players get the exact `.vsix` that CI built and tested** from the tagged commit. Nothing is rebuilt between testing and publishing.
+- **README images come from `main`.** `npm run package` passes `--githubBranch main`, so the Marketplace README loads its images from `https://github.com/dconyemerekwe/0xword/raw/main/…`: they resolve once the release is merged into `main` and the repo is public.
 
 ## Workflows
 

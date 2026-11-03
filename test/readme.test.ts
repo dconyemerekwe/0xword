@@ -44,24 +44,17 @@ function unformatted(text: string): string {
 }
 
 /**
- * Every image the README shows: Markdown images, `<img src>` and
- * `<source srcset>`, as written.
+ * Every image the README shows, Markdown images and `<img src>`, as written.
+ * `vsce package` rewrites each relative one to `<repository>/raw/main/<path>`
+ * (`--githubBranch main` in the package script; `guessBaseUrls` in
+ * node_modules/@vscode/vsce/out/package.js, vsce 4.0.0).
  */
 function imageLinks(markdown: string): string[] {
   return [
     ...[...markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)].map((match) => match[1] ?? ""),
     ...[...markdown.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1] ?? ""),
-    ...[...markdown.matchAll(/<source\b[^>]*\bsrcset="([^"]+)"/g)].map((match) => match[1] ?? ""),
   ];
 }
-
-/**
- * Where `vsce package` points relative image links: `<repository>/raw/HEAD`,
- * since the package script passes no `--baseImagesUrl` or `--githubBranch`
- * (`guessBaseUrls` in node_modules/@vscode/vsce/out/package.js, vsce 4.0.0).
- * On GitHub, `HEAD` is the default branch, `develop`.
- */
-const imagesBase = `${(manifest.repository?.url ?? "").replace(/\.git$/, "")}/raw/HEAD/`;
 
 /** Ordinary English words that end in "dle" and aren't a game's name. */
 const ORDINARY_DLE_WORDS: ReadonlySet<string> = new Set(["bundle", "handle", "idle", "middle"]);
@@ -76,7 +69,8 @@ describe("README opening", () => {
     const header = blocks[0] ?? "";
     assert.match(header, /^<h1>[\s\S]*<\/h1>$/);
     const icon = header.indexOf(`src="${manifest.icon}"`);
-    const wordmark = header.indexOf('alt="0xWORD"');
+    // One wordmark image, on its own dark panel so it reads on light and dark pages.
+    const wordmark = header.indexOf('<img src="docs/images/wordmark.png" height="64" align="middle" alt="0xWORD">');
     assert.notEqual(icon, -1, "the Marketplace icon is in the heading");
     assert.notEqual(wordmark, -1, "the wordmark's text alternative is 0xWORD");
     assert.ok(icon < wordmark, "the icon comes before the wordmark");
@@ -186,18 +180,16 @@ describe("README sections", () => {
 describe("README images", () => {
   const links = imageLinks(readme);
 
-  it("links to every image by a relative path, or by the URL vsce would give it", () => {
+  it("links to every image by a relative path, for vsce to rewrite", () => {
     assert.ok(links.length > 0);
     for (const link of links) {
-      assert.ok(!link.startsWith("/") && !link.startsWith("http:"), link);
-      assert.ok(!/^https:/.test(link) || link.startsWith(imagesBase), link);
+      assert.doesNotMatch(link, /^(\/|\w+:)/, link);
     }
   });
 
   it("points every image link at a file in the repo", () => {
     for (const link of links) {
-      const path = link.startsWith(imagesBase) ? link.slice(imagesBase.length) : link;
-      assert.ok(existsSync(new URL(path, root)), `${link} doesn't exist`);
+      assert.ok(existsSync(new URL(link, root)), `${link} doesn't exist`);
     }
   });
 
@@ -209,16 +201,74 @@ describe("README images", () => {
 
   it("keeps every image under 150 KB", () => {
     for (const link of links) {
-      const path = link.startsWith(imagesBase) ? link.slice(imagesBase.length) : link;
-      const size = statSync(new URL(path, root)).size;
+      const size = statSync(new URL(link, root)).size;
       assert.ok(size <= 150_000, `${link} is ${size} bytes`);
     }
   });
 
-  it("leaves vsce's rewrite to the repository's default branch: no base URL or branch in the package script", () => {
-    assert.equal(imagesBase, "https://github.com/dconyemerekwe/0xword/raw/HEAD/");
+  it("has vsce rewrite images and links to the main branch: --githubBranch main, and no base URL", () => {
     const script = manifest.scripts?.package ?? "";
-    assert.doesNotMatch(script, /--base(Images|Content)Url|--githubBranch/);
+    assert.match(script, /(^| )--githubBranch main( |$)/);
+    assert.doesNotMatch(script, /--base(Images|Content)Url/);
+    assert.equal(manifest.repository?.url, "https://github.com/dconyemerekwe/0xword.git");
+  });
+});
+
+/**
+ * The HTML tags the README may use, and each one's attributes. VS Code's
+ * Extensions view renders the README through a sanitiser that keeps only
+ * simple tags and attributes: it strips `<picture>`, `<source>`, `srcset` and
+ * `media`, so a light/dark image swap falls back to one image there (owner's
+ * decision on #85: one wordmark on a dark panel, readable on any page). Keep
+ * to this small set, which GitHub and the Marketplace render too.
+ */
+const ALLOWED_HTML: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["h1", new Set<string>()],
+  ["img", new Set(["src", "alt", "width", "height", "align"])],
+  ["a", new Set(["href", "title"])],
+  ["kbd", new Set<string>()],
+  ["br", new Set<string>()],
+]);
+
+/** Every HTML tag outside code blocks and code spans that isn't allowed, or has an attribute that isn't. */
+function htmlProblems(markdown: string): string[] {
+  const prose = markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+  const problems: string[] = [];
+  for (const match of prose.matchAll(/<\/?([a-zA-Z][\w-]*)([^>]*)>/g)) {
+    const tag = (match[1] ?? "").toLowerCase();
+    const allowed = ALLOWED_HTML.get(tag);
+    if (!allowed) {
+      problems.push(`<${tag}>`);
+      continue;
+    }
+    for (const attribute of (match[2] ?? "").matchAll(/([a-zA-Z][\w-]*)\s*=/g)) {
+      const name = (attribute[1] ?? "").toLowerCase();
+      if (!allowed.has(name)) {
+        problems.push(`<${tag} ${name}>`);
+      }
+    }
+  }
+  return problems;
+}
+
+describe("README HTML", () => {
+  it("uses only tags and attributes VS Code's README view keeps: no <picture>, <source> or srcset", () => {
+    assert.deepEqual(htmlProblems(readme), []);
+    assert.doesNotMatch(readme, /<picture|<source|srcset/i);
+  });
+
+  it("the check catches <picture>, <source>, srcset, media and inline styles", () => {
+    const caught: readonly string[] = [
+      '<picture><img src="a.png" alt=""></picture>',
+      '<source media="(prefers-color-scheme: dark)" srcset="b.png">',
+      '<img src="a.png" srcset="b.png 2x" alt="">',
+      '<img src="a.png" style="width: 10px" alt="">',
+      '<p align="center">x</p>',
+    ];
+    for (const html of caught) {
+      assert.notDeepEqual(htmlProblems(html), [], html);
+    }
+    assert.deepEqual(htmlProblems('<h1><img src="a.png" width="64" height="64" align="middle" alt="x"></h1> <kbd>Tab</kbd>'), []);
   });
 });
 
@@ -248,15 +298,30 @@ function changelogProblems(text: string): string[] {
   if (lines[0] !== "# Changelog") {
     problems.push("doesn't start with # Changelog");
   }
+  // The first version is `## [Unreleased]` while changes wait for a release,
+  // or the newest release once /release has renamed it.
   const versions = lines.filter((line) => line.startsWith("## "));
-  if (versions[0] !== "## [Unreleased]") {
-    problems.push("the first version isn't ## [Unreleased]");
+  if (versions.length === 0) {
+    problems.push("no version");
   }
-  for (const line of versions) {
+  versions.forEach((line, i) => {
     if (!VERSION_HEADING.test(line)) {
       problems.push(`bad version heading: ${line}`);
     }
-  }
+    if (line === "## [Unreleased]" && i > 0) {
+      problems.push("## [Unreleased] isn't first");
+    }
+  });
+  // Every version, Unreleased included, lists at least one section.
+  lines.forEach((line, i) => {
+    if (!line.startsWith("## ")) {
+      return;
+    }
+    const next = lines.slice(i + 1).find((after) => after.trim() !== "");
+    if (!next?.startsWith("### ")) {
+      problems.push(`no entries: ${line}`);
+    }
+  });
   lines.forEach((line, i) => {
     if (!line.startsWith("### ")) {
       return;
@@ -274,21 +339,18 @@ function changelogProblems(text: string): string[] {
 }
 
 describe("CHANGELOG", () => {
-  it("has an Unreleased section first, in the heading format /release writes", () => {
+  it("follows the heading format /release writes, with entries in every version", () => {
     assert.deepEqual(changelogProblems(changelog), []);
-  });
-
-  it("lists what's been built so far under Unreleased", () => {
-    const unreleased = section(changelog, "## [Unreleased]");
-    assert.ok(unreleased.includes("### Added"));
-    assert.ok(unreleased.filter((line) => line.startsWith("- ")).length > 0);
   });
 
   describe("the format check catches", () => {
     const caught: readonly string[] = [
       "# Changes\n\n## [Unreleased]\n\n### Added\n- x\n",
+      "# Changelog\n",
       "# Changelog\n\n## Unreleased\n\n### Added\n- x\n",
-      "# Changelog\n\n## [0.1.0] - 2026-11-03\n\n### Added\n- x\n",
+      "# Changelog\n\n## [Unreleased]\n",
+      "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-03\n\n### Added\n- x\n",
+      "# Changelog\n\n## [0.2.0] - 2026-12-01\n\n### Added\n- y\n\n## [Unreleased]\n\n### Added\n- x\n",
       "# Changelog\n\n## [Unreleased]\n\n### Added\n- x\n\n## [0.1.0]\n\n### Added\n- x\n",
       "# Changelog\n\n## [Unreleased]\n\n### New\n- x\n",
       "# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n- x\n",
@@ -301,6 +363,11 @@ describe("CHANGELOG", () => {
 
     it("but accepts a released version below Unreleased", () => {
       const text = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- y (#9)\n\n## [0.1.0] - 2026-11-03\n\n### Added\n- x\n";
+      assert.deepEqual(changelogProblems(text), []);
+    });
+
+    it("and a release first with no Unreleased, as /release leaves it", () => {
+      const text = "# Changelog\n\n## [0.1.0] - 2026-11-03\n\n### Added\n- x\n";
       assert.deepEqual(changelogProblems(text), []);
     });
   });
