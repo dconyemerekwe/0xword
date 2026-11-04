@@ -1,8 +1,12 @@
-// Checks the GitHub Actions workflows (#87): what starts them, what they may
-// write, and what they run. There is no YAML parser here (security rule 3), so
-// the workflows are read as indented lines, which is enough for the plain
-// block style they're written in. Anything written another way, such as
-// `permissions: write-all` or a quoted `uses:`, fails these checks.
+// Checks the GitHub Actions workflows (#87, #93). There is no YAML parser here
+// (security rule 3), and checking selected lines misses anything written
+// another way, so each workflow is compared whole, line by line, with the exact
+// lists below. Any added, removed, reordered or reworded line fails, however
+// its YAML is written. test/workflows-mutations.test.ts proves that on copies.
+//
+// Changing a workflow on purpose? Update its list here in the same commit, so
+// the change to what the release path does shows up in review. Bumping a pinned
+// action needs no change: the SHA and its version comment aren't compared.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -22,8 +26,116 @@ const EXPRESSION = /\$\{\{/;
 /** Any use of a secret: `secrets.X`, or a job's `secrets: inherit`. */
 const SECRET = /\bsecrets\b/;
 
+/** ci.yml as normalised() gives it. It also runs on workflow_call; nothing else changed for #87. */
+const EXPECTED_CI: readonly string[] = [
+  "name: CI",
+  "on:",
+  "  pull_request:",
+  "    branches: [develop, main]",
+  "  push:",
+  "    branches: [develop, main]",
+  "  workflow_dispatch:",
+  "  workflow_call:",
+  "permissions:",
+  "  contents: read",
+  "concurrency:",
+  "  group: ci-${{ github.ref }}",
+  "  cancel-in-progress: true",
+  "jobs:",
+  "  check:",
+  "    name: Typecheck, test, build and package",
+  "    runs-on: ubuntu-latest",
+  "    timeout-minutes: 10",
+  "    steps:",
+  "      - uses: actions/checkout@<sha>",
+  "        with:",
+  "          persist-credentials: false",
+  "      - uses: actions/setup-node@<sha>",
+  "        with:",
+  "          node-version: 24",
+  "          cache: npm",
+  "      - run: npm ci",
+  "      - run: npm audit signatures",
+  "      - run: npm run typecheck",
+  "      - run: npm test",
+  "      - run: npm run build",
+  '      - run: npm run package -- --out "$RUNNER_TEMP/0xword.vsix"',
+  "      - uses: actions/upload-artifact@<sha>",
+  "        with:",
+  "          name: 0xword-vsix",
+  "          path: ${{ runner.temp }}/0xword.vsix",
+  "          retention-days: 14",
+  "          if-no-files-found: error",
+];
+
+/**
+ * release.yml as normalised() gives it: only v* tags start it, it's read-only
+ * but for github-release, and verify-tag, ci and github-release run in that
+ * order. Phase 6 adds the publish job here.
+ */
+const EXPECTED_RELEASE: readonly string[] = [
+  "name: Release",
+  "on:",
+  "  push:",
+  "    tags: ['v*']",
+  "permissions:",
+  "  contents: read",
+  "concurrency:",
+  "  group: release",
+  "  cancel-in-progress: false",
+  "jobs:",
+  "  verify-tag:",
+  "    name: Tag matches package.json and is on main",
+  "    runs-on: ubuntu-latest",
+  "    timeout-minutes: 5",
+  "    steps:",
+  "      - uses: actions/checkout@<sha>",
+  "        with:",
+  "          fetch-depth: 0",
+  "          persist-credentials: false",
+  "      - name: Tag equals package.json version",
+  "        run: |",
+  `          expected="v$(node -p "require('./package.json').version")"`,
+  '          if [ "$GITHUB_REF_NAME" != "$expected" ]; then',
+  '            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($expected)"',
+  "            exit 1",
+  "          fi",
+  "      - name: Tagged commit is on main",
+  "        run: |",
+  '          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then',
+  `            echo "::error::Tag $GITHUB_REF_NAME is on a commit that isn't on main"`,
+  "            exit 1",
+  "          fi",
+  "  ci:",
+  "    name: CI",
+  "    needs: verify-tag",
+  "    uses: ./.github/workflows/ci.yml",
+  "  github-release:",
+  "    name: GitHub Release",
+  "    needs: ci",
+  "    runs-on: ubuntu-latest",
+  "    timeout-minutes: 5",
+  "    permissions:",
+  "      contents: write",
+  "    steps:",
+  "      - uses: actions/download-artifact@<sha>",
+  "        with:",
+  "          name: 0xword-vsix",
+  "          path: ${{ runner.temp }}",
+  "      - name: Create the release with the .vsix attached",
+  "        env:",
+  "          GH_TOKEN: ${{ github.token }}",
+  "        run: |",
+  '          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/0xword.vsix" \\',
+  '            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes',
+];
+
 function readWorkflow(file: string): string {
   return readFileSync(new URL(`${WORKFLOW_FOLDER}/${file}`, root), "utf8");
+}
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
 }
 
 /** The text as lines, without comments and blank lines. */
@@ -34,48 +146,36 @@ function codeLines(text: string): string[] {
     .filter((line) => line !== "");
 }
 
-function indentOf(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-/** The lines nested under `key:` at this indent, or undefined if there's no such block. */
-function block(lines: readonly string[], key: string, indent = 0): string[] | undefined {
-  const start = lines.indexOf(`${" ".repeat(indent)}${key}:`);
-  if (start < 0) {
-    return undefined;
-  }
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => indentOf(line) <= indent);
-  return end < 0 ? rest : rest.slice(0, end);
-}
-
-/** The same lines, without their indentation. */
-function trimmed(lines: readonly string[] | undefined): string[] | undefined {
-  return lines?.map((line) => line.trim());
-}
-
-/** Each job's lines by its id, in file order. */
-function jobsOf(text: string): Map<string, string[]> {
-  const jobs = new Map<string, string[]>();
-  const lines = block(codeLines(text), "jobs") ?? [];
-  for (const line of lines) {
-    const id = /^ {2}([\w-]+):$/.exec(line)?.[1];
-    if (id !== undefined) {
-      jobs.set(id, block(lines, id, 2) ?? []);
+/**
+ * The lines the exact lists are compared with: no blank lines or comments, and
+ * a full SHA pin written as `@<sha>`. A `run: |` script keeps every line as
+ * written, comments and spaces included, because there `#` and a trailing space
+ * can change what the shell runs. A short SHA or a tag isn't a pin, so it stays
+ * as it is and fails the comparison.
+ */
+function normalised(text: string): string[] {
+  const lines: string[] = [];
+  let scriptKeyIndent: number | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "") {
+      continue;
+    }
+    if (scriptKeyIndent !== undefined && indentOf(line) > scriptKeyIndent) {
+      lines.push(line);
+      continue;
+    }
+    scriptKeyIndent = undefined;
+    const code = line.replace(/(^|\s)#.*$/, "").trimEnd();
+    if (code === "") {
+      continue;
+    }
+    lines.push(code.replace(/^(\s*- uses: actions\/[a-z0-9-]+)@[0-9a-f]{40}$/, "$1@<sha>"));
+    const script = /^(\s*(?:- )?)run: \|$/.exec(code);
+    if (script !== null) {
+      scriptKeyIndent = (script[1] ?? "").length;
     }
   }
-  return jobs;
-}
-
-/** A nested `key:` block of a job from jobsOf, without its indentation. */
-function jobBlock(job: readonly string[], key: string): string[] | undefined {
-  return trimmed(block(job, key, 4));
-}
-
-/** The value of a job's one-line `key: value`. */
-function jobValue(job: readonly string[], key: string): string | undefined {
-  const prefix = `    ${key}: `;
-  return job.find((line) => line.startsWith(prefix))?.slice(prefix.length);
+  return lines;
 }
 
 /** Every `uses:` value in the text, however the step is laid out. */
@@ -116,185 +216,54 @@ function runScripts(text: string): string[] {
 const workflowFiles = readdirSync(new URL(`${WORKFLOW_FOLDER}/`, root)).filter(
   (file) => file.endsWith(".yml") || file.endsWith(".yaml"),
 );
-const ciText = readWorkflow("ci.yml");
-const releaseText = readWorkflow("release.yml");
-const ciLines = codeLines(ciText);
-const releaseLines = codeLines(releaseText);
-const releaseJobs = jobsOf(releaseText);
 
-function releaseJob(id: string): string[] {
-  const job = releaseJobs.get(id);
-  assert.ok(job, `release.yml has no job ${id}`);
-  return job;
-}
-
-describe("ci.yml", () => {
-  it("also runs on workflow_call and keeps every other trigger", () => {
-    assert.deepEqual(trimmed(block(ciLines, "on")), [
-      "pull_request:",
-      "branches: [develop, main]",
-      "push:",
-      "branches: [develop, main]",
-      "workflow_dispatch:",
-      "workflow_call:",
-    ]);
+describe("the workflows, line by line", () => {
+  it("ci.yml is exactly the expected list: workflow_call added, everything else unchanged", () => {
+    assert.deepEqual(normalised(readWorkflow("ci.yml")), EXPECTED_CI);
   });
 
-  it("keeps every step, in order", () => {
-    const steps = (jobsOf(ciText).get("check") ?? []).flatMap((line) => {
-      const step = /^\s*- (?:run|uses): (.*)$/.exec(line)?.[1];
-      return step === undefined ? [] : [withoutSha(step)];
+  it("release.yml is exactly the expected list", () => {
+    assert.deepEqual(normalised(readWorkflow("release.yml")), EXPECTED_RELEASE);
+  });
+});
+
+describe("the line-by-line comparison", () => {
+  const pin = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+
+  it("ignores comments, blank lines, a pin's SHA and its version comment", () => {
+    const text = `# A comment\n\nname: CI # another\n      - uses: ${pin} # v7.0.1\n`;
+    assert.deepEqual(normalised(text), ["name: CI", "      - uses: actions/checkout@<sha>"]);
+  });
+
+  for (const uses of [
+    "actions/checkout@v7",
+    "actions/checkout@3d3c42e",
+    "actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1",
+    "someone/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+  ]) {
+    it(`keeps a uses: that isn't a pinned GitHub action as written: ${uses}`, () => {
+      assert.deepEqual(normalised(`      - uses: ${uses}\n`), [`      - uses: ${uses}`]);
     });
-    assert.deepEqual(steps, [
-      "actions/checkout",
-      "actions/setup-node",
-      "npm ci",
-      "npm audit signatures",
-      "npm run typecheck",
-      "npm test",
-      "npm run build",
-      'npm run package -- --out "$RUNNER_TEMP/0xword.vsix"',
-      "actions/upload-artifact",
+  }
+
+  it("keeps a script's comments and trailing spaces, which the shell can act on", () => {
+    const script = ["        run: |", "          # a comment", "          gh release create \\ ", "      - run: next # x"];
+    assert.deepEqual(normalised(script.join("\n")), [
+      "        run: |",
+      "          # a comment",
+      "          gh release create \\ ",
+      "      - run: next",
     ]);
   });
 
-  it("keeps every action's settings", () => {
-    const settings = (action: string): string[] | undefined => {
-      const step = ciLines.findIndex((line) => line.includes(`uses: ${action}@`));
-      return trimmed(block(ciLines.slice(step), "with", 8));
-    };
-    assert.deepEqual(settings("actions/checkout"), ["persist-credentials: false"]);
-    assert.deepEqual(settings("actions/setup-node"), ["node-version: 24", "cache: npm"]);
-    assert.deepEqual(settings("actions/upload-artifact"), [
-      "name: 0xword-vsix",
-      "path: ${{ runner.temp }}/0xword.vsix",
-      "retention-days: 14",
-      "if-no-files-found: error",
-    ]);
-  });
-
-  it("stays read-only, so it never asks for more than release.yml gives it", () => {
-    assert.deepEqual(trimmed(block(ciLines, "permissions")), ["contents: read"]);
-    assert.doesNotMatch(ciLines.join("\n"), /\bwrite\b/);
-  });
-
-  it("keeps a concurrency group apart from release.yml's, so it can't cancel the release run", () => {
-    const group = block(ciLines, "concurrency")?.find((line) => line.includes("group:"));
-    assert.equal(group?.trim(), "group: ci-${{ github.ref }}");
-  });
-});
-
-describe("release.yml triggers and permissions", () => {
-  it("is triggered only by a pushed v* tag", () => {
-    assert.deepEqual(trimmed(block(releaseLines, "on")), ["push:", "tags: ['v*']"]);
-  });
-
-  it("is read-only by default", () => {
-    assert.deepEqual(trimmed(block(releaseLines, "permissions")), ["contents: read"]);
-  });
-
-  it("gives contents: write to github-release only", () => {
-    assert.deepEqual(jobBlock(releaseJob("github-release"), "permissions"), ["contents: write"]);
-    for (const [id, job] of releaseJobs) {
-      if (id !== "github-release") {
-        assert.equal(jobBlock(job, "permissions"), undefined, id);
-        assert.doesNotMatch(job.join("\n"), /\bwrite\b/, id);
-      }
-    }
-  });
-
-  it("never cancels a release in progress", () => {
-    assert.deepEqual(trimmed(block(releaseLines, "concurrency")), [
-      "group: release",
-      "cancel-in-progress: false",
-    ]);
-  });
-});
-
-describe("release.yml jobs", () => {
-  it("has verify-tag, ci and github-release, and no publish job before Phase 6", () => {
-    assert.deepEqual([...releaseJobs.keys()], ["verify-tag", "ci", "github-release"]);
-  });
-
-  it("chains the jobs verify-tag, then ci, then github-release", () => {
-    assert.equal(jobValue(releaseJob("verify-tag"), "needs"), undefined);
-    assert.equal(jobValue(releaseJob("ci"), "needs"), "verify-tag");
-    assert.equal(jobValue(releaseJob("github-release"), "needs"), "ci");
-  });
-
-  it("has no job condition that could run a job after an earlier one failed", () => {
-    for (const [id, job] of releaseJobs) {
-      assert.equal(jobValue(job, "if"), undefined, id);
-    }
-  });
-
-  it("has no step or job that carries on after a failure", () => {
-    assert.doesNotMatch(releaseLines.join("\n"), /continue-on-error/);
-    // A step's `if: false` would skip a release check, and a skipped step counts as passing.
-    assert.doesNotMatch(releaseLines.join("\n"), /^\s*(- )?if:/m);
-  });
-
-  it("runs ci.yml itself rather than copying its checks", () => {
-    const job = releaseJob("ci");
-    assert.equal(jobValue(job, "uses"), LOCAL_CI);
-    assert.equal(jobBlock(job, "steps"), undefined);
-  });
-});
-
-describe("release.yml verify-tag", () => {
-  const job = releaseJob("verify-tag");
-  const scripts = runScripts(job.join("\n")).join("\n");
-
-  it("fetches all of history, which is what makes actions/checkout fetch origin/main", () => {
-    const steps = jobBlock(job, "steps") ?? [];
-    assert.ok(steps.includes("fetch-depth: 0"), steps.join("\n"));
-    assert.ok(steps.includes("persist-credentials: false"), steps.join("\n"));
-  });
-
-  it("fails if the tag isn't v plus the version in package.json", () => {
-    assert.ok(scripts.includes(`expected="v$(node -p "require('./package.json').version")"`), scripts);
-    assert.ok(scripts.includes('if [ "$GITHUB_REF_NAME" != "$expected" ]; then'), scripts);
-    assert.match(scripts, /does not match package\.json[^\n]*\n\s*exit 1/);
-  });
-
-  it("fails if the tagged commit isn't on main", () => {
-    assert.ok(scripts.includes('if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then'), scripts);
-    assert.match(scripts, /isn't on main[^\n]*\n\s*exit 1/);
-  });
-});
-
-describe("release.yml github-release", () => {
-  const job = releaseJob("github-release");
-
-  it("downloads the artifact ci.yml uploads, to the folder the release reads it from", () => {
-    const upload = trimmed(ciLines.slice(ciLines.findIndex((line) => line.includes("actions/upload-artifact")))) ?? [];
-    assert.ok(upload.includes("name: 0xword-vsix"), upload.join("\n"));
-    assert.ok(upload.includes("path: ${{ runner.temp }}/0xword.vsix"), upload.join("\n"));
-
-    const steps = jobBlock(job, "steps") ?? [];
-    assert.ok(steps.includes("name: 0xword-vsix"), steps.join("\n"));
-    assert.ok(steps.includes("path: ${{ runner.temp }}"), steps.join("\n"));
-  });
-
-  it("creates the release for the existing tag, with generated notes and the .vsix attached", () => {
-    const script = runScripts(job.join("\n")).join("\n");
-    assert.ok(script.includes('gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/0xword.vsix"'), script);
-    for (const flag of ['--repo "$GITHUB_REPOSITORY"', "--verify-tag", "--generate-notes"]) {
-      assert.ok(script.includes(flag), flag);
-    }
-  });
-
-  it("has no checkout, so no repo code runs next to the write token", () => {
-    assert.deepEqual(usesValues(job.join("\n")).map(withoutSha), ["actions/download-artifact"]);
-  });
-
-  it("authenticates only with the automatic token", () => {
-    assert.ok(job.some((line) => line.trim() === "GH_TOKEN: ${{ github.token }}"), job.join("\n"));
+  it("ends a script at the next key, so the comment after it is ignored again", () => {
+    const text = "      - run: |\n          echo a\n        env: # why\n          A: b # why\n";
+    assert.deepEqual(normalised(text), ["      - run: |", "          echo a", "        env:", "          A: b"]);
   });
 });
 
 describe("every workflow", () => {
-  it("finds both workflows to scan", () => {
+  it("finds both workflows to scan, and no others", () => {
     assert.deepEqual([...workflowFiles].sort(), ["ci.yml", "release.yml"]);
   });
 
@@ -375,11 +344,6 @@ describe("the workflow checks catch", () => {
     });
   }
 
-  it("a job granted write access, read from its permissions block", () => {
-    const text = "jobs:\n  a:\n    permissions:\n      contents: write\n    runs-on: ubuntu-latest\n";
-    assert.deepEqual(jobBlock(jobsOf(text).get("a") ?? [], "permissions"), ["contents: write"]);
-  });
-
   it("but not a comment that mentions a secret or a pin", () => {
     assert.deepEqual(codeLines("# secrets\nname: CI # uses: a/b@main\n"), ["name: CI"]);
   });
@@ -388,13 +352,16 @@ describe("the workflow checks catch", () => {
 describe("docs/release-pipeline.md", () => {
   const doc = readFileSync(new URL("docs/release-pipeline.md", root), "utf8");
 
-  it("shows the same action pins as the workflows, with none left to fill in", () => {
+  // Not the same SHA as the workflows: a security update bumps only the
+  // workflow, and a stale example in this doc shouldn't turn its PR red.
+  it("pins each action it shows to a full SHA, with none left to fill in, and only actions the workflows use", () => {
     assert.doesNotMatch(doc, /<full-sha>/);
-    const pinned = new Set(workflowFiles.flatMap((file) => usesValues(readWorkflow(file))));
+    const actions = new Set(workflowFiles.flatMap((file) => usesValues(readWorkflow(file)).map(withoutSha)));
     const inDoc = doc.match(/actions\/[a-z0-9-]+@\S+/g) ?? [];
     assert.ok(inDoc.length > 0);
     for (const uses of inDoc) {
-      assert.ok(pinned.has(uses), uses);
+      assert.ok(PINNED_ACTION.test(uses), uses);
+      assert.ok(actions.has(withoutSha(uses)), uses);
     }
   });
 
