@@ -1,6 +1,17 @@
 # Release pipeline
 
-How a version of 0xWORD gets from `develop` to the VS Code Marketplace. This is the design. It's built in two parts: Phase 5 adds everything that needs no secrets, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). Until then, nothing in `.github/workflows/` publishes.
+How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It's built in two parts: Phase 5 adds everything that needs no secrets, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). Until then, nothing in `.github/workflows/` publishes.
+
+## What's built
+
+| Part | Phase | Status |
+|---|---|---|
+| `ci.yml` runs on `workflow_call` | 5 | Built (#87) |
+| `release.yml` with `verify-tag`, `ci` and `github-release` | 5 | Built (#87). The owner runs the [test-tag checks](#test-tag-checks) once. |
+| `publish` job and the Marketplace token | 6 | **Not built.** Today `github-release` follows `ci` directly, a tag creates a GitHub Release only, and no secrets are used. |
+| Open VSX | 6 | Not built |
+
+The sections below describe the whole pipeline. Anything about `publish` or approving a release applies from Phase 6.
 
 ## In short
 
@@ -15,9 +26,15 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace. This is 
 | File | Runs on | Does |
 |---|---|---|
 | `.github/workflows/ci.yml` (exists) | every PR and push to `develop` or `main`, by hand, and when `release.yml` calls it | typecheck, unit tests, build, package, upload the `.vsix` as the `0xword-vsix` artifact |
-| `.github/workflows/release.yml` (Phases 5 and 6) | a pushed `v*` tag | checks the tag, runs all of `ci.yml`, publishes, creates the GitHub Release |
+| `.github/workflows/release.yml` (exists; Phase 6 adds publishing) | a pushed `v*` tag | checks the tag, runs all of `ci.yml`, creates the GitHub Release; from Phase 6 it publishes first |
 
 `release.yml` doesn't copy any of CI's checks. It calls `ci.yml` through `workflow_call`, so a release goes through exactly the same checks as every PR, and the two can't drift apart.
+
+**How the two behave together:**
+
+- **Permissions:** a called workflow can only keep or lower what its caller gives it, never raise it. Both are `contents: read` here, so the `ci` job can't write.
+- **Concurrency:** a called workflow's `github.ref` is the tag, so `ci.yml`'s `cancel-in-progress` group is `ci-refs/tags/v<x>`. Branch and PR runs use other groups and can't cancel it. The one way to hit it is running CI by hand from the Actions tab on that same tag during a release, which can cancel the release's `ci` job. That stops the release safely: `github-release` is skipped and nothing is created, so re-run the failed jobs.
+- **Queueing:** a release already running is never cancelled. GitHub keeps only one waiting run per concurrency group, though: if a third tag arrives while one release runs and another waits, the waiting one is cancelled and the new one takes its place. Push release tags one at a time.
 
 ## The release jobs
 
@@ -44,6 +61,8 @@ Each arrow is a `needs:` link: a job runs only if the one before it passed. If a
 
 **Why `github-release` runs after `publish`:** a GitHub Release then only appears once the Marketplace has accepted the version, so the repo never shows a release players can't install. In Phase 5, before `publish` exists, `github-release` follows `ci` directly.
 
+The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsix` as the artifact `0xword-vsix`, and `github-release` downloads that artifact by name into `$RUNNER_TEMP`, which gives `$RUNNER_TEMP/0xword.vsix`. `github-release` has no checkout: `--repo` tells `gh` which repo to use, and `--verify-tag` checks through the GitHub API that the tag exists.
+
 ## Why it's split across two phases
 
 - **Phase 5 (Packaging)** adds `verify-tag`, `ci` (plus `on: workflow_call` in `ci.yml`) and `github-release`. Packaging is what these test, and they need no account or token. They can be tried with a test tag before anything is published.
@@ -60,14 +79,60 @@ Each arrow is a `needs:` link: a job runs only if the one before it passed. If a
    git push origin v<x>
    ```
    This starts `release.yml`.
-4. **Approve it:** open the run in the Actions tab and approve the `publish` job. Rejecting it stops the release, and players see no change.
+4. **Approve it (from Phase 6):** open the run in the Actions tab and approve the `publish` job. Rejecting it stops the release, and players see no change.
 5. **Sync `develop`:** open a PR from `main` into `develop` so it gets the version bump and changelog.
 
 ### When something fails
 
 - **`verify-tag` fails:** the tag doesn't match `package.json`, or isn't on `main`. Delete the tag (`git push origin :refs/tags/v<x>` and `git tag -d v<x>`), fix the version through a PR, and tag again.
 - **`ci` fails:** the same as a red PR. Fix it through a PR into `develop`, release again, and use a new tag.
-- **`publish` fails after approval:** read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number.
+- **`github-release` fails:** read the job log. The tag and the checks are fine, so **Re-run failed jobs** on the same run. If a release for the tag already exists, `gh` refuses to create another; delete it first.
+- **`publish` fails after approval (from Phase 6):** read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number.
+
+## Test-tag checks
+
+The owner runs these once, to check `release.yml` for real. **Agents never push tags.** GitHub runs the `release.yml` in the tagged commit, so each tag must be on a commit that has it. None of these checks touches the Marketplace, and a deleted tag can be used again.
+
+**When:** checks 1 and 2 work as soon as #87 is merged into `develop`. Check 3 needs `release.yml` and the rest of the code on `main`, which today holds only its initial commit, so it can't run before the first merge from `develop` into `main` (the first `/release` PR, or a `develop` to `main` PR). Run it on that merge, before Phase 6 adds `publish`.
+
+**Check 1: a tag that doesn't match `package.json`.**
+
+```bash
+git fetch origin
+git tag v9.9.9 origin/develop
+git push origin v9.9.9
+```
+
+In the Actions tab, the **Release** run must fail at `verify-tag`, on the step *Tag equals package.json version*. `ci` and `github-release` must show as skipped, and no release must appear. Then delete the tag:
+
+```bash
+git push origin :refs/tags/v9.9.9
+git tag -d v9.9.9
+```
+
+**Check 2: a matching tag on a commit not on `main`.** Use the version now in `package.json` on `develop` (`v<x>` below), while `develop` has commits `main` doesn't:
+
+```bash
+git tag v<x> origin/develop
+git push origin v<x>
+```
+
+The run must fail at `verify-tag`, this time on *Tagged commit is on main*, with the later jobs skipped and no release. Delete the tag the same way, with `git push origin :refs/tags/v<x>` and `git tag -d v<x>`.
+
+**Check 3: a matching tag on `main`.** Here `v<x>` is the version in `package.json` on `main`:
+
+```bash
+git checkout main && git pull
+git tag v<x>
+git push origin v<x>
+```
+
+All three jobs must pass. The repo's Releases page must then show `v<x>` with generated notes and `0xword.vsix` attached. Download that file, and optionally install it with the [install check](#install-check). Then delete the release and the tag:
+
+```bash
+gh release delete v<x> --cleanup-tag --yes
+git tag -d v<x>
+```
 
 ## What the `.vsix` ships
 
@@ -120,11 +185,11 @@ Then clean up: uninstall the extension, delete the profile (**Profiles: Delete P
 
 ## The design
 
-These are the files as they'll be added. Actions marked `<full-sha>` get pinned to a full commit SHA, as `ci.yml` already does.
+The workflows as designed, with every action pinned to a full commit SHA. `.github/workflows/` holds what's built: everything below except the `publish` job and the `needs: publish` line, which are Phase 6's.
 
 ### Change to `ci.yml` (Phase 5)
 
-Add `workflow_call` to its triggers so `release.yml` can run it:
+Built (#87). `workflow_call` is in its triggers so `release.yml` can run it:
 
 ```yaml
 on:
@@ -133,10 +198,13 @@ on:
   push:
     branches: [develop, main]
   workflow_dispatch:
-  workflow_call:   # lets release.yml run this exact workflow first
+  # Lets release.yml run these exact checks first.
+  workflow_call:
 ```
 
 ### `release.yml`
+
+`publish` is the part still to come, in Phase 6.
 
 ```yaml
 name: Release
@@ -148,7 +216,7 @@ on:
 permissions:
   contents: read   # jobs below widen this only where needed
 
-# Never cancel a release halfway; queue the next one instead.
+# Never cancel a release halfway; a later tag waits for this one to finish.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -159,6 +227,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # fetch-depth 0 also fetches every branch, so origin/main exists below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -171,14 +240,18 @@ jobs:
             exit 1
           fi
       - name: Tagged commit is on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is on a commit that isn't on main"
+            exit 1
+          fi
 
   ci:
     name: CI
     needs: verify-tag
     uses: ./.github/workflows/ci.yml   # the same checks as every PR
 
-  # Phase 6
+  # Phase 6: not built yet
   publish:
     name: Publish to the VS Code Marketplace
     needs: ci
@@ -194,7 +267,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci   # installs the vsce version locked in package-lock.json
-      - uses: actions/download-artifact@<full-sha> # vN
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: 0xword-vsix
           path: ${{ runner.temp }}
@@ -205,13 +278,14 @@ jobs:
 
   github-release:
     name: GitHub Release
-    needs: publish   # in Phase 5, before publish exists: needs: ci
+    needs: publish   # in Phase 5, before publish exists: needs: ci (as built)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write   # only this job can create a release
     steps:
-      - uses: actions/download-artifact@<full-sha> # vN
+      # No checkout: this job needs only the .vsix from ci, and --repo names the repo.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: 0xword-vsix
           path: ${{ runner.temp }}
