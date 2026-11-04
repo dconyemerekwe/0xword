@@ -7,6 +7,8 @@ on:
     branches: [develop, main]
   # Run by hand from the Actions tab, e.g. to build a .vsix from any branch.
   workflow_dispatch:
+  # Lets release.yml run these exact checks first.
+  workflow_call:
 
 # Read-only token: the workflow can't push, release or change settings.
 permissions:
