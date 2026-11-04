@@ -2,7 +2,8 @@
 // test/workflows.test.ts must fail on it, and a routine pin bump must not.
 // This is its own file because it copies workflows.test.ts into a temporary
 // folder, edits the copied workflows and runs the copy there. Nothing in the
-// repo's own workflows is touched.
+// repo's own workflows is touched. A deliberate workflow change to a line named
+// in `mutations` has to update that entry too ("the edit must apply").
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,18 +27,23 @@ const mutations: [string, string, string, string][] = [
   ["the .vsix comes from another run", RELEASE, "          path: ${{ runner.temp }}\n      - name: Create", "          path: ${{ runner.temp }}\n          run-id: 12345\n          github-token: ${{ github.token }}\n      - name: Create"],
   ["a quoted uses: names an unpinned action", RELEASE, "      - name: Create the release", "      - \"uses\": someone/evil@main\n      - name: Create the release"],
   ["a quoted job id adds a fourth job with write access", RELEASE, "  github-release:\n", "  \"extra\":\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n    steps:\n      - run: echo hi\n\n  github-release:\n"],
+  ["a no-break space hides shell text as a comment, so npm test never runs", CI, "      - run: npm test\n", "      - run: npm test #||exit 0\n"],
+  ["a blank line after the backslash splits the gh command", RELEASE, "0xword.vsix\" \\\n", "0xword.vsix\" \\\n\n"],
 ];
 
-/** Runs workflows.test.ts on a copy of the repo with one edit, and returns its exit code. */
-function statusAfter(file: string, before: string, after: string): number | null {
+/** The actions the workflows pin. A security update can bump any of them. */
+const PINNED_ACTIONS = ["checkout", "setup-node", "upload-artifact", "download-artifact"];
+
+/** Runs workflows.test.ts on a copy of the repo with each workflow edited, and returns its exit code. */
+function statusAfter(edit: (file: string, text: string) => string): number | null {
   const dir = mkdtempSync(join(tmpdir(), "workflows-"));
   try {
     for (const path of [".github/workflows", "docs/release-pipeline.md", "test/workflows.test.ts"]) {
       cpSync(join(repo, path), join(dir, path), { recursive: true });
     }
-    const text = readFileSync(join(dir, file), "utf8");
-    assert.ok(text.includes(before), "the edit must apply");
-    writeFileSync(join(dir, file), text.replace(before, () => after));
+    for (const file of [CI, RELEASE]) {
+      writeFileSync(join(dir, file), edit(file, readFileSync(join(dir, file), "utf8")));
+    }
     const run = spawnSync(process.execPath, ["--test", "test/workflows.test.ts"], {
       cwd: dir,
       encoding: "utf8",
@@ -51,24 +57,45 @@ function statusAfter(file: string, before: string, after: string): number | null
 }
 
 describe("test/workflows.test.ts fails when", () => {
-  for (const [name, file, before, after] of mutations) {
+  for (const [name, target, before, after] of mutations) {
     it(name, () => {
-      assert.notEqual(statusAfter(file, before, after), 0, "workflows.test.ts passed on the broken workflow");
+      const status = statusAfter((file, text) => {
+        if (file !== target) {
+          return text;
+        }
+        assert.ok(text.includes(before), "the edit must apply");
+        return text.replace(before, () => after);
+      });
+      assert.notEqual(status, 0, "workflows.test.ts passed on the broken workflow");
     });
   }
 });
 
 describe("test/workflows.test.ts still passes when", () => {
-  it("a security update bumps a pinned SHA and its version comment", () => {
-    const status = statusAfter(
-      RELEASE,
-      "download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2",
-      "download-artifact@0123456789abcdef0123456789abcdef01234567 # v8.0.3",
-    );
-    assert.equal(status, 0);
-  });
+  for (const action of PINNED_ACTIONS) {
+    it(`a security update bumps every pin of ${action} and its version comment`, () => {
+      const pin = new RegExp(`(actions/${action})@[0-9a-f]{40} # v\\S+`, "g");
+      let bumped = 0;
+      const status = statusAfter((_file, text) =>
+        text.replace(pin, (_match, name: string) => {
+          bumped += 1;
+          return `${name}@0123456789abcdef0123456789abcdef01234567 # v99.0.0`;
+        }),
+      );
+      assert.ok(bumped > 0, `no pin of ${action} found`);
+      assert.equal(status, 0);
+    });
+  }
 
-  it("only a comment changes", () => {
-    assert.equal(statusAfter(CI, "# Catches manifest mistakes before release.", "# Reworded."), 0);
+  it("a whole-line comment is reworded", () => {
+    let reworded = 0;
+    const status = statusAfter((_file, text) =>
+      text.replace(/^( *)#.*$/m, (_match, indent: string) => {
+        reworded += 1;
+        return `${indent}# Reworded.`;
+      }),
+    );
+    assert.equal(reworded, 2, "each workflow must have a whole-line comment to reword");
+    assert.equal(status, 0);
   });
 });

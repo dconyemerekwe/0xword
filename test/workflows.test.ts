@@ -5,8 +5,9 @@
 // its YAML is written. test/workflows-mutations.test.ts proves that on copies.
 //
 // Changing a workflow on purpose? Update its list here in the same commit, so
-// the change to what the release path does shows up in review. Bumping a pinned
-// action needs no change: the SHA and its version comment aren't compared.
+// the change to what the release path does shows up in review. That includes
+// rewording a comment at the end of a line, which is compared as written. Bumping
+// a pinned action needs no change: its SHA and version comment aren't compared.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -77,9 +78,9 @@ const EXPECTED_RELEASE: readonly string[] = [
   "name: Release",
   "on:",
   "  push:",
-  "    tags: ['v*']",
+  "    tags: ['v*']   # only a pushed tag starting with \"v\" starts this",
   "permissions:",
-  "  contents: read",
+  "  contents: read   # jobs below widen this only where needed",
   "concurrency:",
   "  group: release",
   "  cancel-in-progress: false",
@@ -109,14 +110,14 @@ const EXPECTED_RELEASE: readonly string[] = [
   "  ci:",
   "    name: CI",
   "    needs: verify-tag",
-  "    uses: ./.github/workflows/ci.yml",
+  "    uses: ./.github/workflows/ci.yml   # the same checks as every PR",
   "  github-release:",
   "    name: GitHub Release",
   "    needs: ci",
   "    runs-on: ubuntu-latest",
   "    timeout-minutes: 5",
   "    permissions:",
-  "      contents: write",
+  "      contents: write   # only this job can create a release",
   "    steps:",
   "      - uses: actions/download-artifact@<sha>",
   "        with:",
@@ -135,42 +136,57 @@ function readWorkflow(file: string): string {
 }
 
 function indentOf(line: string): number {
-  return line.length - line.trimStart().length;
+  return line.length - line.replace(/^ +/, "").length;
 }
+
+/**
+ * Printable ASCII and newlines only. YAML, the shell and JavaScript disagree
+ * about no-break spaces, tabs and other line endings, so a file with any of
+ * them could run something these line-by-line checks don't see.
+ */
+const PLAIN_TEXT = /^[\x20-\x7E\n]*$/;
 
 /** The text as lines, without comments and blank lines. */
 function codeLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map((line) => line.replace(/(^|\s)#.*$/, "").trimEnd())
+    .map((line) => line.replace(/(^|[ \t])#.*$/, "").trimEnd())
     .filter((line) => line !== "");
 }
 
 /**
- * The lines the exact lists are compared with: no blank lines or comments, and
- * a full SHA pin written as `@<sha>`. A `run: |` script keeps every line as
- * written, comments and spaces included, because there `#` and a trailing space
- * can change what the shell runs. A short SHA or a tag isn't a pin, so it stays
- * as it is and fails the comparison.
+ * The lines the exact lists are compared with. Only three things are left out:
+ * blank lines and whole-line comments outside a script, and each full SHA pin
+ * with its version comment, written as `@<sha>`. Everything else stays exactly
+ * as written, including a comment at the end of a line. A `run: |` script keeps
+ * all its lines, blank ones and comments too, because they can change what the
+ * shell runs; only the blank lines after its end aren't part of it. A short SHA,
+ * a tag or a pin with no version comment stays as written and fails the comparison.
  */
 function normalised(text: string): string[] {
   const lines: string[] = [];
   let scriptKeyIndent: number | undefined;
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === "") {
+  let blanks: string[] = [];
+  for (const line of text.split("\n")) {
+    const blank = /^ *$/.test(line);
+    if (scriptKeyIndent !== undefined) {
+      if (blank) {
+        blanks.push(line);
+        continue;
+      }
+      if (indentOf(line) > scriptKeyIndent) {
+        lines.push(...blanks, line);
+        blanks = [];
+        continue;
+      }
+      scriptKeyIndent = undefined;
+      blanks = [];
+    }
+    if (blank || /^ *#/.test(line)) {
       continue;
     }
-    if (scriptKeyIndent !== undefined && indentOf(line) > scriptKeyIndent) {
-      lines.push(line);
-      continue;
-    }
-    scriptKeyIndent = undefined;
-    const code = line.replace(/(^|\s)#.*$/, "").trimEnd();
-    if (code === "") {
-      continue;
-    }
-    lines.push(code.replace(/^(\s*- uses: actions\/[a-z0-9-]+)@[0-9a-f]{40}$/, "$1@<sha>"));
-    const script = /^(\s*(?:- )?)run: \|$/.exec(code);
+    lines.push(line.replace(/^( *- uses: actions\/[a-z0-9-]+)@[0-9a-f]{40} # v\d+\.\d+\.\d+$/, "$1@<sha>"));
+    const script = /^( *(?:- )?)run: \|$/.exec(line);
     if (script !== null) {
       scriptKeyIndent = (script[1] ?? "").length;
     }
@@ -230,9 +246,20 @@ describe("the workflows, line by line", () => {
 describe("the line-by-line comparison", () => {
   const pin = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 
-  it("ignores comments, blank lines, a pin's SHA and its version comment", () => {
-    const text = `# A comment\n\nname: CI # another\n      - uses: ${pin} # v7.0.1\n`;
+  it("ignores whole-line comments, blank lines, a pin's SHA and its version comment", () => {
+    const text = `# A comment\n\nname: CI\n      # Another\n      - uses: ${pin} # v7.0.1\n`;
     assert.deepEqual(normalised(text), ["name: CI", "      - uses: actions/checkout@<sha>"]);
+  });
+
+  it("keeps a comment at the end of a line, so one can't hide text the shell runs", () => {
+    assert.deepEqual(normalised("      - run: npm test #||exit 0\n"), ["      - run: npm test #||exit 0"]);
+    assert.deepEqual(normalised("name: CI   # why\n"), ["name: CI   # why"]);
+  });
+
+  it("keeps a pin with no version comment, or another comment, as written", () => {
+    for (const line of [`      - uses: ${pin}`, `      - uses: ${pin} # latest`, `      - uses: ${pin} # v7.0.1 ; x`]) {
+      assert.deepEqual(normalised(`${line}\n`), [line]);
+    }
   });
 
   for (const uses of [
@@ -242,23 +269,25 @@ describe("the line-by-line comparison", () => {
     "someone/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
   ]) {
     it(`keeps a uses: that isn't a pinned GitHub action as written: ${uses}`, () => {
-      assert.deepEqual(normalised(`      - uses: ${uses}\n`), [`      - uses: ${uses}`]);
+      assert.deepEqual(normalised(`      - uses: ${uses} # v7.0.1\n`), [`      - uses: ${uses} # v7.0.1`]);
     });
   }
 
-  it("keeps a script's comments and trailing spaces, which the shell can act on", () => {
-    const script = ["        run: |", "          # a comment", "          gh release create \\ ", "      - run: next # x"];
-    assert.deepEqual(normalised(script.join("\n")), [
+  it("keeps a script's comments, blank lines and trailing spaces, which the shell can act on", () => {
+    const script = [
       "        run: |",
       "          # a comment",
       "          gh release create \\ ",
+      "",
+      "            --repo a",
       "      - run: next",
-    ]);
+    ];
+    assert.deepEqual(normalised(script.join("\n")), script);
   });
 
-  it("ends a script at the next key, so the comment after it is ignored again", () => {
-    const text = "      - run: |\n          echo a\n        env: # why\n          A: b # why\n";
-    assert.deepEqual(normalised(text), ["      - run: |", "          echo a", "        env:", "          A: b"]);
+  it("ends a script at the next key, without the blank lines before it", () => {
+    const text = "      - run: |\n          echo a\n\n      # why\n\n  ci:\n";
+    assert.deepEqual(normalised(text), ["      - run: |", "          echo a", "  ci:"]);
   });
 });
 
@@ -266,6 +295,12 @@ describe("every workflow", () => {
   it("finds both workflows to scan, and no others", () => {
     assert.deepEqual([...workflowFiles].sort(), ["ci.yml", "release.yml"]);
   });
+
+  for (const file of workflowFiles) {
+    it(`${file} is printable ASCII and newlines only`, () => {
+      assert.match(readWorkflow(file), PLAIN_TEXT);
+    });
+  }
 
   for (const file of workflowFiles) {
     const text = readWorkflow(file);
@@ -301,6 +336,24 @@ describe("every workflow", () => {
 });
 
 describe("the workflow checks catch", () => {
+  const unusual: readonly (readonly [string, string])[] = [
+    ["a no-break space", "\u00A0"],
+    ["an ideographic space", "\u3000"],
+    ["a next-line character", "\u0085"],
+    ["a line separator", "\u2028"],
+    ["a carriage return", "\r"],
+    ["a tab", "\t"],
+  ];
+  for (const [name, character] of unusual) {
+    it(`${name} in a workflow`, () => {
+      assert.doesNotMatch(`name: CI${character}# comment\n`, PLAIN_TEXT);
+    });
+  }
+
+  it("but not plain text with newlines", () => {
+    assert.match("name: CI # comment\njobs:\n", PLAIN_TEXT);
+  });
+
   for (const uses of [
     "actions/checkout@v7",
     "actions/checkout@3d3c42e",
