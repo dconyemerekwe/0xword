@@ -8,7 +8,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 | 1 | Game engine (pure TypeScript and tests) | Done |
 | 2 | Extension shell | Done (#5; stories #6–#9) |
 | 3 | Game UI, screen by screen | Done (#19; stories #20–#34, #38, #46, #50, #53; bugs #32, #43) |
-| 4 | Hardening and accessibility | Not started |
+| 4 | Hardening and accessibility | Done (#57; stories #58–#64; bugs #74, #76; #65 and #80 not planned) |
 | 5 | Packaging | In progress (#82; stories #83–#87 built; the owner's install check and test-tag checks remain) |
 | 6 | Publish | Not started |
 | 7 | Agent integration (later) | Not started |
@@ -162,13 +162,16 @@ Phase 3 is finished, so this phase starts from a green `develop` (typecheck clea
 
 ## Phase 6: Publish
 
-The owner handles accounts and access tokens.
+The owner handles the accounts. Publishing uses the Marketplace's Trusted Publishing, so no access token is created or stored (owner's decision, 2026-11-04; Microsoft retires global Azure DevOps tokens anyway, on 1 December 2026 by its docs).
 
-- Create a VS Code Marketplace publisher and an Azure DevOps access token with the Marketplace (Manage) scope.
-- **Release workflow, second part** (see [release-pipeline.md](release-pipeline.md)): add the `publish` job to `release.yml`, between `ci` and `github-release`. It waits for the owner's approval, then publishes the `.vsix` CI built and tested, with `vsce publish --packagePath`. The owner provides the token to the workflow. It's here because it needs the publisher account and token from the step above.
+- **Marketplace publisher:** created by the owner (`dconyemerekwe`, 2026-11-04).
+- **Trusted Publishing policy:** owner `dconyemerekwe`, repository `0xword`, workflow `release.yml`, environment `production`. While the repo is private, a new policy has to be used within 48 hours or it stays inactive, so the owner recreates it with these values just before the first release tag. The policy created on 2026-11-04 is expected to lapse.
+- **`production` environment:** create it on GitHub, with the owner's approval on it.
+- **`vsce`:** bump `@vscode/vsce` from 4.0.0 to 4.1.0, pinned. 4.0.0 doesn't list `--oidc` in its help, and 4.1.0 is reported to have it. Confirm when bumping.
+- **Release workflow, second part** (see [release-pipeline.md](release-pipeline.md)): add the `publish` job to `release.yml`, between `ci` and `github-release`. It waits for the owner's approval, then publishes the `.vsix` CI built and tested, with `vsce publish --oidc --packagePath`. Only this job gets `id-token: write`. It's here because it needs the publisher and policy from the steps above. **To check:** Microsoft's docs don't cover `--oidc` with `--packagePath`, or whether Trusted Publishing accepts an extension's first publish. If either fails, the fallback is to upload the CI-built `.vsix` by hand on the publisher's manage page.
 - Then update `/release`'s last steps, which still say to publish by hand.
-- For Open VSX: create an Eclipse account, sign the publisher agreement, then publish with `ovsx`. **Open issue:** `ovsx` isn't on the dev-dependency allowlist (security rule 3), and a bare `npx ovsx` runs an unpinned version. Decide before publishing: add it as a pinned dev dependency, or run `npx ovsx@<exact version>`.
-- Before publishing, check that the extension ID (lowercase and permanent, e.g. `oxword` or `hexword`) is free in both registries.
+- For Open VSX: create an Eclipse account, sign the publisher agreement, then publish with `ovsx`. Trusted Publishing doesn't cover it, so check what credential it needs. **Open issue:** `ovsx` isn't on the dev-dependency allowlist (security rule 3), and a bare `npx ovsx` runs an unpinned version. Decide before publishing: add it as a pinned dev dependency, or run `npx ovsx@<exact version>`.
+- Before publishing, check that the extension ID (`dconyemerekwe.0xword`, permanent) is free in both registries.
 
 ## Phase 7: Agent integration (later)
 

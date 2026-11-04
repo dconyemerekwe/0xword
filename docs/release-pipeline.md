@@ -1,6 +1,6 @@
 # Release pipeline
 
-How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It's built in two parts: Phase 5 adds everything that needs no secrets, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). Until then, nothing in `.github/workflows/` publishes.
+How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It's built in two parts: Phase 5 adds everything that needs no Marketplace access, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). Until then, nothing in `.github/workflows/` publishes.
 
 ## What's built
 
@@ -8,7 +8,7 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It's bui
 |---|---|---|
 | `ci.yml` runs on `workflow_call` | 5 | Built (#87) |
 | `release.yml` with `verify-tag`, `ci` and `github-release` | 5 | Built (#87). The owner runs the [test-tag checks](#test-tag-checks) once. |
-| `publish` job and the Marketplace token | 6 | **Not built.** Today `github-release` follows `ci` directly, a tag creates a GitHub Release only, and no secrets are used. |
+| `publish` job with Trusted Publishing | 6 | **Not built.** Today `github-release` follows `ci` directly, and a tag creates a GitHub Release only. |
 | Open VSX | 6 | Not built |
 
 The sections below describe the whole pipeline. Anything about `publish` or approving a release applies from Phase 6.
@@ -54,10 +54,10 @@ Each arrow is a `needs:` link: a job runs only if the one before it passed. If a
 |---|---|---|---|
 | `verify-tag` | The tag equals `v` + the `version` in `package.json`, and the tagged commit is on `main`. Stops a typo'd tag, or a tag on an unmerged branch, before anything is built. | `contents: read` | 5 |
 | `ci` | Runs all of `ci.yml` and uploads the `.vsix` inside this same run, where the later jobs can download it. | `contents: read` | 5 |
-| `publish` | Waits for the owner's approval, then publishes the downloaded `.vsix` with `vsce publish --packagePath`. The only job that uses the Marketplace token. | `contents: read` | 6 |
+| `publish` | Waits for the owner's approval, then publishes the downloaded `.vsix` with `vsce publish --oidc --packagePath`. The only job that can request a Marketplace credential. | `contents: read`, `id-token: write` | 6 |
 | `github-release` | Creates the GitHub Release for the tag, with generated notes and the `.vsix` attached. The only job that can write to the repo. | `contents: write` | 5 (6 adds `publish` before it) |
 
-**Why the token and write access are in separate jobs:** each job gets only what it needs. The job that holds the Marketplace token can't change the repo, and the job that can change the repo never sees the token.
+**Why publishing and write access are in separate jobs:** each job gets only what it needs. The job that can publish can't change the repo, and the job that can change the repo can't request a Marketplace credential.
 
 **Why `github-release` runs after `publish`:** a GitHub Release then only appears once the Marketplace has accepted the version, so the repo never shows a release players can't install. In Phase 5, before `publish` exists, `github-release` follows `ci` directly.
 
@@ -65,8 +65,8 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 
 ## Why it's split across two phases
 
-- **Phase 5 (Packaging)** adds `verify-tag`, `ci` (plus `on: workflow_call` in `ci.yml`) and `github-release`. Packaging is what these test, and they need no account or token. They can be tried with a test tag before anything is published.
-- **Phase 6 (Publish)** adds `publish` between `ci` and `github-release`. It depends on the Marketplace publisher and access token that Phase 6 creates, which the owner provides to the workflow.
+- **Phase 5 (Packaging)** adds `verify-tag`, `ci` (plus `on: workflow_call` in `ci.yml`) and `github-release`. Packaging is what these test, and they need no Marketplace account. They can be tried with a test tag before anything is published.
+- **Phase 6 (Publish)** adds `publish` between `ci` and `github-release`. It depends on the Marketplace publisher and Trusted Publishing policy, which the owner sets up (see [Trusted Publishing](#trusted-publishing)).
 
 ## Making a release
 
@@ -183,6 +183,21 @@ Then clean up: uninstall the extension, delete the profile (**Profiles: Delete P
 - **`vsce package` and `vsce publish`:** no effect. `@vscode/vsce` (the version pinned in `package-lock.json`) never reads the field: it isn't checked when packaging or publishing and isn't written into the `.vsix`'s `extension.vsixmanifest`. Checked by searching vsce's code in `node_modules/@vscode/vsce/out/` (#83).
 - **The Marketplace:** the extension is public once published. `private` doesn't hide it. The shipped `package.json` still contains the field, which VS Code ignores.
 
+## Trusted Publishing
+
+The `publish` job proves its identity to the Marketplace through GitHub's OpenID Connect, so no Marketplace token is created or stored. The credential lasts 15 minutes, and each GitHub token can be exchanged only once. The Marketplace accepts it only from a run matching the policy on the publisher's [manage page](https://marketplace.visualstudio.com/manage), under **Trusted Publishing**:
+
+| Field | Value |
+|---|---|
+| Repository owner | `dconyemerekwe` |
+| Repository | `0xword` |
+| Workflow | `release.yml` |
+| Environment | `production` |
+
+While the repo is private, a new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
+
+**If `--oidc` doesn't work** with `--packagePath` or on an extension's first publish, which Microsoft's docs don't cover: download the `.vsix` from the run and upload it by hand on the manage page.
+
 ## The design
 
 The workflows as designed, with every action pinned to a full commit SHA. `.github/workflows/` holds what's built: everything below except the `publish` job and the `needs: publish` line, which are Phase 6's.
@@ -258,6 +273,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production   # waits for the owner's approval
+    permissions:
+      contents: read
+      id-token: write   # only this job can request a Marketplace credential
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,9 +290,7 @@ jobs:
           name: 0xword-vsix
           path: ${{ runner.temp }}
       # Publishes the exact file CI built and tested; nothing is rebuilt.
-      - run: npx vsce publish --packagePath "$RUNNER_TEMP/0xword.vsix"
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - run: npx vsce publish --oidc --packagePath "$RUNNER_TEMP/0xword.vsix"
 
   github-release:
     name: GitHub Release
@@ -300,10 +316,10 @@ jobs:
 ## Rules the pipeline keeps
 
 - **Pinned actions only**, from GitHub itself, each pinned to a full commit SHA.
-- **Read-only by default.** Only `github-release` gets `contents: write`.
+- **Read-only by default.** Only `github-release` gets `contents: write`, and only `publish` gets `id-token: write`.
 - **No install scripts.** `npm ci` runs with `.npmrc`'s `ignore-scripts=true`, and `ci.yml` checks every package's registry signature.
-- **A small publish job.** The fewer steps run while the token is loaded, the fewer places it could leak from.
-- **Nothing about secrets is stored in this repo** beyond the name the publish job reads. The owner provides the token.
+- **A small publish job.** It installs the locked `vsce` and publishes the `.vsix` CI built. The fewer steps run while it can request a credential, the better.
+- **No Marketplace secret.** Nothing is stored in this repo or in GitHub's secrets for publishing.
 
 ## Not included yet
 
