@@ -158,6 +158,21 @@ describe("ci.yml", () => {
     ]);
   });
 
+  it("keeps every action's settings", () => {
+    const settings = (action: string): string[] | undefined => {
+      const step = ciLines.findIndex((line) => line.includes(`uses: ${action}@`));
+      return trimmed(block(ciLines.slice(step), "with", 8));
+    };
+    assert.deepEqual(settings("actions/checkout"), ["persist-credentials: false"]);
+    assert.deepEqual(settings("actions/setup-node"), ["node-version: 24", "cache: npm"]);
+    assert.deepEqual(settings("actions/upload-artifact"), [
+      "name: 0xword-vsix",
+      "path: ${{ runner.temp }}/0xword.vsix",
+      "retention-days: 14",
+      "if-no-files-found: error",
+    ]);
+  });
+
   it("stays read-only, so it never asks for more than release.yml gives it", () => {
     assert.deepEqual(trimmed(block(ciLines, "permissions")), ["contents: read"]);
     assert.doesNotMatch(ciLines.join("\n"), /\bwrite\b/);
@@ -215,6 +230,8 @@ describe("release.yml jobs", () => {
 
   it("has no step or job that carries on after a failure", () => {
     assert.doesNotMatch(releaseLines.join("\n"), /continue-on-error/);
+    // A step's `if: false` would skip a release check, and a skipped step counts as passing.
+    assert.doesNotMatch(releaseLines.join("\n"), /^\s*(- )?if:/m);
   });
 
   it("runs ci.yml itself rather than copying its checks", () => {
