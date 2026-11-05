@@ -93,6 +93,8 @@ let work = "";
 let listed: string[] = [];
 let vsixBytes = 0;
 let packed: PackedFile[] = [];
+/** What vsce warned about while packing. */
+const packWarnings: string[] = [];
 
 before(async () => {
   work = mkdtempSync(join(tmpdir(), "0xword-package-"));
@@ -117,6 +119,14 @@ before(async () => {
   // pack prints the file tree; keep the test output to the test results.
   const log = console.log;
   console.log = () => {};
+  // On GitHub Actions vsce writes warnings straight to stdout instead
+  // (_log in node_modules/@vscode/vsce/out/util.js), so turn that off to collect
+  // them the same way everywhere. Each test file has its own process.
+  process.env["GITHUB_ACTIONS"] = "false";
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    packWarnings.push(args.join(" "));
+  };
   try {
     const result = await pack({
       cwd: checkout,
@@ -128,6 +138,7 @@ before(async () => {
     vsixBytes = statSync(result.packagePath).size;
   } finally {
     console.log = log;
+    console.warn = warn;
   }
 });
 
@@ -138,6 +149,10 @@ after(() => {
 });
 
 describe("the .vsix contents", () => {
+  it("are packed without a vsce warning", () => {
+    assert.deepEqual(packWarnings, []);
+  });
+
   it("are exactly the allowlisted files, as vsce lists them for a fresh checkout and build", () => {
     assert.deepEqual(listed, [...PACKAGED_FILES].sort());
   });
