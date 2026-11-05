@@ -4,7 +4,7 @@
  * Every image the README shows, Markdown images and `<img src>`, as written.
  * `vsce package` rewrites each relative one to `<repository>/raw/main/<path>`
  * (`--githubBranch main` in the package script; `guessBaseUrls` in
- * node_modules/@vscode/vsce/out/package.js, vsce 4.0.0).
+ * node_modules/@vscode/vsce/out/package.js, vsce 4.1.0).
  */
 export function imageLinks(markdown: string): string[] {
   return [

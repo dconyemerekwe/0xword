@@ -121,7 +121,8 @@ before(async () => {
   console.log = () => {};
   // On GitHub Actions vsce writes warnings straight to stdout instead
   // (_log in node_modules/@vscode/vsce/out/util.js), so turn that off to collect
-  // them the same way everywhere. Each test file has its own process.
+  // them the same way everywhere.
+  const githubActions = process.env["GITHUB_ACTIONS"];
   process.env["GITHUB_ACTIONS"] = "false";
   const warn = console.warn;
   console.warn = (...args: unknown[]) => {
@@ -139,6 +140,11 @@ before(async () => {
   } finally {
     console.log = log;
     console.warn = warn;
+    if (githubActions === undefined) {
+      delete process.env["GITHUB_ACTIONS"];
+    } else {
+      process.env["GITHUB_ACTIONS"] = githubActions;
+    }
   }
 });
 

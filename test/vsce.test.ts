@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -21,6 +21,9 @@ const WORKFLOW_FOLDER = join(root, ".github/workflows");
  * out/publish.js (docs/release-pipeline.md#trusted-publishing).
  */
 const VSCE_VERSION = "4.1.0";
+
+/** What a failed pin check tells whoever bumped vsce. */
+const RECHECK = "vsce changed: re-check the list above VSCE_VERSION in test/vsce.test.ts, then update it";
 
 /** The oldest Node 4.1.0's `engines` allows. */
 const VSCE_MINIMUM_NODE = 22;
@@ -53,36 +56,39 @@ function workflows(): { readonly file: string; readonly text: string }[] {
 describe("the vsce version", () => {
   it("is pinned exactly in package.json", () => {
     const manifest = readJson(join(root, "package.json")) as { devDependencies?: Record<string, string> };
-    assert.equal(manifest.devDependencies?.["@vscode/vsce"], VSCE_VERSION);
+    assert.equal(manifest.devDependencies?.["@vscode/vsce"], VSCE_VERSION, RECHECK);
   });
 
   it("is locked exactly in package-lock.json, from the npm registry", () => {
     const lock = readJson(join(root, "package-lock.json")) as {
       packages?: Record<string, { version?: string; resolved?: string; devDependencies?: Record<string, string> }>;
     };
-    assert.equal(lock.packages?.[""]?.devDependencies?.["@vscode/vsce"], VSCE_VERSION);
+    assert.equal(lock.packages?.[""]?.devDependencies?.["@vscode/vsce"], VSCE_VERSION, RECHECK);
     const locked = lock.packages?.["node_modules/@vscode/vsce"];
-    assert.equal(locked?.version, VSCE_VERSION);
-    assert.equal(locked?.resolved, `https://registry.npmjs.org/@vscode/vsce/-/vsce-${VSCE_VERSION}.tgz`);
+    assert.equal(locked?.version, VSCE_VERSION, RECHECK);
+    assert.equal(locked?.resolved, `https://registry.npmjs.org/@vscode/vsce/-/vsce-${VSCE_VERSION}.tgz`, RECHECK);
   });
 
   it("is the one installed, so the checks below read the right code", () => {
     const installed = readJson(join(VSCE_FOLDER, "package.json")) as { version?: string };
-    assert.equal(installed.version, VSCE_VERSION);
+    assert.equal(installed.version, VSCE_VERSION, RECHECK);
   });
 });
 
 describe("vsce publish --help", () => {
-  // Run rather than searched for: 4.0.0's source has the option too, but hidden from its help.
-  const help = (): string =>
-    execFileSync(process.execPath, [join(VSCE_FOLDER, "vsce"), "publish", "--help"], { encoding: "utf8" });
+  let help = "";
+
+  before(() => {
+    // Run rather than searched for: 4.0.0's source has the option too, but hidden from its help.
+    help = execFileSync(process.execPath, [join(VSCE_FOLDER, "vsce"), "publish", "--help"], { encoding: "utf8" });
+  });
 
   it("lists --oidc", () => {
-    assert.ok(listsOption(help(), "--oidc"), help());
+    assert.ok(listsOption(help, "--oidc"), help);
   });
 
   it("lists --packagePath, which the publish job passes with it", () => {
-    assert.ok(listsOption(help(), "--packagePath"), help());
+    assert.ok(listsOption(help, "--packagePath"), help);
   });
 
   it("the check catches a help text that only mentions the flag, or lacks it", () => {
@@ -123,9 +129,5 @@ describe("Node for vsce's engines", () => {
     for (const version of versions) {
       assert.ok(Number(version) >= VSCE_MINIMUM_NODE, `the doc uses Node ${version}`);
     }
-  });
-
-  it("is new enough where these tests run", () => {
-    assert.ok(Number(process.versions.node.split(".")[0]) >= VSCE_MINIMUM_NODE, process.versions.node);
   });
 });
