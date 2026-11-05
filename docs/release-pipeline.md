@@ -183,6 +183,15 @@ Then clean up: uninstall the extension, delete the profile (**Profiles: Delete P
 - **`vsce package` and `vsce publish`:** no effect. `@vscode/vsce` (the version pinned in `package-lock.json`) never reads the field: it isn't checked when packaging or publishing and isn't written into the `.vsix`'s `extension.vsixmanifest`. Checked by searching vsce's code in `node_modules/@vscode/vsce/out/` (#83).
 - **The Marketplace:** the extension is public once published. `private` doesn't hide it. The shipped `package.json` still contains the field, which VS Code ignores.
 
+## Making the repo public
+
+The owner does these once, in order:
+
+1. Act on the findings listed on #95: keep or remove each one.
+2. Make the repo public: **Settings → General → Danger Zone → Change visibility**.
+3. Enable private vulnerability reporting in the repo's security settings. `SECURITY.md` sends reporters there.
+4. Turn on secret scanning with push protection in the same settings.
+
 ## Trusted Publishing
 
 The `publish` job proves its identity to the Marketplace through GitHub's OpenID Connect, so no Marketplace token is created or stored. The credential lasts 15 minutes, and each GitHub token can be exchanged only once. The Marketplace accepts it only from a run matching the policy on the publisher's [manage page](https://marketplace.visualstudio.com/manage), under **Trusted Publishing**:

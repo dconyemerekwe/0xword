@@ -10,7 +10,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 | 3 | Game UI, screen by screen | Done (#19; stories #20–#34, #38, #46, #50, #53; bugs #32, #43) |
 | 4 | Hardening and accessibility | Done (#57; stories #58–#64; bugs #74, #76; #65 and #80 not planned) |
 | 5 | Packaging | In progress (#82; stories #83–#87 built; the owner's install check and test-tag checks remain) |
-| 6 | Publish | Not started |
+| 6 | Publish | In progress (#94; #95 built) |
 | 7 | Agent integration (later) | Not started |
 
 ## CI (GitHub Actions)
@@ -164,6 +164,7 @@ Phase 3 is finished, so this phase starts from a green `develop` (typecheck clea
 
 The owner handles the accounts. Publishing uses the Marketplace's Trusted Publishing, so no access token is created or stored (owner's decision, 2026-11-04; Microsoft retires global Azure DevOps tokens anyway, on 1 December 2026 by its docs).
 
+- **Public repo check (#95):** audit done, with the findings for the owner on #95. The owner then follows [the checklist](release-pipeline.md#making-the-repo-public).
 - **Marketplace publisher:** created by the owner (`dconyemerekwe`, 2026-11-04).
 - **Trusted Publishing policy:** owner `dconyemerekwe`, repository `0xword`, workflow `release.yml`, environment `production`. While the repo is private, a new policy has to be used within 48 hours or it stays inactive, so the owner recreates it with these values just before the first release tag. The policy created on 2026-11-04 is expected to lapse.
 - **`production` environment:** create it on GitHub, with the owner's approval on it.
