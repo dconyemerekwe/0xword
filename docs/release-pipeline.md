@@ -183,7 +183,7 @@ Then clean up: uninstall the extension, delete the profile (**Profiles: Delete P
 - **`vsce package` and `vsce publish`:** no effect. `@vscode/vsce` (the version pinned in `package-lock.json`) never reads the field: it isn't checked when packaging or publishing and isn't written into the `.vsix`'s `extension.vsixmanifest`. Checked by searching vsce's code in `node_modules/@vscode/vsce/out/` (#83).
 - **The Marketplace:** the extension is public once published. `private` doesn't hide it. The shipped `package.json` still contains the field, which VS Code ignores.
 
-## Before making the repo public
+## Making the repo public
 
 The owner does these once, in order:
 
