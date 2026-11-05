@@ -1,6 +1,7 @@
 // Checks the package.json contributions and what the .vsix ships.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { matchesGlob } from "node:path/posix";
 import { describe, it } from "node:test";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
@@ -91,7 +92,7 @@ describe("package.json", () => {
 /**
  * Words that make `vsce package` add a Marketplace tag when they appear in
  * the description, copied from `TagsProcessor.Keywords` in
- * node_modules/@vscode/vsce/out/package.js (vsce 4.0.0). None fits 0xWORD:
+ * node_modules/@vscode/vsce/out/package.js (vsce 4.1.0). None fits 0xWORD:
  * "spell", for example, adds the tag `markdown`.
  */
 const DESCRIPTION_TAG_WORDS: readonly string[] = [
@@ -115,6 +116,13 @@ describe("package.json Marketplace listing", () => {
       manifest.description,
       "Guess 8 hex digits that make a real 4-letter word, then decode it. In your side bar while your agent works.",
     );
+  });
+
+  it("checks the description against exactly the words in the installed vsce's TagsProcessor.Keywords", () => {
+    const { TagsProcessor } = createRequire(import.meta.url)("@vscode/vsce/out/package.js") as {
+      TagsProcessor: { Keywords: Record<string, string[]> };
+    };
+    assert.deepEqual(DESCRIPTION_TAG_WORDS, Object.keys(TagsProcessor.Keywords));
   });
 
   it("has no word in the description that makes vsce add an unrelated tag", () => {

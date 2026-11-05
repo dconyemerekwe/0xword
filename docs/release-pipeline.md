@@ -205,7 +205,14 @@ The `publish` job proves its identity to the Marketplace through GitHub's OpenID
 
 While the repo is private, a new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
 
-**If `--oidc` doesn't work** with `--packagePath` or on an extension's first publish, which Microsoft's docs don't cover: download the `.vsix` from the run and upload it by hand on the manage page.
+**What `vsce` 4.1.0 does with `--oidc`,** from its source (`out/oidc.js`, `out/publish.js`, `out/main.js`, `out/ciProvider.js`, `out/util.js`, #96). Microsoft's docs don't cover this, and none of it has run against the real Marketplace yet:
+
+- **Where it works:** only on GitHub Actions. It needs `GITHUB_ACTIONS=true` plus `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, which GitHub sets only for a job with `id-token: write`. Anywhere else it stops with an error before it requests or sends any credential.
+- **With `--packagePath`:** supported. The publisher comes from the `package.json` inside the `.vsix`, not the checkout, nothing is rebuilt (`vscode:prepublish` doesn't run), and the upload takes the same code path as without the option.
+- **On a first publish:** vsce doesn't need the extension to exist. The token exchange sends only the publisher's name, and if looking up the extension returns 404, vsce creates it. Any other error from that lookup stops the publish. **Still unproven:** whether the Marketplace answers that lookup with 404 and accepts the create with this credential, which only a real first publish can show.
+- **Other settings:** `--oidc` ignores `VSCE_PAT`, and refuses `--pat` and `--azure-credential`. `VSCE_MARKETPLACE_URL` changes where the GitHub token is sent, so the `publish` job must never set it. vsce also sends an `X-Market-CI-Provider: github-actions` header on its Marketplace calls, for Microsoft's statistics. That happens only at publish, not in the extension.
+
+**If the Marketplace refuses `--oidc`:** download the `.vsix` from the run and upload it by hand on the manage page.
 
 ## The design
 
