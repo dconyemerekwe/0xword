@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 /** This file, which holds sample paths to prove the check catches them. */
 const THIS_FILE = "test/publicRepo.test.ts";
 
-const USER_PATH = /[A-Za-z]:[\\/]+[Uu]sers[\\/]|\/[a-z]\/Users\/|\/Users\/[A-Za-z]|\/home\/[A-Za-z]|\bAppData[\\/]/;
+const USER_PATH = /[A-Za-z]:[\\/]+[Uu]sers[\\/]|\/[A-Za-z]\/[Uu]sers\/|\/Users\/[A-Za-z]|\/home\/[A-Za-z]|\bAppData[\\/]/;
 
 function trackedFiles(): string[] {
   return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
@@ -39,6 +39,18 @@ describe("docs/release-pipeline.md", () => {
 
   it("has the owner's checklist heading", () => {
     assert.notEqual(checklist, "");
+  });
+
+  it("lists the steps in order, acting on the findings before going public", () => {
+    const steps = checklist.match(/^\d+\. .+$/gm) ?? [];
+    const expected = [
+      /Act on the findings listed on #95/,
+      /Make the repo public/,
+      /private vulnerability reporting/,
+      /secret scanning with push protection/,
+    ];
+    assert.equal(steps.length, expected.length);
+    expected.forEach((step, index) => assert.match(steps[index] ?? "", step));
   });
 
   it("covers making the repo public", () => {
@@ -76,6 +88,7 @@ describe("tracked text files", () => {
       "c:/Users/someone",
       "c:\\users\\someone",
       "/c/Users/someone",
+      "/C/users/someone",
       "/Users/someone/project",
       "/home/someone/project",
       "AppData\\Local\\Temp",
