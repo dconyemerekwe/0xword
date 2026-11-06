@@ -74,8 +74,8 @@ Never use `--no-verify`. Open a PR from `release/v<new>` into `main` titled `Rel
 
 End with these steps, filled in with the real version:
 
-1. Wait for CI to pass, then review and merge the PR into `main`.
-2. Check the `production` environment still has your approval on it (without it, the tag publishes with nothing stopping it: see `docs/release-pipeline.md`), then tag the merge commit and push the tag:
+1. Wait for CI to pass, then review the PR and merge it into `main` with **Create a merge commit**.
+2. Check the repo is public and the `production` environment still has your approval on it (without both, the tag publishes with nothing stopping it). Run the environment check in `docs/release-pipeline.md`, including `gh repo view dconyemerekwe/0xword --json visibility --jq .visibility`, and stop unless it prints `PUBLIC` and `dconyemerekwe`. Then tag the merge commit and push the tag:
    ```bash
    git checkout main && git pull
    git tag v<new>

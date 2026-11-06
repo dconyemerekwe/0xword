@@ -33,7 +33,7 @@ The owner still has to make the repo public, create the environment and recreate
 **How the two behave together:**
 
 - **Permissions:** a called workflow can only keep or lower what its caller gives it, never raise it. Both are `contents: read` here, so the `ci` job can't write.
-- **Concurrency:** a called workflow's `github.ref` is the tag, so `ci.yml`'s `cancel-in-progress` group is `ci-refs/tags/v<x>`. Branch and PR runs use other groups and can't cancel it. The one way to hit it is running CI by hand from the Actions tab on that same tag during a release, which can cancel the release's `ci` job. That stops the release safely: `github-release` is skipped and nothing is created, so re-run the failed jobs.
+- **Concurrency:** a called workflow's `github.ref` is the tag, so `ci.yml`'s `cancel-in-progress` group is `ci-refs/tags/v<x>`. Branch and PR runs use other groups and can't cancel it. The one way to hit it is running CI by hand from the Actions tab on that same tag during a release, which can cancel the release's `ci` job. That stops the release safely: `publish` and `github-release` are skipped and nothing is published or created, so re-run the failed jobs.
 - **Queueing:** a release already running is never cancelled, and that includes one waiting for the owner's approval, so a later tag waits until it's approved or rejected. GitHub keeps only one waiting run per concurrency group, though: if a third tag arrives while one release runs and another waits, the waiting one is cancelled and the new one takes its place. Push release tags one at a time.
 
 ## The release jobs
@@ -71,8 +71,8 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 ## Making a release
 
 1. **Prepare it:** run `/release <patch|minor|major>`. It bumps the version, updates `CHANGELOG.md` and opens a `release/v<x>` PR into `main`.
-2. **Merge it:** once CI passes, review and merge the PR into `main`.
-3. **Tag it:** first run [the environment check](#the-production-environment), and stop unless it prints `dconyemerekwe`. Then:
+2. **Merge it:** once CI passes, review the PR and merge it into `main` with **Create a merge commit**. A squash or rebase would leave `develop`'s commits off `main`.
+3. **Tag it:** first run [the environment check](#the-production-environment), and stop unless it prints `PUBLIC` and `dconyemerekwe`. Then:
    ```bash
    git checkout main && git pull
    git tag v<x>
@@ -87,7 +87,7 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 - **`verify-tag` fails:** the tag doesn't match `package.json`, or isn't on `main`. Delete the tag (`git push origin :refs/tags/v<x>` and `git tag -d v<x>`), fix the version through a PR, and tag again.
 - **`ci` fails:** the same as a red PR. Fix it through a PR into `develop`, release again, and use a new tag.
 - **`publish` is rejected:** `github-release` is skipped, no release is created and players see no change. Delete the tag (as for `verify-tag`). The version number is still free.
-- **`publish` fails after approval:** `github-release` is skipped and no release is created. Read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number. If it says the artifact is missing, the approval came after CI's 14-day retention: release again with a new tag.
+- **`publish` fails after approval:** `github-release` is skipped and no release is created. Read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number. If it says the artifact is missing, the approval came after CI's 14-day retention, and nothing went out. Delete the tag and push the same tag again, with `git push origin :refs/tags/v<x>` and `git push origin v<x>`, which starts a new run that builds a new `.vsix`. A new tag name with the same version would fail `verify-tag`.
 - **`github-release` fails:** read the job log. By then the version is on the Marketplace, so don't release it again: choose **Re-run failed jobs** on the same run, which leaves `publish` alone. **Re-run all jobs** would try to publish again, and the Marketplace would refuse the version. If a release for the tag already exists, `gh` refuses to create another; delete it first.
 
 ## Test-tag checks
@@ -128,14 +128,14 @@ git push origin :refs/tags/v9.9.9
 git tag -d v9.9.9
 ```
 
-**Check 2: a matching tag on a commit not on `main`.** Run this only while `3037813` isn't on `main`. Check first:
+**Check 2: a matching tag on a commit not on `main`.** Run this only while `3037813` isn't on `main`. Check first, by counting that commit's history that `main` doesn't have:
 
 ```bash
 git fetch origin
-git merge-base --is-ancestor 3037813 origin/main && echo "STOP: it is on main" || echo "OK: not on main"
+git rev-list --count origin/main..3037813
 ```
 
-On `STOP`, don't tag it: it would pass `verify-tag` and reach `github-release`, which creates a release. Skip this check, or use the [repeat on a later commit](#repeating-checks-1-and-2-on-a-later-commit) below. On `OK`:
+Go on only if it prints a number above `0`. `0` means it's on `main`, so don't tag it: it would pass `verify-tag` and reach `github-release`, which creates a release. Skip this check, or use the [repeat on a later commit](#repeating-checks-1-and-2-on-a-later-commit) below. A `fatal:` line means stop too. Then:
 
 ```bash
 git tag v<x> 3037813
@@ -144,14 +144,14 @@ git push origin v<x>
 
 The run must fail at `verify-tag`, this time on *Tagged commit is on main*, with the later jobs skipped and no release. Delete the tag the same way, with `git push origin :refs/tags/v<x>` and `git tag -d v<x>`.
 
-**Check 3A: a matching tag on `main`, on a commit with no `publish` job.** `3037813` reaches `main` with the first merge from `develop` into `main` (the first `/release` PR, or a `develop` to `main` PR), as long as that PR is merged with a merge commit. Check first:
+**Check 3A: a matching tag on `main`, on a commit with no `publish` job.** `3037813` reaches `main` with the first merge from `develop` into `main` (the first `/release` PR, or a `develop` to `main` PR), as long as that PR is merged with **Create a merge commit**. A squash or rebase leaves it off `main` for good, and then this check can't run: use 3B. Check first, by counting that commit's history that `main` doesn't have:
 
 ```bash
 git fetch origin
-git merge-base --is-ancestor 3037813 origin/main && echo "OK: on main" || echo "STOP: not on main yet"
+git rev-list --count origin/main..3037813
 ```
 
-On `OK`:
+Go on only if it prints `0`. A number above `0` means it isn't on `main` yet, and a `fatal:` line means stop. Then:
 
 ```bash
 git tag v<x> 3037813
@@ -165,7 +165,7 @@ gh release delete v<x> --cleanup-tag --yes
 git tag -d v<x>
 ```
 
-**Check 3B: a matching tag on `main`, rejected at the approval step.** Here `v<x>` is the version in `package.json` on `main`, the version a real release would publish, so this run can really publish it. First run the [environment check](#the-production-environment), and stop unless it prints `dconyemerekwe`. Then:
+**Check 3B: a matching tag on `main`, rejected at the approval step.** Here `v<x>` is the version in `package.json` on `main`, the version a real release would publish, so this run can really publish it. First run the [environment check](#the-production-environment), and stop unless it prints `PUBLIC` and `dconyemerekwe`. Then:
 
 ```bash
 git fetch origin
@@ -175,7 +175,7 @@ git push origin v<x>
 
 `verify-tag` and `ci` must pass, and `publish` must then wait for review. Open the run, choose **Review deployments**, select `production` and choose **Reject**. **Don't choose Approve and deploy or Start all waiting jobs:** either one publishes a real version, and the Marketplace never accepts that version number again.
 
-`publish` must then show as failed, `github-release` as skipped, and no release must appear. Nothing reached the Marketplace, so the same tag can be used for the real release later. Delete the tag:
+`github-release` must stay skipped, and no release must appear. GitHub's docs say a rejected job makes the workflow fail, but not how the job itself displays, so go by those two. Nothing reached the Marketplace, so the same tag can be used for the real release later. Delete the tag:
 
 ```bash
 git push origin :refs/tags/v<x>
@@ -190,8 +190,10 @@ This is optional: it shows `publish` being skipped in a run that has the job. It
 
 ```bash
 git fetch origin
-git merge-base --is-ancestor origin/develop origin/main && echo "STOP: it is on main" || echo "OK: not on main"
+git rev-list --count origin/main..origin/develop
 ```
+
+Go on only if it prints a number above `0`. `0` or a `fatal:` line means stop.
 
 The run must fail at `verify-tag`, with `ci`, `publish` and `github-release` all skipped. If `publish` ever waits for review in one of these runs, the guard is broken: reject it, delete the tag and report it.
 
@@ -271,17 +273,17 @@ The owner does these once, in order:
 3. Select **Required reviewers**, add `dconyemerekwe`, and choose **Save protection rules**.
 4. Leave **Prevent self-review** off. The owner both pushes the tag and approves it, so with it on nobody could approve.
 5. Leave **Deployment branches and tags** at **No restriction**. `release.yml` only runs on `v*` tags, and a wrong rule would block the job.
-6. Optionally, deselect **Allow administrators to bypass configured protection rules**. It's on by default, and gives the run a **Start all waiting jobs** button that skips the approval.
+6. Decide whether to deselect **Allow administrators to bypass configured protection rules**; that's the owner's choice. It's on by default, and it gives the run page a **Start all waiting jobs** button that skips the approval. **Choosing that button, in check 3B or any other run, would publish.**
 7. Recreate the [Trusted Publishing](#trusted-publishing) policy if it has lapsed.
 
 **The environment check.** Run this before pushing any tag on a commit with the `publish` job:
 
 ```bash
-gh api repos/dconyemerekwe/0xword/environments/production \
-  --jq '.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login'
+gh repo view dconyemerekwe/0xword --json visibility --jq .visibility
+gh api repos/dconyemerekwe/0xword/environments/production --jq '.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login'
 ```
 
-It must print `dconyemerekwe`. If it prints nothing or says `404`, **don't push the tag**: the environment is missing, or has no approval rule.
+The first must print `PUBLIC`, and the second `dconyemerekwe`. If either prints anything else, or nothing, or `404`, **don't push the tag**: the repo isn't public, so GitHub ignores the rules, or the environment is missing or has no approval rule. Run these in PowerShell 7 or Git Bash: Windows PowerShell 5.1 mangles the quotes, so the second command stops with an error even on a correct setup.
 
 ## Trusted Publishing
 
@@ -289,6 +291,7 @@ The `publish` job proves its identity to the Marketplace through GitHub's OpenID
 
 | Field | Value |
 |---|---|
+| Policy name | A descriptive name, such as `Release workflow` |
 | Repository owner | `dconyemerekwe` |
 | Repository | `0xword` |
 | Workflow | `release.yml` |
