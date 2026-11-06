@@ -1,0 +1,11 @@
+# Changes to these paths need the owner's review.
+/.github/ @dconyemerekwe
+/.claude/ @dconyemerekwe
+/package.json @dconyemerekwe
+/package-lock.json @dconyemerekwe
+/.npmrc @dconyemerekwe
+/.vscodeignore @dconyemerekwe
+/SECURITY.md @dconyemerekwe
+/CLAUDE.md @dconyemerekwe
+/.vscode/ @dconyemerekwe
+/scripts/ @dconyemerekwe

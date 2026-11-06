@@ -55,7 +55,7 @@ Already done: the GitHub repo `dconyemerekwe/0xword` exists with an MIT `LICENSE
 8. **Word list.** `src/game/words.txt`: one hand-written list of about 1,400 common 4-letter words, one per line, uppercase A–Z, sorted, no duplicates. It serves as both the valid guesses and the answer pool, and each round picks its answer at random from it. Only words are stored; hex is derived with `wordToHex`. Simple plurals and offensive or crude words are left out. The extension bundle inlines the file with esbuild's text loader (`--loader:.txt=text`), so the extension never reads it from disk. (The old repo's `words.txt` couldn't be used because it holds only 5-letter words.)
 9. **`.npmrc`.** `ignore-scripts=true` (no dependency install scripts run, locally or in CI) and `save-exact=true`.
 
-**Not migrating:** the Java game, `server.js` (no server is needed), and the compiled `.class` files. The old browser version had no npm packages, so there are no dependencies to migrate. What carries over is code and assets: the scoring logic in Phase 1, and the theme and colour approach in Phase 3.
+**Not migrating:** the old game code, `server.js` (no server is needed), and its compiled files. The old browser version had no npm packages, so there are no dependencies to migrate. What carries over is code and assets: the scoring logic in Phase 1, and the theme and colour approach in Phase 3.
 
 ## Phase 1: Game engine
 
