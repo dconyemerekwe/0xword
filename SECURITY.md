@@ -20,4 +20,4 @@ VS Code extensions run with your user account's full permissions, so you should 
 
 ## Reporting a vulnerability
 
-Please don't open a public issue for security problems. Report them privately with GitHub's private vulnerability reporting: open this repository's **Security** tab and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/dconyemerekwe/0xword/security/advisories/new). Include steps to reproduce if you can. You'll get a reply within 7 days.
+Please don't open a public issue for security problems. Report them privately with GitHub's private vulnerability reporting: open this repository's **Security** tab and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/dconyemerekwe/0xword/security/advisories/new). Include steps to reproduce if you can.

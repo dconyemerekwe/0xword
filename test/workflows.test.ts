@@ -128,7 +128,6 @@ const EXPECTED_RELEASE: readonly string[] = [
   "      - uses: actions/setup-node@<sha>",
   "        with:",
   "          node-version: 24",
-  "          cache: npm",
   "      - run: npm ci   # installs the vsce version locked in package-lock.json",
   "      - uses: actions/download-artifact@<sha>",
   "        with:",
