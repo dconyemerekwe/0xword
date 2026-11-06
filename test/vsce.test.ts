@@ -46,6 +46,35 @@ function nodeVersions(text: string): string[] {
   return [...text.matchAll(/^\s*node-version:\s*(\S+)/gm)].map((match) => match[1] ?? "");
 }
 
+/** Whether a line runs npm, npx or vsce. A comment on the line doesn't count. */
+function runsNpmOrVsce(line: string): boolean {
+  return /\b(npm|npx|vsce)\s/.test(line.replace(/\s#.*$/, ""));
+}
+
+/** Each job under `jobs:`, with its lines, leaving out comments on their own line. */
+function jobsOf(text: string): { readonly id: string; readonly lines: string[] }[] {
+  const lines = text.split(/\r?\n/).filter((line) => !/^\s*#/.test(line));
+  const jobs: { id: string; lines: string[] }[] = [];
+  for (const line of lines.slice(lines.indexOf("jobs:") + 1)) {
+    const id = /^ {2}["']?([^"'\s:]+)["']?:/.exec(line)?.[1];
+    if (id !== undefined) {
+      jobs.push({ id, lines: [] });
+    } else {
+      jobs.at(-1)?.lines.push(line);
+    }
+  }
+  return jobs;
+}
+
+/** The jobs that run npm, npx or vsce without first asking setup-node for a version. */
+function jobsWithoutNode(text: string): string[] {
+  return jobsOf(text).flatMap(({ id, lines }) => {
+    const firstRun = lines.findIndex(runsNpmOrVsce);
+    const covered = firstRun === -1 || nodeVersions(lines.slice(0, firstRun).join("\n")).length > 0;
+    return covered ? [] : [id];
+  });
+}
+
 function workflows(): { readonly file: string; readonly text: string }[] {
   return readdirSync(WORKFLOW_FOLDER).map((file) => ({
     file,
@@ -107,12 +136,62 @@ describe("Node for vsce's engines", () => {
     assert.match(installed.engines?.node ?? "", new RegExp(`^>=\\s*${VSCE_MINIMUM_NODE}$`));
   });
 
-  it("is set up by every workflow that runs npm or vsce", () => {
-    const running = workflows().filter(({ text }) => /\b(npm|npx|vsce)\s/.test(text));
-    assert.ok(running.some(({ file }) => file === "ci.yml"));
-    for (const { file, text } of running) {
-      assert.notDeepEqual(nodeVersions(text), [], file);
+  it("is set up by every job that runs npm or vsce, before it runs them", () => {
+    for (const { file, text } of workflows()) {
+      assert.deepEqual(jobsWithoutNode(text), [], file);
     }
+  });
+
+  it("the per-job check finds the jobs that run npm or vsce", () => {
+    const running = workflows().flatMap(({ file, text }) =>
+      jobsOf(text)
+        .filter(({ lines }) => lines.some(runsNpmOrVsce))
+        .map(({ id }) => `${file}:${id}`),
+    );
+    assert.deepEqual(running.sort(), ["ci.yml:check", "release.yml:publish"]);
+  });
+
+  it("the per-job check catches a job with no Node, even when another job in the file has it", () => {
+    const text = [
+      "jobs:",
+      "  build:",
+      "    steps:",
+      "      - uses: actions/setup-node@sha",
+      "        with:",
+      "          node-version: 24",
+      "      - run: npm ci",
+      "  ship:",
+      "    steps:",
+      "      - run: npx vsce publish",
+      '  "quoted":',
+      "    steps:",
+      "      - run: |",
+      "          echo hi",
+      "          npm ci",
+      "",
+    ].join("\n");
+    assert.deepEqual(jobsWithoutNode(text), ["ship", "quoted"]);
+  });
+
+  it("the per-job check catches Node set up only after the job first runs npm", () => {
+    const text = "jobs:\n  late:\n    steps:\n      - run: npm ci\n      - uses: a\n        with:\n          node-version: 24\n";
+    assert.deepEqual(jobsWithoutNode(text), ["late"]);
+  });
+
+  it("the per-job check ignores npm or vsce in a comment, or as setup-node's cache", () => {
+    const text = [
+      "jobs:",
+      "  other:",
+      "    # npm isn't run here",
+      "    uses: ./ci.yml   # runs vsce there",
+      "  cached:",
+      "    steps:",
+      "      - uses: a",
+      "        with:",
+      "          cache: npm",
+      "",
+    ].join("\n");
+    assert.deepEqual(jobsWithoutNode(text), []);
   });
 
   it("is new enough in every workflow", () => {

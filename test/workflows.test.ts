@@ -70,9 +70,10 @@ const EXPECTED_CI: readonly string[] = [
 ];
 
 /**
- * release.yml as normalised() gives it: only v* tags start it, it's read-only
- * but for github-release, and verify-tag, ci and github-release run in that
- * order. Phase 6 adds the publish job here.
+ * release.yml as normalised() gives it: only v* tags start it; verify-tag, ci,
+ * publish and github-release run in that order; publish alone has id-token and
+ * the production environment; github-release alone can write. publish uses the
+ * .vsix ci built, with no token and no rebuild.
  */
 const EXPECTED_RELEASE: readonly string[] = [
   "name: Release",
@@ -111,9 +112,32 @@ const EXPECTED_RELEASE: readonly string[] = [
   "    name: CI",
   "    needs: verify-tag",
   "    uses: ./.github/workflows/ci.yml   # the same checks as every PR",
+  "  publish:",
+  "    name: Publish to the VS Code Marketplace",
+  "    needs: ci",
+  "    runs-on: ubuntu-latest",
+  "    timeout-minutes: 10",
+  "    environment: production   # waits for the owner's approval",
+  "    permissions:",
+  "      contents: read",
+  "      id-token: write   # only this job can request a Marketplace credential",
+  "    steps:",
+  "      - uses: actions/checkout@<sha>",
+  "        with:",
+  "          persist-credentials: false",
+  "      - uses: actions/setup-node@<sha>",
+  "        with:",
+  "          node-version: 24",
+  "          cache: npm",
+  "      - run: npm ci   # installs the vsce version locked in package-lock.json",
+  "      - uses: actions/download-artifact@<sha>",
+  "        with:",
+  "          name: 0xword-vsix",
+  "          path: ${{ runner.temp }}",
+  '      - run: npx vsce publish --oidc --packagePath "$RUNNER_TEMP/0xword.vsix"',
   "  github-release:",
   "    name: GitHub Release",
-  "    needs: ci",
+  "    needs: publish   # no release unless the Marketplace took the version",
   "    runs-on: ubuntu-latest",
   "    timeout-minutes: 5",
   "    permissions:",
@@ -423,5 +447,11 @@ describe("docs/release-pipeline.md", () => {
     assert.match(doc, /^## Test-tag checks$/m);
     assert.ok(doc.includes("gh release delete v<x> --cleanup-tag --yes"));
     assert.ok(doc.includes("git tag -d v<x>"));
+  });
+
+  it("shows release.yml exactly as it is, apart from comments on their own line and pins", () => {
+    const design = /^### `release\.yml`$[\s\S]*?^```yaml\n([\s\S]*?)^```$/m.exec(doc)?.[1];
+    assert.ok(design !== undefined, "the design's release.yml block");
+    assert.deepEqual(normalised(design), EXPECTED_RELEASE);
   });
 });
