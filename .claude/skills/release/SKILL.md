@@ -75,11 +75,11 @@ Never use `--no-verify`. Open a PR from `release/v<new>` into `main` titled `Rel
 End with these steps, filled in with the real version:
 
 1. Wait for CI to pass, then review and merge the PR into `main`.
-2. Tag the merge commit and push the tag:
+2. Check the `production` environment still has your approval on it (without it, the tag publishes with nothing stopping it: see `docs/release-pipeline.md`), then tag the merge commit and push the tag:
    ```bash
    git checkout main && git pull
    git tag v<new>
    git push origin v<new>
    ```
-3. Publish as `docs/PLAN.md` Phase 6 describes (by hand, with your own logins).
+3. Open the run in the repo's Actions tab, check `verify-tag` and `ci` passed, then approve the `publish` job: **Review deployments**, then **Approve and deploy**. It publishes the `.vsix` CI built with no token, then `github-release` creates the GitHub Release. **Reject** stops the release, and players see no change.
 4. Open a PR from `main` into `develop` so `develop` gets the version bump and changelog.

@@ -1,6 +1,7 @@
-# A pushed version tag becomes a GitHub Release holding the .vsix CI built and
-# tested. See docs/release-pipeline.md. Phase 6 adds a publish job before
-# github-release; until then nothing here reaches the Marketplace.
+# A pushed version tag publishes the .vsix CI built and tested to the Marketplace,
+# after the owner's approval, then creates a GitHub Release holding it. See
+# docs/release-pipeline.md: the production environment must exist, with that
+# approval on it, before any tag is pushed.
 name: Release
 
 on:
@@ -45,9 +46,35 @@ jobs:
     needs: verify-tag
     uses: ./.github/workflows/ci.yml   # the same checks as every PR
 
+  publish:
+    name: Publish to the VS Code Marketplace
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production   # waits for the owner's approval
+    permissions:
+      contents: read
+      id-token: write   # only this job can request a Marketplace credential
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      # .npmrc, from the checkout, keeps install scripts off.
+      - run: npm ci   # installs the vsce version locked in package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: 0xword-vsix
+          path: ${{ runner.temp }}
+      # Publishes the exact file CI built and tested; nothing is rebuilt.
+      - run: npx vsce publish --oidc --packagePath "$RUNNER_TEMP/0xword.vsix"
+
   github-release:
     name: GitHub Release
-    needs: ci
+    needs: publish   # no release unless the Marketplace took the version
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
