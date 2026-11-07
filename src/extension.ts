@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NoticeChange, RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
 import { NewRoundRequests, answerWebview, sendNewRound, viewVisibilityChanged } from "./newRoundRequests.ts";
 import type { PostMessage } from "./post.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
@@ -12,16 +13,53 @@ const VIEW_ID = "0xword.game";
 /** The "0xWORD: New Round" command, as contributed in package.json. */
 const NEW_ROUND_COMMAND = "0xword.newRound";
 
+/** The "0x Round ready" status-bar item's id. */
+const ROUND_READY_ID = "0xword.roundReady";
+
+/** The notice's tooltip, also read out as its accessible name. */
+const ROUND_READY_LABEL = "0xWORD: a round is ready. Open the panel.";
+
 export function activate(context: vscode.ExtensionContext): void {
   const handlers = hostHandlers(new StatsStore(context.globalState), new ThemeStore(context.globalState));
   const provider = new GameViewProvider(context.extensionUri, handlers);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider),
     vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),
+    ...agentSignals(),
   );
 }
 
 export function deactivate(): void {}
+
+/**
+ * Shows "0x Round ready" in the status bar when an agent tool opens the
+ * `agent-started` link, and hides it on `agent-finished`. The item never
+ * takes focus. Clicking it runs the view's built-in focus command, which
+ * opens the panel without touching the round in progress (unlike New Round).
+ * The `onUri` activation event lets a link reach this handler before the
+ * panel has ever been opened. Returns the disposables to push.
+ */
+function agentSignals(): vscode.Disposable[] {
+  const item = vscode.window.createStatusBarItem(ROUND_READY_ID, vscode.StatusBarAlignment.Right);
+  item.name = "0xWORD round ready";
+  item.text = "0x Round ready";
+  item.tooltip = ROUND_READY_LABEL;
+  item.accessibilityInformation = { label: ROUND_READY_LABEL, role: "button" };
+  item.command = { command: `${VIEW_ID}.focus`, title: "Open 0xWORD" };
+  const notice = new RoundReadyNotice();
+  const handler = vscode.window.registerUriHandler({
+    // Only plain strings reach the reader; any other link is ignored silently.
+    handleUri: (uri) => {
+      const change = notice.apply(readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment }));
+      if (change === NoticeChange.Show) {
+        item.show();
+      } else if (change === NoticeChange.Hide) {
+        item.hide();
+      }
+    },
+  });
+  return [item, handler];
+}
 
 /**
  * What the host does with valid messages: count finished rounds, report

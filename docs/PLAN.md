@@ -11,7 +11,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 | 4 | Hardening and accessibility | Done (#57; stories #58–#64; bugs #74, #76; #65 and #80 not planned) |
 | 5 | Packaging | In progress (#82; stories #83–#87 built; the owner's install check and test-tag checks remain) |
 | 6 | Publish | In progress (#94; #95, #96 and #97 built) |
-| 7 | Agent integration (later) | Not started |
+| 7 | Agent integration (later) | In progress (#109 built; the owner's Windows checks remain) |
 
 ## CI (GitHub Actions)
 
@@ -189,6 +189,7 @@ The design and the user's setup guide are in [agent-integration.md](agent-integr
 - **Hooks stay the user's:** the extension never edits an agent tool's config files (security rule 8). The user adds the hooks from the setup guide. A **0xWORD: Copy agent hook setup** command copies the snippet for the chosen tool to the clipboard.
 - **Setup guide** for Claude Code, GitHub Copilot (VS Code agent hooks and Copilot CLI), Cursor and Codex, with the README linking to it. Each tool's hook format and events are checked against its current docs when this phase starts.
 - **To check first:** whether `code --open-url` brings VS Code to the front (which would undo `notify`), and which window gets the signal when several are open.
+- **Links and the status-bar notice (#109):** built. `src/agentSignals.ts` is pure: `readAgentSignal` accepts only the exact paths `/agent-started` and `/agent-finished` (case-sensitive, no trailing slash, no extra segments) with an empty query and fragment, and returns null for anything else, which is ignored without a message. `RoundReadyNotice` keeps at most one notice: a repeated start changes nothing, and a finish with no notice changes nothing. `src/extension.ts` registers the URI handler and a `0x Round ready` status-bar item on the right, with the tooltip and accessible name "0xWORD: a round is ready. Open the panel."; clicking it runs the view's built-in `0xword.game.focus` command, so it opens the panel without starting a new round, and no new command is contributed. `activationEvents` is now `["onUri"]`: a URI handler has no contribution point, so VS Code can't add that event itself, and without it a link opened before the panel or a command would find the extension inactive. Until #110 adds the settings, the notice shows whenever the link opens. The owner's three checks on Windows are a checklist in [agent-integration.md](agent-integration.md#the-owners-checks-on-windows-109), not done yet; their results decide whether #110 goes ahead as planned.
 
 ## Later releases: on hold
 

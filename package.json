@@ -35,7 +35,9 @@
     "color": "#14161B",
     "theme": "dark"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onUri"
+  ],
   "main": "./dist/extension.cjs",
   "capabilities": {
     "untrustedWorkspaces": {
