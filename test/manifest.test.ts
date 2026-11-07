@@ -299,12 +299,15 @@ describe("agent links (#109)", () => {
     assert.doesNotMatch(agentCode, /command:\s*NEW_ROUND_COMMAND/);
   });
 
-  it("never shows a message, takes focus or touches the round from the link handler", () => {
+  it("never focuses or touches the round from the link handler, and shows a message only as the pop-up, when showPopup allows it", () => {
     const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0];
     assert.ok(handler);
     for (const call of ["showErrorMessage", "showWarningMessage", "showInformationMessage", "newRound", "focus"]) {
       assert.ok(!handler.includes(call), call);
     }
+    // #110: the pop-up is the only message, and only inside the showPopup check.
+    assert.equal(handler.match(/roundReadyPopup\(\)/g)?.length, 1);
+    assert.match(handler, /\n {6}if \(showPopup\(change, settings\)\) \{\n {8}roundReadyPopup\(\);\n {6}\}\n/);
   });
 });
 
@@ -441,12 +444,19 @@ describe("notice settings (#110)", () => {
 
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
- * rule 8): the `workspace` API however it's imported, `fs` in any form, and
- * any `require` or dynamic `import`, which could load either.
+ * rule 8): the `workspace` API however it's imported or reached, `fs` in any
+ * form, and any `require` or dynamic `import`, which could load either. Also
+ * any settings write: `ConfigurationTarget` and any `.update(` call, since a
+ * workspace-level write creates `.vscode/settings.json` in the user's project.
  */
 const FILE_ACCESS: readonly RegExp[] = [
   /\.\s*workspace\b/, // vscode.workspace
   /\{[^}]*\bworkspace\b[^}]*\}\s*from\s*["']vscode["']/, // import { workspace } from "vscode"
+  /\{[^}]*\bworkspace\b[^}]*\}\s*=/, // const { workspace } = vscode
+  /\[\s*["'`]workspace["'`]\s*\]/, // vscode["workspace"]
+  /\bworkspace\b/, // the word anywhere else in code, outside comments
+  /\bConfigurationTarget\b/,
+  /\.\s*update\s*\(/, // a settings write, chained or through a variable
   /from\s*["'](node:)?fs(\/promises)?["']/,
   /\brequire\s*\(/,
   /\bimport\s*\(/,
@@ -464,9 +474,16 @@ function code(source: string): string {
  */
 const SETTINGS_CALLS = /\bvscode\.workspace\.(?:getConfiguration\(SETTINGS_SECTION\)|onDidChangeConfiguration\()/g;
 
-/** The code the file-access scan reads: no comments, and no settings calls. */
+/**
+ * The only `.update(` calls allowed: the stats and theme stores saving to
+ * `globalState`, through their own `#storage` field. A test below keeps them
+ * to src/stats.ts and src/theme.ts.
+ */
+const STORAGE_UPDATES = /\bthis\.#storage\.update\(/g;
+
+/** The code the file-access scan reads: no comments, settings reads or store saves. */
 function scanned(source: string): string {
-  return code(source).replace(SETTINGS_CALLS, "");
+  return code(source).replace(SETTINGS_CALLS, "").replace(STORAGE_UPDATES, "");
 }
 
 /** Every TypeScript file in src/ and the webview's media/, without the built bundle. */
@@ -502,6 +519,13 @@ describe("no workspace or file access (untrusted workspaces)", () => {
     assert.deepEqual(users, ["src/extension.ts"]);
   });
 
+  it("allows store saves only in src/stats.ts and src/theme.ts", () => {
+    const users = sourceFiles().filter((file) =>
+      code(readFileSync(new URL(file, root), "utf8")).match(STORAGE_UPDATES),
+    );
+    assert.deepEqual(users.sort(), ["src/stats.ts", "src/theme.ts"]);
+  });
+
   describe("the scan catches", () => {
     const caught: readonly (readonly [string, string])[] = [
       ["vscode.workspace", "vscode.workspace.fs.readFile(uri);"],
@@ -516,7 +540,27 @@ describe("no workspace or file access (untrusted workspaces)", () => {
       ["the workspace kept in a variable", "const ws = vscode.workspace;"],
       ["another settings section", 'vscode.workspace.getConfiguration("files");'],
       ["file access after a settings call", "vscode.workspace.getConfiguration(SETTINGS_SECTION); vscode.workspace.fs;"],
-      ["a settings call not written out in full","const c = vscode.workspace\n.getConfiguration(SETTINGS_SECTION);"],
+      ["a settings call not written out in full", "const c = vscode.workspace\n.getConfiguration(SETTINGS_SECTION);"],
+      [
+        "a workspace settings write chained after a settings read",
+        'void vscode.workspace.getConfiguration(SETTINGS_SECTION).update("autoStart.mode", "notify", vscode.ConfigurationTarget.Workspace);',
+      ],
+      [
+        "a settings write chained after a settings read, with no target",
+        'void vscode.workspace.getConfiguration(SETTINGS_SECTION).update("autoStart.mode", "notify");',
+      ],
+      [
+        "a settings write through a variable",
+        'const config = vscode.workspace.getConfiguration(SETTINGS_SECTION);\nvoid config.update("notify.popup", true);',
+      ],
+      ["a settings write with a space before the bracket", 'config.update ("notify.popup", true);'],
+      ["a configuration target", "const target = vscode.ConfigurationTarget.Workspace;"],
+      ["a configuration target imported by name", 'import { ConfigurationTarget } from "vscode";'],
+      ["a destructured workspace", "const { workspace } = vscode;"],
+      ["a destructured workspace among others", "const { window, workspace: ws } = vscode;"],
+      ["the workspace by bracket", 'const ws = vscode["workspace"];'],
+      ["the workspace by bracket in single quotes", "const ws = vscode['workspace'];"],
+      ["a store save from another field", "void this.#other.update(KEY, value);"],
     ];
     for (const [name, line] of caught) {
       it(name, () => {
@@ -533,6 +577,11 @@ describe("no workspace or file access (untrusted workspaces)", () => {
       const source =
         "const config = vscode.workspace.getConfiguration(SETTINGS_SECTION);\n" +
         "const listener = vscode.workspace.onDidChangeConfiguration((event) => {});";
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
+    });
+
+    it("nor a stats or theme store saving through its own field", () => {
+      const source = "await this.#storage.update(STATS_KEY, value);";
       assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
     });
   });
