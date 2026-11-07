@@ -32,7 +32,7 @@ Find these under **Settings → Extensions → 0xWORD**. VS Code saves them for 
 | Setting | Values | Default | What it does |
 |---|---|---|---|
 | `0xword.autoStart.mode` | `off`, `notify`, `open` | `off` | What happens when your agent starts working. `off` shows nothing, so a fresh install stays quiet, and you can pause notices without removing your hooks. Choose `notify` to turn them on. `notify` shows the notices switched on below. `open` opens the 0xWORD panel (not built yet, #111). |
-| `0xword.notify.badge` | on / off | on | In `notify` mode, a badge on the 0xWORD icon in the activity bar. It shows once you've opened the 0xWORD panel at least once. |
+| `0xword.notify.badge` | on / off | on | In `notify` mode, a badge on the 0xWORD icon in the activity bar. It shows once you've opened the 0xWORD panel since VS Code started. |
 | `0xword.notify.statusBar` | on / off | on | In `notify` mode, `0x Round ready` in the status bar. Click it to open the panel. |
 | `0xword.notify.popup` | on / off | off | In `notify` mode, a notification in the corner with **Play** and **Not now**, once each time your agent starts. **Play** opens the panel without touching your round. |
 | `0xword.autoStart.delaySeconds` | a number of seconds | 20 | In `open` mode only: how long the agent must still be working before the panel opens. Short prompts that finish sooner never open it. Not built yet (#111). |
@@ -42,7 +42,7 @@ A change applies straight away, even while a notice is showing: turning the stat
 ### What you'll see
 
 - **In `off` mode, the default,** nothing shows.
-- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. They never take focus or cover your code, so a prompt that finishes in seconds costs you nothing. Click one to open the panel. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
+- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
 - **In `open` mode,** the panel opens once the agent has been working for `delaySeconds`.
 - **A round in progress is never interrupted.** If the agent finishes mid-round, the panel just says so, and you can finish or leave the round.
 - **An unfinished round carries over.** Play a row or two while one prompt runs and pick it up again on the next.
@@ -114,7 +114,7 @@ The hooks format has changed between versions, so this section is written agains
 
 - **No telemetry.** 0xWORD still collects nothing and sends nothing. The hooks only open a link on your own machine.
 - **Your prompts stay with your agent tool.** The hook commands never read them, and the links never carry them.
-- **Only two fixed links do anything.** Any other `vscode://` link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice.
+- **Only two fixed links do anything.** Any other `vscode://` link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, and bring VS Code to the front.
 - **Your config files stay yours.** 0xWORD never writes to your agent tool's settings. You add and remove the hooks.
 
 ## Still to check before Phase 7 ships
@@ -138,7 +138,7 @@ Do the checks in this order. A confirmation dialog may bring VS Code to the fron
    - If a dialog showed, note separately whether the dialog itself brought VS Code to the front.
    - If it asks, note whether it asks again for the next link (run `agent-finished`), and again after a restart of VS Code. Once you've answered those, tick "don't ask again" before the focus check.
    - To undo "don't ask again" later, search the Command Palette for "Authorized Extension URIs".
-   - **Result:** VS Code shows "Allow an extension to open this URI?" for every link, even after allowing it, until **Don't ask again** is ticked. After that, links go straight through, including after a restart. Players will need to tick it once, and the setup guide (#113) must say so.
+   - **Result:** VS Code shows "Allow an extension to open this URI?" for every link, even after allowing it, until **Don't ask again** is ticked. After that, it stops asking and links go straight through. Players will need to tick it once, and the setup guide (#113) must say so.
 2. **Does `code --open-url` bring VS Code to the front?** Only once links go through with no dialog (check 1).
    - Put another app (for example Notepad) in front of VS Code, so VS Code is behind it but not minimised. Click back into the PowerShell window.
    - Run the `agent-started` command. Note whether VS Code comes to the front, its taskbar button flashes, or nothing visible happens, and whether `0x Round ready` shows in VS Code's status bar (bottom right) when you switch back to it.
@@ -154,7 +154,7 @@ Do the checks in this order. A confirmation dialog may bring VS Code to the fron
    - With VS Code already in front and the cursor in the Claude Code prompt box, run `agent-started` from VS Code's own terminal.
    - **Result:** keyboard focus didn't move. Typing stayed in the prompt box, and `0x Round ready` appeared in the status bar.
 
-**What this means:** notices are quiet for agents running inside VS Code. From a terminal outside VS Code, VS Code comes to the front when a link opens.
+**What this means:** a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus. From an outside terminal, VS Code comes to the front. Agent hooks run as background processes, which weren't tested.
 
 ### Still open
 
