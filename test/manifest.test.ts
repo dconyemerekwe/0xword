@@ -248,12 +248,50 @@ describe("package.json commands", () => {
     assert.equal(registered.length, commands.length);
   });
 
-  it("relies on the implicit onCommand activation, with no extra activation events", () => {
-    assert.deepEqual(manifest.activationEvents ?? [], []);
+  it("relies on the implicit onCommand activation, with onUri as the only extra activation event", () => {
+    // URI handlers have no contribution point, so VS Code can't add onUri itself.
+    assert.deepEqual(manifest.activationEvents ?? [], ["onUri"]);
   });
 
   it("supports untrusted workspaces for the command", () => {
     assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, true);
+  });
+});
+
+describe("agent links (#109)", () => {
+  const agentCode = code(extensionSource);
+
+  it("registers one URI handler and pushes it and the status-bar item into the subscriptions", () => {
+    assert.equal(agentCode.match(/registerUriHandler\(/g)?.length, 1);
+    assert.ok(agentCode.includes("...agentSignals(),"));
+    assert.ok(agentCode.includes("return [item, handler];"));
+  });
+
+  it("reads links only through the pure reader, passing plain strings", () => {
+    assert.ok(
+      agentCode.includes("readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment })"),
+    );
+  });
+
+  it('shows "0x Round ready" with a tooltip and accessible name', () => {
+    assert.ok(agentCode.includes('item.text = "0x Round ready";'));
+    assert.ok(agentCode.includes('const ROUND_READY_LABEL = "0xWORD: a round is ready. Open the panel.";'));
+    assert.ok(agentCode.includes("item.tooltip = ROUND_READY_LABEL;"));
+    assert.ok(agentCode.includes("label: ROUND_READY_LABEL"));
+  });
+
+  it("opens the panel on click by focusing the view, never by starting a new round", () => {
+    assert.ok(agentCode.includes("item.command = { command: `${VIEW_ID}.focus`"));
+    assert.doesNotMatch(agentCode, /item\.command\s*=\s*NEW_ROUND_COMMAND/);
+    assert.doesNotMatch(agentCode, /command:\s*NEW_ROUND_COMMAND/);
+  });
+
+  it("never shows a message, takes focus or touches the round from the link handler", () => {
+    const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0];
+    assert.ok(handler);
+    for (const call of ["showErrorMessage", "showWarningMessage", "showInformationMessage", "newRound", "focus"]) {
+      assert.ok(!handler.includes(call), call);
+    }
   });
 });
 
