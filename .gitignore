@@ -147,3 +147,10 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# VS Code extension packages
+*.vsix
+
+# Claude Code local settings and agent worktrees
+.claude/settings.local.json
+.claude/worktrees/

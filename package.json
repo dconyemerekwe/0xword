@@ -1,0 +1,91 @@
+{
+  "name": "0xword",
+  "displayName": "0xWORD",
+  "description": "Guess 8 hex digits that make a real 4-letter word, then decode it. In your side bar while your agent works.",
+  "version": "0.0.1",
+  "publisher": "dconyemerekwe",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dconyemerekwe/0xword.git"
+  },
+  "homepage": "https://github.com/dconyemerekwe/0xword#readme",
+  "bugs": {
+    "url": "https://github.com/dconyemerekwe/0xword/issues"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "hex",
+    "hexadecimal",
+    "ascii",
+    "word game",
+    "word",
+    "game",
+    "puzzle"
+  ],
+  "galleryBanner": {
+    "color": "#14161B",
+    "theme": "dark"
+  },
+  "activationEvents": [],
+  "main": "./dist/extension.cjs",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "0xword.newRound",
+        "title": "New Round",
+        "category": "0xWORD"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "0xword",
+          "title": "0xWORD",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "0xword": [
+        {
+          "type": "webview",
+          "id": "0xword.game",
+          "name": "0xWORD"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "watch": "node scripts/build.ts --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p media",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "verify": "npm run typecheck && npm test && npm run build",
+    "package": "vsce package --no-dependencies --githubBranch main",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.100.0",
+    "@vscode/vsce": "4.1.0",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
+  }
+}

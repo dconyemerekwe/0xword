@@ -1,0 +1,1062 @@
+/*
+ * 0xWORD game screen. Loaded with <link> under the CSP's `style-src`; there is
+ * no inline style anywhere. Colours come only from custom properties: the dark
+ * palette in :root and the light palette in the rule after it, which match
+ * DARK_PALETTE and LIGHT_PALETTE in src/ui/palette.ts (a test checks this and
+ * their contrast).
+ *
+ * Which palette shows (src/theme.ts `shownPalette`): the dark one by default,
+ * which covers VS Code's `vscode-dark` and `vscode-high-contrast` themes. The
+ * light one for VS Code's light themes, unless the player forced dark, or
+ * whenever the player forced light. VS Code switches its <body> class live, so
+ * "system" follows a theme change at once.
+ */
+
+/*
+ * The bundled fonts (media/fonts/README.md lists their source and checksums),
+ * loaded by relative URL under the CSP's `font-src`. Each variable file covers
+ * every weight used, including DM Sans 1000 for the title's `WORD`. If a file
+ * fails to load, the fallbacks after it in --ox-sans and --ox-mono are used.
+ */
+@font-face {
+  font-family: "DM Sans";
+  src: url("fonts/DMSans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+:root {
+  --ox-background: #14161B;
+  --ox-panel: #1D2027;
+  --ox-text: #E8EAF0;
+  --ox-muted: #A3A9B6;
+  --ox-accent: #6B98F0;
+  --ox-right: #2F6FE4;
+  --ox-on-right: #FFFFFF;
+  --ox-wrong: #F0A04B;
+  --ox-on-wrong: #1A1206;
+  --ox-wrong-text: #F0A04B;
+  --ox-absent: #343944;
+  --ox-on-absent: #B4B9C5;
+  --ox-empty-border: #343944;
+  --ox-key: #2A2E37;
+  --ox-key-absent: #111318;
+  --ox-final-card: #241B12;
+  --ox-final-note: #D6C8B4;
+  --ox-locked-right: #2754A8;
+  --ox-locked-wrong: #AE783F;
+  --ox-locked-key: #1B1E24;
+  --ox-locked-key-right: #1E3660;
+  --ox-locked-key-text: #6B7180;
+  --ox-hints-border: #3C3F48;
+  --ox-hints-text: #CCCFD8;
+  --ox-hints-on: #1E2A45;
+  --ox-hints-on-text: #7EA8FF;
+  --ox-strip-border: #4A4D55;
+  --ox-strip-unknown: #7B808B;
+  --ox-lock-badge: #2A2E37;
+  --ox-lock-badge-border: #3C3F48;
+  --ox-lock-message: #CCCFD8;
+  --ox-hints-locked-text: #8A909C;
+  --ox-hints-locked-border: #303239;
+  --ox-byte-tile: #1E2A45;
+  --ox-byte-hex: #7EA8FF;
+  --ox-card-border: #2A2E37;
+  --ox-icon: #CCCFD8;
+  --ox-cheat-hex: #7EA8FF;
+  --ox-chip-on-absent: #C9CFD8;
+
+  /* The theme button shows a sun on the dark palette (page 1). */
+  --ox-sun-display: block;
+  --ox-moon-display: none;
+
+  --ox-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ox-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* The "Decode the word" heading's type, shared with How to play's rules. */
+  --ox-label-font: 700 14px/1.4 var(--ox-sans);
+  --ox-touch: 44px;
+  --ox-radius: 6px;
+
+  /*
+   * Grid tiles (#33): never smaller than a scored tile's content, one 18px
+   * digit at line height 1.4 plus its 2px border on each side (29.2px). A
+   * byte pair is two of those and the 3px gap between them.
+   */
+  --ox-tile-min: calc(18px * 1.4 + 2 * 2px);
+  --ox-pair-min: calc(2 * var(--ox-tile-min) + 3px);
+  /*
+   * Keypad keys (#33) keep their size in a 400px panel at every width: the
+   * 376px game column there, less 3 gaps of 6px, over 4 keys (89.5px). When
+   * the page scrolls, VS Code's 10px scrollbar narrows that column to 366px,
+   * so keys may shrink to (366 - 3 × 6) / 4 = 87px to fit it (owner's
+   * decision), and no further.
+   */
+  --ox-key-width: 89.5px;
+  --ox-key-min-width: 87px;
+}
+
+/*
+ * The light palette (page 4; the derived values are listed in
+ * docs/design/README.md). On <body>, so it overrides :root for the whole page.
+ */
+body.vscode-light:not([data-ox-theme="dark"]),
+body.vscode-high-contrast-light:not([data-ox-theme="dark"]),
+body[data-ox-theme="light"] {
+  --ox-background: #F6F6F9;
+  --ox-panel: #FFFFFF;
+  --ox-text: #15181B;
+  --ox-muted: #5D636C;
+  --ox-accent: #2463EA;
+  --ox-right: #2463EA;
+  --ox-on-right: #FFFFFF;
+  --ox-wrong: #F3A524;
+  --ox-on-wrong: #1A1206;
+  --ox-wrong-text: #875C15;
+  --ox-absent: #6C7281;
+  --ox-on-absent: #FFFFFF;
+  --ox-empty-border: #CFD2D8;
+  --ox-key: #E3E4E9;
+  --ox-key-absent: #F6F6F9;
+  --ox-final-card: #FEF6E9;
+  --ox-final-note: #5D636C;
+  --ox-locked-right: #4169C0;
+  --ox-locked-wrong: #BD9149;
+  --ox-locked-key: #ECEDF1;
+  --ox-locked-key-right: #D7E0F7;
+  --ox-locked-key-text: #5D636C;
+  --ox-hints-border: #CFD2D8;
+  --ox-hints-text: #15181B;
+  --ox-hints-on: #EDF3FC;
+  --ox-hints-on-text: #2463EA;
+  --ox-strip-border: #969BA2;
+  --ox-strip-unknown: #5D636C;
+  --ox-lock-badge: #E3E4E9;
+  --ox-lock-badge-border: #CFD2D8;
+  --ox-lock-message: #5D636C;
+  --ox-hints-locked-text: #5D636C;
+  --ox-hints-locked-border: #E3E4E9;
+  --ox-byte-tile: #EDF3FC;
+  --ox-byte-hex: #2463EA;
+  --ox-card-border: #CFD2D8;
+  --ox-icon: #15181B;
+  --ox-cheat-hex: #2463EA;
+  --ox-chip-on-absent: #FFFFFF;
+
+  /* A moon on the light palette (page 4). */
+  --ox-sun-display: none;
+  --ox-moon-display: block;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Keeps `hidden` working on elements whose class sets `display`. */
+[hidden] {
+  display: none !important;
+}
+
+/*
+ * VS Code puts its own defaults before this stylesheet (`body` padding of
+ * 20px at the sides, the workbench font, size and weight). Every one that
+ * changes a size is set again here, so the panel doesn't depend on them.
+ */
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--ox-background);
+  color: var(--ox-text);
+  font-family: var(--ox-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Text for screen readers only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The focus ring on every control, in both palettes, so in VS Code's
+ * high-contrast themes too (they show the dark and light palettes). It sits
+ * 2px outside the control, on the page, panel or final card, never on the
+ * control's own fill. VS Code's default webview styles give `input:focus` a
+ * 1px inset ring. They sit in `@layer vscode-default`, so this unlayered rule
+ * already wins; `.decode-input:focus-visible` also outranks `input:focus` on
+ * specificity, so the decode box keeps this ring in a VS Code build without
+ * that layer too (#63).
+ */
+:focus-visible,
+.decode-input:focus-visible {
+  outline: 2px solid var(--ox-accent);
+  outline-offset: 2px;
+}
+
+/* The game (pages 1 to 4) and How to play (page 5): one shows at a time. */
+.game,
+.how-to-play {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header: the title on the left, the `?` and theme buttons on the right (page 1). */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+/* The theme button holds both icons; the palette's properties show one. */
+.theme-sun {
+  display: var(--ox-sun-display);
+}
+
+.theme-moon {
+  display: var(--ox-moon-display);
+}
+
+/* The `?`, theme and back arrow buttons: an icon on the page background, with a 44px target. */
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ox-touch);
+  min-height: var(--ox-touch);
+  padding: 0;
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: none;
+  color: var(--ox-icon);
+  cursor: pointer;
+}
+
+/*
+ * Icon buttons when disabled (only `?` is, at the decode step, #53): greyed out in the locked
+ * Hints text colour, in the same place and size, with no other icon.
+ */
+.icon-button:disabled {
+  color: var(--ox-hints-locked-text);
+  cursor: default;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.title-hex {
+  color: var(--ox-right);
+  font-family: var(--ox-mono);
+  font-weight: 700;
+}
+
+.title-word {
+  font-family: var(--ox-sans);
+  font-weight: 1000;
+}
+
+/* The status line, with the Hints button on its right (page 2). */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--ox-muted);
+}
+
+/* Outlined on the page background while off; blue border and tinted fill while on. */
+.hints-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: var(--ox-touch);
+  min-height: var(--ox-touch);
+  padding: 0 14px;
+  border: 1px solid var(--ox-hints-border);
+  border-radius: var(--ox-radius);
+  background: var(--ox-background);
+  color: var(--ox-hints-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hints-button[aria-pressed="true"] {
+  border-color: var(--ox-right);
+  background: var(--ox-hints-on);
+  color: var(--ox-hints-on-text);
+}
+
+/* Locked with the hex (page L3): dimmed, with a lock for the bulb, and disabled. */
+.hints-button:disabled {
+  border-color: var(--ox-hints-locked-border);
+  color: var(--ox-hints-locked-text);
+  cursor: default;
+}
+
+/* The light bulb, or the lock once locked: an inline SVG drawn in the button's text colour. */
+.hints-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+/* The lock icon before "Hex locked" (page 3): an inline SVG drawn in the text colour. */
+.status-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+/* Grid: 6 rows of 4 byte pairs, with a wider gap between pairs than within one. */
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * Every row has the same columns whatever its tiles hold, so an empty tile is
+ * exactly as big as a scored one (#33). A pair never gets narrower than
+ * `--ox-pair-min`: in a narrower panel the grid overflows instead.
+ */
+.grid-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
+  gap: 12px;
+}
+
+/* Two equal columns, however wide each tile's digit is. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border: 2px solid var(--ox-empty-border);
+  border-radius: 4px;
+  color: var(--ox-text);
+  font-family: var(--ox-mono);
+  font-size: 18px;
+  font-weight: 700;
+  transition: background-color 150ms ease-out;
+}
+
+.tile-typed {
+  border-color: var(--ox-muted);
+  background: var(--ox-background);
+}
+
+.tile-right {
+  border-color: var(--ox-right);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.tile-wrong {
+  border-color: var(--ox-wrong);
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.tile-absent {
+  border-color: var(--ox-absent);
+  background: var(--ox-absent);
+  color: var(--ox-on-absent);
+}
+
+/* The hex is locked (page 3): right and wrong tiles are dimmed. */
+.grid-locked .tile-right {
+  border-color: var(--ox-locked-right);
+  background: var(--ox-locked-right);
+}
+
+.grid-locked .tile-wrong {
+  border-color: var(--ox-locked-wrong);
+  background: var(--ox-locked-wrong);
+}
+
+/* Hint strip (page 2): one dashed cell per byte, in the same columns as the byte pairs. */
+
+.hint-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(var(--ox-pair-min), 1fr));
+  gap: 12px;
+}
+
+.hint-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px dashed var(--ox-strip-border);
+  border-radius: 4px;
+  color: var(--ox-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hint-unknown {
+  color: var(--ox-strip-unknown);
+}
+
+/* Legend */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ox-muted);
+  font-size: 12px;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.swatch-right {
+  background: var(--ox-right);
+}
+
+.swatch-wrong {
+  background: var(--ox-wrong);
+}
+
+.swatch-absent {
+  background: var(--ox-absent);
+}
+
+/* Decode panel */
+
+/*
+ * One grid cell holds both the panel's body and, before the decode step, the
+ * lock over it (pages L1 and L2), so the panel keeps its size and place.
+ */
+.decode {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px;
+  /* Drawn in the panel colour, so the final card's orange border doesn't shift the layout. */
+  border: 2px solid var(--ox-panel);
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+}
+
+.decode-body {
+  display: flex;
+  flex-direction: column;
+  grid-area: 1 / 1;
+  gap: 8px;
+}
+
+/*
+ * Locked (pages L1 and L2): the body is drawn faded under the lock. 10%
+ * reproduces the faded heading, box and Decode button measured from
+ * lock-1.jpg. Its controls are `disabled` as well.
+ */
+.decode-locked .decode-body {
+  opacity: 0.1;
+}
+
+.decode-lock {
+  display: flex;
+  flex-direction: column;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+}
+
+/* A lock icon in a small round badge, slightly lighter than the panel, with a thin outline. */
+.lock-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ox-lock-badge-border);
+  border-radius: 50%;
+  background: var(--ox-lock-badge);
+  color: var(--ox-text);
+}
+
+.lock-badge-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.lock-title {
+  margin: 0;
+  color: var(--ox-text);
+  font-weight: 700;
+}
+
+.lock-message {
+  margin: 0;
+  color: var(--ox-lock-message);
+}
+
+.decode-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decode-label {
+  font: var(--ox-label-font);
+}
+
+.decode-badge {
+  color: var(--ox-wrong-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* A size container, so the placeholder rules below can tell when it fits. */
+.decode-row {
+  display: flex;
+  gap: 8px;
+  container-type: inline-size;
+}
+
+.decode-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ox-touch);
+  padding: 0 10px;
+  border: 1px solid var(--ox-muted);
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+  color: var(--ox-text);
+  font: inherit;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+/* A placeholder too long for the box ends in "…" rather than mid-letter (#33). */
+.decode-input::placeholder {
+  overflow: hidden;
+  color: var(--ox-muted);
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+/*
+ * Chromium shows no ellipsis while the box has focus, so a placeholder that
+ * doesn't fit would be cut mid-letter: hide it then instead (owner's decision
+ * on #33). The widths are the decode row's, measured with the bundled fonts:
+ * "Type the English word" (142px) needs the box's 22px of padding and border,
+ * the 8px gap and Decode (85px); "Decode the bytes above" (158.9px) needs the
+ * same, with Submit (81.3px). Where it fits, it stays visible.
+ */
+@container (width < 257px) {
+  .decode-input:focus::placeholder {
+    color: transparent;
+  }
+}
+
+@container (width < 271px) {
+  .decode-final .decode-input:focus::placeholder {
+    color: transparent;
+  }
+}
+
+.decode-input:disabled {
+  border-style: dashed;
+  color: var(--ox-muted);
+}
+
+.decode-button {
+  min-height: var(--ox-touch);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.decode-button:disabled {
+  background: var(--ox-key-absent);
+  color: var(--ox-muted);
+  cursor: default;
+}
+
+.decode-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ox-muted);
+  font-size: 12px;
+}
+
+/* The final-answer card (pages 3 and L3), in place of the decode panel at the decode step. */
+.decode-final {
+  border-color: var(--ox-wrong);
+  background: var(--ox-final-card);
+}
+
+.decode-final .decode-input {
+  border-color: var(--ox-wrong);
+  background: var(--ox-background);
+}
+
+.decode-final .decode-button {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.decode-final .decode-foot {
+  color: var(--ox-final-note);
+}
+
+/*
+ * The result card (page 4), in place of the legend, decode panel and keypad
+ * once the round is over. Page 4 is drawn in the light theme; this is its
+ * dark match: the panel colour with a blue outline, pale-blue byte tiles.
+ */
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 2px solid var(--ox-right);
+  border-radius: 8px;
+  background: var(--ox-panel);
+}
+
+.result-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* "Congrats! You cracked it" / "Unlucky!": not on page 4, so muted and smaller than the heading. */
+.result-outcome {
+  margin: 0;
+  color: var(--ox-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.result-heading {
+  margin: 0;
+  color: var(--ox-text);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.result-line {
+  margin: 0;
+  color: var(--ox-muted);
+}
+
+/*
+ * One tile per byte: the hex, a down arrow, the letter. The columns may
+ * shrink below their content's width (`minmax(0, 1fr)`), so the tiles never
+ * push past the card's border; in a very narrow panel they wrap to 2 × 2.
+ */
+.result-bytes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Four tiles need about 136px inside the card (each about 28px wide, plus
+ * the gaps): a panel of about 196px. Below 240px, with a margin for wider
+ * fonts, they take two rows.
+ */
+@media (max-width: 240px) {
+  .result-bytes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.result-byte {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 4px;
+  border-radius: var(--ox-radius);
+  background: var(--ox-byte-tile);
+}
+
+.result-hex {
+  color: var(--ox-byte-hex);
+  font-family: var(--ox-mono);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.result-arrow {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--ox-muted);
+  stroke-width: 1.5;
+}
+
+.result-letter {
+  color: var(--ox-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* The only button: Copy result is on hold (#24), so New round takes the full width. */
+.result-button {
+  width: 100%;
+  min-height: var(--ox-touch);
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.result-note {
+  margin: 0;
+  color: var(--ox-muted);
+  text-align: center;
+}
+
+/*
+ * How to play (page 5), in place of the game. Sizes are estimated from the
+ * page 5 image at a 400px panel: the design gives no measurements.
+ */
+
+.how-to-play-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.how-to-play-heading {
+  margin: 0;
+  color: var(--ox-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* "RULES" and "ASCII CHEATSHEET": small muted capitals. */
+.section-heading {
+  margin: 8px 0 0;
+  color: var(--ox-muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ox-text);
+  /* The same type as "Decode the word" on the game screen (the owner's choice). */
+  font: var(--ox-label-font);
+}
+
+/*
+ * Rule 3's colour words, as chips in the tile colours. The word is centred
+ * with equal padding on every side; as an inline flex box the chip's
+ * baseline is its word's, so it sits level with the text around it.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 4px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.chip-right {
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.chip-wrong {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.chip-absent {
+  background: var(--ox-absent);
+  color: var(--ox-chip-on-absent);
+}
+
+.cheatsheet-line {
+  margin: 0;
+  color: var(--ox-text);
+}
+
+/* `4_` and `5_`: hex, in the cards' blue monospace. */
+.code {
+  color: var(--ox-cheat-hex);
+  font-family: var(--ox-mono);
+  font-weight: 700;
+}
+
+/* 26 cards, 5 to a row. The columns may shrink, so the grid never overflows. */
+.cheatsheet {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cheat-card {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 8px;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--ox-card-border);
+  border-radius: var(--ox-radius);
+  background: var(--ox-panel);
+}
+
+.cheat-letter {
+  color: var(--ox-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cheat-hex {
+  color: var(--ox-cheat-hex);
+  font-family: var(--ox-mono);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* Message */
+
+.message {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--ox-text);
+  font-weight: 700;
+}
+
+.message-error {
+  color: var(--ox-wrong-text);
+}
+
+/* Keypad: 4 rows of 4 keys, then DEL and ENTER. */
+
+/*
+ * Keys never grow, and shrink only from 89.5px to 87px (owner's decisions on
+ * #33). With auto margins the keypad takes the width it needs, up to the
+ * column: in a wider panel it is centred; in a column narrower than 366px its
+ * margins drop to 0, so it starts at the left and overflows to the right,
+ * where the panel scrolls.
+ *
+ * Known limits: below about 366px, with the page scrolled fully right, the
+ * right-hand keys' focus ring can be cut at the scroll edge. From about 424px
+ * wide, the 376px keypad is narrower than the 400px grid and centred, so
+ * their edges no longer line up.
+ */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(var(--ox-key-min-width), var(--ox-key-width)));
+  gap: 6px;
+  margin-inline: auto;
+}
+
+.key {
+  min-width: var(--ox-touch);
+  min-height: var(--ox-touch);
+  border: 0;
+  border-radius: var(--ox-radius);
+  background: var(--ox-key);
+  color: var(--ox-text);
+  font-family: var(--ox-mono);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.key-wide {
+  grid-column: span 2;
+  font-family: var(--ox-sans);
+  font-size: 14px;
+}
+
+.key-right {
+  background: var(--ox-right);
+  color: var(--ox-on-right);
+}
+
+.key-wrong {
+  background: var(--ox-wrong);
+  color: var(--ox-on-wrong);
+}
+
+/* Darker and struck through, so colour isn't the only cue. */
+.key-absent {
+  background: var(--ox-key-absent);
+  color: var(--ox-muted);
+  text-decoration: line-through;
+}
+
+/* Disabled before the first round and once the hex is locked. Marked keys keep their colours. */
+.key:disabled {
+  cursor: default;
+}
+
+.key:disabled:not(.key-right, .key-wrong, .key-absent) {
+  color: var(--ox-muted);
+}
+
+/* The hex is locked (page 3): every key is dimmed, and marked keys keep a dimmed colour. */
+.keypad-locked .key:disabled {
+  background: var(--ox-locked-key);
+  color: var(--ox-locked-key-text);
+}
+
+.keypad-locked .key-right:disabled {
+  background: var(--ox-locked-key-right);
+}
+
+.keypad-locked .key-wrong:disabled {
+  background: var(--ox-locked-wrong);
+  color: var(--ox-on-wrong);
+}
+
+.keypad-locked .key-absent:disabled {
+  background: var(--ox-key-absent);
+}
+
+/*
+ * Reduced motion: nothing moves. Covers pseudo-elements and smooth scrolling
+ * too, so a later rule can't bring motion back (#63). media/main.ts adds none:
+ * its only requestAnimationFrame calls re-set a live region's text.
+ *
+ * Two rules, the same reset: the OS setting (the media query), and VS Code's
+ * Reduce Motion setting, which marks <body> `vscode-reduce-motion` when
+ * `workbench.reduceMotion` is "on", or "auto" with the OS setting on (#74).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body.vscode-reduce-motion,
+body.vscode-reduce-motion *,
+body.vscode-reduce-motion *::before,
+body.vscode-reduce-motion *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}

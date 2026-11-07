@@ -1,0 +1,33 @@
+# Dependabot: security fixes only.
+# When a dependency or GitHub Action has a known vulnerability, Dependabot opens
+# a PR that bumps it to the lowest version containing the fix. It never merges:
+# ci.yml runs on the PR, and the owner reviews and merges.
+#
+# Security PRs also need, in the repo's Settings > Code security:
+#   Dependabot alerts: on
+#   Dependabot security updates: on
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # 0 turns off routine "newer version available" PRs.
+    # Security PRs don't count towards this limit, so they still open.
+    open-pull-requests-limit: 0
+    labels: [dependencies, security]
+    commit-message:
+      prefix: chore
+      include: scope   # -> "chore(deps): bump esbuild from 0.28.2 to 0.28.3"
+
+  # The SHA-pinned actions in ci.yml. Dependabot updates the SHA and its
+  # "# vX.Y.Z" comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels: [dependencies, security]
+    commit-message:
+      prefix: ci
+      include: scope   # -> "ci(deps): bump actions/checkout from ... to ..."
