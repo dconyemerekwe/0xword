@@ -60,6 +60,9 @@ describe("readNoticeSettings", () => {
     const invalid: readonly (readonly [string, unknown])[] = [
       ["open, which isn't built yet", "open"],
       ["an unknown word", "loud"],
+      ["__proto__", "__proto__"],
+      ["constructor", "constructor"],
+      ["toString", "toString"],
       ["another letter case", "Notify"],
       ["surrounding spaces", " notify "],
       ["the empty string", ""],

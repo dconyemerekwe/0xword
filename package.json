@@ -93,7 +93,7 @@
           "default": true,
           "scope": "window",
           "order": 1,
-          "markdownDescription": "In `notify` mode, show a badge on the 0xWORD icon in the activity bar while your agent works. It shows once you've opened the 0xWORD panel at least once."
+          "markdownDescription": "In `notify` mode, show a badge on the 0xWORD icon in the activity bar while your agent works. It shows once you've opened the 0xWORD panel since VS Code started."
         },
         "0xword.notify.statusBar": {
           "type": "boolean",
@@ -107,7 +107,7 @@
           "default": false,
           "scope": "window",
           "order": 3,
-          "markdownDescription": "In `notify` mode, show a notification with **Play** and **Not now** when your agent starts working. It doesn't take focus."
+          "markdownDescription": "In `notify` mode, show a notification with **Play** and **Not now** when your agent starts working. It's a normal VS Code notification, so it doesn't take keyboard focus."
         }
       }
     }

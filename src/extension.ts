@@ -49,10 +49,12 @@ export function deactivate(): void {}
 /**
  * Shows the "round ready" notices the player has switched on in Settings
  * while an agent works: from the `agent-started` link until `agent-finished`.
- * None takes focus. Clicking the status-bar item, or Play on the pop-up, runs
- * the view's built-in focus command, which opens the panel without touching
- * the round in progress (unlike New Round). The `onUri` activation event lets
- * a link reach this handler before the panel has ever been opened.
+ * None takes keyboard focus itself, though opening a link from outside VS
+ * Code can bring VS Code to the front. Clicking the status-bar item, or Play
+ * on the pop-up, runs the view's built-in focus command, which opens the
+ * panel without touching the round in progress (unlike New Round). The
+ * `onUri` activation event lets a link reach this handler before the panel
+ * has ever been opened.
  *
  * The settings are read again on every signal and every change, so a change
  * applies straight away, and are never stored. "Agent working" is tracked
@@ -108,9 +110,9 @@ function noticeSettings(): NoticeSettings {
 }
 
 /**
- * Shows the "round ready" pop-up, which doesn't take focus. Play opens the
- * panel without touching the round in progress; Not now just closes it. It
- * isn't awaited, and any failure is ignored, so the link handler never waits
+ * Shows the "round ready" pop-up, a normal notification that doesn't take
+ * keyboard focus. Play opens the panel without touching the round in
+ * progress; Not now just closes it. It isn't awaited, and any failure is ignored, so the link handler never waits
  * or throws. VS Code can't close a notification from code, so one still
  * showing when the agent finishes stays until the player closes it.
  */

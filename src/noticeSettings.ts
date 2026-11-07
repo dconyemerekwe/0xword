@@ -62,7 +62,7 @@ function isMode(value: unknown): value is AutoStartMode {
 export function readNoticeSettings(get: (key: SettingKey) => unknown): NoticeSettings {
   const mode = get(SettingKey.Mode);
   return {
-    mode: isMode(mode) ? mode :DEFAULT_NOTICE_SETTINGS.mode,
+    mode: isMode(mode) ? mode : DEFAULT_NOTICE_SETTINGS.mode,
     badge: flag(get(SettingKey.Badge), DEFAULT_NOTICE_SETTINGS.badge),
     statusBar: flag(get(SettingKey.StatusBar), DEFAULT_NOTICE_SETTINGS.statusBar),
     popup: flag(get(SettingKey.Popup), DEFAULT_NOTICE_SETTINGS.popup),
