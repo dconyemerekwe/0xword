@@ -120,27 +120,32 @@ The hooks format has changed between versions, so this section is written agains
 
 To do before #110. If VS Code comes to the front or asks for confirmation, stop and decide on a different way to deliver the signal before #110: a notice that steals focus defeats the point of `notify` mode.
 
-**Setup:** install the `.vsix` built for #109 (Extensions view → `...` → **Install from VSIX...**) and reload the window. Run the commands below in a PowerShell window outside VS Code, not in VS Code's own terminal, so VS Code isn't already the focused app. Don't open the 0xWORD panel first.
+**Setup:** get the `.vsix` for #109: download the `0xword-vsix` artifact from this PR's CI run (Actions tab), or run `npm run package`. Install it (Extensions view → `...` → **Install from VSIX...**) and reload the window. Run the commands below in a PowerShell window outside VS Code, not in VS Code's own terminal, so VS Code isn't already the focused app. Don't open the 0xWORD panel first.
 
 ```powershell
 code --open-url "vscode://dconyemerekwe.0xword/agent-started"
 code --open-url "vscode://dconyemerekwe.0xword/agent-finished"
 ```
 
-1. **Does `code --open-url` bring VS Code to the front?**
-   - Open one VS Code window, then put another app (for example Notepad) in front of it, so VS Code is behind it but not minimised. Click back into the PowerShell window.
+Do the checks in this order. A confirmation dialog may bring VS Code to the front by itself, so the focus check runs only once links go through with no dialog.
+
+1. **Does VS Code ask for confirmation before passing the link on?**
+   - Open one VS Code window, then put another app (for example Notepad) in front of it. Click back into the PowerShell window and run the `agent-started` command.
+   - Note whether VS Code shows a dialog asking to allow 0xWORD to open the link, and its exact wording and options (for example a "don't ask again" box). **Don't tick "don't ask again" on this first run.**
+   - If a dialog showed, note separately whether the dialog itself brought VS Code to the front.
+   - If it asks, note whether it asks again for the next link (run `agent-finished`), and again after a restart of VS Code. Once you've answered those, tick "don't ask again" before the focus check.
+   - To undo "don't ask again" later, search the Command Palette for "Authorized Extension URIs".
+   - Result: not checked yet.
+2. **Does `code --open-url` bring VS Code to the front?** Only once links go through with no dialog (check 1).
+   - Put another app (for example Notepad) in front of VS Code, so VS Code is behind it but not minimised. Click back into the PowerShell window.
    - Run the `agent-started` command. Note whether VS Code comes to the front, its taskbar button flashes, or nothing visible happens, and whether `0x Round ready` shows in VS Code's status bar (bottom right) when you switch back to it.
    - Run `agent-finished` and check the notice goes away.
    - Minimise VS Code and repeat both commands, noting the same things.
    - Result: not checked yet.
-2. **Does VS Code ask for confirmation before passing the link on?**
-   - On the first `agent-started` above, note whether VS Code shows a dialog asking to allow 0xWORD to open the link, and its exact wording and options (for example a "don't ask again" box).
-   - If it asks, note whether it asks again for the next link, and again after a restart of VS Code.
-   - Result: not checked yet.
 3. **Which window gets the link when several are open?**
    - Open two VS Code windows on different folders, A and B. Click into A last, then into the PowerShell window.
-   - Run `agent-started` and note which window shows `0x Round ready`: A (the last focused), B, or both.
-   - Click into B, then the PowerShell window, and run `agent-finished`. Note whether the notice in A goes away, or stays because B got the link.
+   - Run `agent-started` and note which window shows `0x Round ready`: A (the last focused), B, both, neither, a new window opened, or something else (describe it).
+   - Click into B, then the PowerShell window, and run `agent-finished`. Note whether the notice in A goes away, stays because B got the link, or something else happens (describe it).
    - Result: not checked yet.
 
 ### Still open

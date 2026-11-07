@@ -7,6 +7,10 @@
 // machine can open one. Only the two exact paths, case-sensitive, with no
 // query and no fragment, do anything. Everything else is ignored without an
 // error, and nothing in a link is ever used as data.
+//
+// The link's host part (`dconyemerekwe.0xword`) isn't read here: VS Code
+// routes a link to an extension by its ID, without regard to letter case.
+// So "a different letter case" is checked on the path only.
 
 /** What an agent link asks for. */
 export const AgentSignal = {
