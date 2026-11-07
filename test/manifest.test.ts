@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { matchesGlob } from "node:path/posix";
 import { describe, it } from "node:test";
+import { DEFAULT_NOTICE_SETTINGS, SETTINGS_SECTION, readNoticeSettings } from "../src/noticeSettings.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
 
 const root = new URL("../", import.meta.url);
@@ -26,6 +27,16 @@ interface Command {
   category?: string;
 }
 
+interface Setting {
+  type?: string;
+  enum?: string[];
+  enumDescriptions?: string[];
+  default?: unknown;
+  scope?: string;
+  description?: string;
+  markdownDescription?: string;
+}
+
 interface Manifest {
   name?: string;
   publisher?: string;
@@ -41,6 +52,7 @@ interface Manifest {
     commands?: Command[];
     viewsContainers?: { activitybar?: ViewContainer[] };
     views?: Record<string, View[]>;
+    configuration?: { title?: string; properties?: Record<string, Setting> };
   };
 }
 
@@ -263,8 +275,9 @@ describe("agent links (#109)", () => {
 
   it("registers one URI handler and pushes it and the status-bar item into the subscriptions", () => {
     assert.equal(agentCode.match(/registerUriHandler\(/g)?.length, 1);
-    assert.ok(agentCode.includes("...agentSignals(),"));
-    assert.ok(agentCode.includes("return [item, handler];"));
+    // #110 passes the view provider in, for the badge, and adds the settings listener.
+    assert.ok(agentCode.includes("...agentSignals(provider),"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge];"));
   });
 
   it("reads links only through the pure reader, passing plain strings", () => {
@@ -295,6 +308,137 @@ describe("agent links (#109)", () => {
   });
 });
 
+describe("notice settings (#110)", () => {
+  const configuration = manifest.contributes?.configuration;
+  const properties = configuration?.properties ?? {};
+  const agentCode = code(extensionSource);
+
+  /** A setting's description, plain or markdown. */
+  function describedAs(setting: Setting | undefined): string {
+    return setting?.markdownDescription ?? setting?.description ?? "";
+  }
+
+  it("lists exactly the four settings under 0xWORD", () => {
+    assert.equal(configuration?.title, "0xWORD");
+    assert.deepEqual(Object.keys(properties).sort(), [
+      "0xword.autoStart.mode",
+      "0xword.notify.badge",
+      "0xword.notify.popup",
+      "0xword.notify.statusBar",
+    ]);
+  });
+
+  it("makes autoStart.mode a choice of off or notify, off by default, with a description for each", () => {
+    const mode = properties["0xword.autoStart.mode"];
+    assert.equal(mode?.type, "string");
+    assert.deepEqual(mode?.enum, ["off", "notify"]);
+    assert.equal(mode?.default, "off");
+    assert.equal(mode?.enumDescriptions?.length, 2);
+    for (const text of mode?.enumDescriptions ?? []) {
+      assert.ok(text.trim().length > 0);
+    }
+  });
+
+  it("says in the mode's description that notices are off by default and to choose notify to turn them on", () => {
+    const text = describedAs(properties["0xword.autoStart.mode"]);
+    assert.match(text, /`off` by default/);
+    assert.match(text, /Choose `notify` to turn them on/);
+  });
+
+  it("makes the badge and status bar on by default and the pop-up off, all on/off", () => {
+    const defaults: readonly (readonly [string, boolean])[] = [
+      ["0xword.notify.badge", true],
+      ["0xword.notify.statusBar", true],
+      ["0xword.notify.popup", false],
+    ];
+    for (const [key, value] of defaults) {
+      assert.equal(properties[key]?.type, "boolean", key);
+      assert.equal(properties[key]?.default, value, key);
+    }
+  });
+
+  it("gives every setting a plain description", () => {
+    for (const [key, setting] of Object.entries(properties)) {
+      assert.ok(describedAs(setting).length > 20, key);
+    }
+  });
+
+  it("lets a workspace value override the user's: no setting is application or machine scoped", () => {
+    for (const [key, setting] of Object.entries(properties)) {
+      assert.ok(setting.scope === undefined || ["window", "resource"].includes(setting.scope), key);
+    }
+  });
+
+  it("gives the same defaults as the settings reader", () => {
+    assert.equal(properties["0xword.autoStart.mode"]?.default, DEFAULT_NOTICE_SETTINGS.mode);
+    assert.equal(properties["0xword.notify.badge"]?.default, DEFAULT_NOTICE_SETTINGS.badge);
+    assert.equal(properties["0xword.notify.statusBar"]?.default, DEFAULT_NOTICE_SETTINGS.statusBar);
+    assert.equal(properties["0xword.notify.popup"]?.default, DEFAULT_NOTICE_SETTINGS.popup);
+  });
+
+  it("matches each setting the reader asks for to a contributed one", () => {
+    const asked: string[] = [];
+    readNoticeSettings((key) => {
+      asked.push(`${SETTINGS_SECTION}.${key}`);
+      return undefined;
+    });
+    assert.deepEqual(asked.sort(), Object.keys(properties).sort());
+  });
+
+  it("reads the settings with workspace.getConfiguration, through the pure reader", () => {
+    assert.ok(agentCode.includes("vscode.workspace.getConfiguration(SETTINGS_SECTION)"));
+    assert.ok(agentCode.includes("readNoticeSettings((key) => config.get<unknown>(key))"));
+    assert.equal(agentCode.match(/getConfiguration\(/g)?.length, 1);
+  });
+
+  it("applies a change straight away with onDidChangeConfiguration, and disposes the listener", () => {
+    assert.ok(agentCode.includes("const settingsListener = vscode.workspace.onDidChangeConfiguration("));
+    assert.ok(agentCode.includes("event.affectsConfiguration(SETTINGS_SECTION)"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge];"));
+  });
+
+  it("keeps nothing about the settings in globalState", () => {
+    const uses = agentCode.match(/globalState/g) ?? [];
+    // Only the stats and theme stores, as before #110.
+    assert.equal(uses.length, 2);
+    assert.ok(agentCode.includes("new StatsStore(context.globalState), new ThemeStore(context.globalState)"));
+  });
+
+  it("gives the badge the number 1 and an accessible label, and clears it when the extension stops", () => {
+    assert.ok(agentCode.includes('const BADGE_LABEL = "0xWORD: a round is ready";'));
+    assert.ok(agentCode.includes("{ value: 1, tooltip: BADGE_LABEL }"));
+    assert.ok(agentCode.includes("new vscode.Disposable(() => provider.setBadge(false))"));
+  });
+
+  it("sets the badge when the view resolves, in case the agent is already working", () => {
+    const resolve = /resolveWebviewView\(view: vscode\.WebviewView\): void \{[\s\S]*?\n {2}\}/.exec(agentCode)?.[0];
+    assert.ok(resolve);
+    assert.ok(resolve.includes("this.#applyBadge();"));
+  });
+
+  it("shows the pop-up with Play and Not now, unawaited, and Play only focuses the view", () => {
+    const popup = /function roundReadyPopup\(\): void \{[\s\S]*?\n\}/.exec(agentCode)?.[0];
+    assert.ok(popup);
+    assert.ok(agentCode.includes('const POPUP_PLAY = "Play";'));
+    assert.ok(agentCode.includes('const POPUP_NOT_NOW = "Not now";'));
+    assert.ok(popup.includes("showInformationMessage(POPUP_MESSAGE, POPUP_PLAY, POPUP_NOT_NOW)"));
+    assert.ok(popup.includes("executeCommand(`${VIEW_ID}.focus`)"));
+    assert.ok(!popup.includes("NEW_ROUND_COMMAND") && !popup.includes("newRound"));
+    assert.ok(!popup.includes("await"));
+    assert.ok(popup.includes(".then(undefined, () => undefined)"));
+  });
+
+  it("shows the pop-up only after a signal, never from a settings change", () => {
+    assert.equal(agentCode.match(/roundReadyPopup\(\);/g)?.length, 1);
+    assert.ok(agentCode.includes("if (showPopup(change, settings)) {"));
+  });
+
+  it("puts nothing from a link into a notice: every message is a fixed string", () => {
+    assert.match(agentCode, /const POPUP_MESSAGE = "[^"`$]*";/);
+    assert.equal(agentCode.match(/showInformationMessage\(/g)?.length, 1);
+  });
+});
+
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
  * rule 8): the `workspace` API however it's imported, `fs` in any form, and
@@ -311,6 +455,18 @@ const FILE_ACCESS: readonly RegExp[] = [
 /** The source without comments, so docs may mention the workspace. */
 function code(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+/**
+ * The only `workspace` calls allowed (#110): reading 0xWORD's own settings
+ * and hearing when they change. Neither reaches the user's files. Each must
+ * be written out in full, so any other use of `workspace` is still caught.
+ */
+const SETTINGS_CALLS = /\bvscode\.workspace\.(?:getConfiguration\(SETTINGS_SECTION\)|onDidChangeConfiguration\()/g;
+
+/** The code the file-access scan reads: no comments, and no settings calls. */
+function scanned(source: string): string {
+  return code(source).replace(SETTINGS_CALLS, "");
 }
 
 /** Every TypeScript file in src/ and the webview's media/, without the built bundle. */
@@ -332,12 +488,19 @@ describe("no workspace or file access (untrusted workspaces)", () => {
 
   for (const file of sourceFiles()) {
     it(`${file} doesn't touch the workspace or the file system`, () => {
-      const source = code(readFileSync(new URL(file, root), "utf8"));
+      const source = scanned(readFileSync(new URL(file, root), "utf8"));
       for (const pattern of FILE_ACCESS) {
         assert.doesNotMatch(source, pattern);
       }
     });
   }
+
+  it("allows the settings calls only in src/extension.ts", () => {
+    const users = sourceFiles().filter((file) =>
+      code(readFileSync(new URL(file, root), "utf8")).match(SETTINGS_CALLS),
+    );
+    assert.deepEqual(users, ["src/extension.ts"]);
+  });
 
   describe("the scan catches", () => {
     const caught: readonly (readonly [string, string])[] = [
@@ -348,16 +511,29 @@ describe("no workspace or file access (untrusted workspaces)", () => {
       ["node:fs/promises", 'import { readFile } from "node:fs/promises";'],
       ["require", 'const fs = require("fs");'],
       ["a dynamic import", 'const fs = await import("node:fs");'],
+      ["the workspace folders", "const folders = vscode.workspace.workspaceFolders;"],
+      ["finding files", 'void vscode.workspace.findFiles("**/*");'],
+      ["the workspace kept in a variable", "const ws = vscode.workspace;"],
+      ["another settings section", 'vscode.workspace.getConfiguration("files");'],
+      ["file access after a settings call", "vscode.workspace.getConfiguration(SETTINGS_SECTION); vscode.workspace.fs;"],
+      ["a settings call not written out in full","const c = vscode.workspace\n.getConfiguration(SETTINGS_SECTION);"],
     ];
     for (const [name, line] of caught) {
       it(name, () => {
-        assert.ok(FILE_ACCESS.some((pattern) => pattern.test(code(line))));
+        assert.ok(FILE_ACCESS.some((pattern) => pattern.test(scanned(line))));
       });
     }
 
     it("but not the word workspace in a comment", () => {
       const source = "// Works in untrusted workspaces.\n/** Never reads the workspace. */\nconst a = 1;";
-      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(code(source))));
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
+    });
+
+    it("nor reading 0xWORD's own settings and hearing when they change", () => {
+      const source =
+        "const config = vscode.workspace.getConfiguration(SETTINGS_SECTION);\n" +
+        "const listener = vscode.workspace.onDidChangeConfiguration((event) => {});";
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
     });
   });
 });
