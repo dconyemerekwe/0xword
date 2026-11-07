@@ -52,14 +52,17 @@ export const NoticeChange = {
 export type NoticeChange = (typeof NoticeChange)[keyof typeof NoticeChange];
 
 /**
- * Whether the "0x Round ready" notice is showing. There is at most one:
- * `started` shows it if it's hidden, `finished` hides it if it's showing,
- * and any other signal changes nothing.
+ * Whether a "round ready" notice is due, which is while the agent is working.
+ * There is at most one: `started` shows it if it's hidden, `finished` hides
+ * it if it's showing, and any other signal changes nothing. This is tracked
+ * even in `off` mode, which shows nothing, so switching to `notify` mid-run
+ * shows the notices straight away. Which notices show is decided in
+ * noticeSettings.ts.
  */
 export class RoundReadyNotice {
   #showing = false;
 
-  /** True while the notice is showing. */
+  /** True while the notice is due: from `started` until `finished`. */
   get showing(): boolean {
     return this.#showing;
   }

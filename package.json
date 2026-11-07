@@ -69,6 +69,47 @@
           "name": "0xWORD"
         }
       ]
+    },
+    "configuration": {
+      "title": "0xWORD",
+      "properties": {
+        "0xword.autoStart.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "notify"
+          ],
+          "enumDescriptions": [
+            "Show nothing when your agent starts working. Your agent hooks can stay set up.",
+            "Show the notices switched on below while your agent works, and remove them when it finishes."
+          ],
+          "default": "off",
+          "scope": "window",
+          "order": 0,
+          "markdownDescription": "What 0xWORD does when your agent starts working. Notices are `off` by default, so nothing shows. Choose `notify` to turn them on."
+        },
+        "0xword.notify.badge": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "order": 1,
+          "markdownDescription": "In `notify` mode, show a badge on the 0xWORD icon in the activity bar while your agent works. It shows once you've opened the 0xWORD panel since VS Code started."
+        },
+        "0xword.notify.statusBar": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "order": 2,
+          "markdownDescription": "In `notify` mode, show `0x Round ready` in the status bar while your agent works. Click it to open the panel."
+        },
+        "0xword.notify.popup": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "order": 3,
+          "markdownDescription": "In `notify` mode, show a notification with **Play** and **Not now** when your agent starts working. It's a normal VS Code notification, so it doesn't take keyboard focus."
+        }
+      }
     }
   },
   "scripts": {
