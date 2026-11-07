@@ -1,6 +1,6 @@
 # Play while your agent works
 
-> **Planned for Phase 7.** None of this is built yet. This is the design, and the setup guide that will ship with it (see [PLAN.md](PLAN.md#phase-7-agent-integration-later)). Each tool's hook details below were checked in October 2026 and get checked again against the tool's own docs when Phase 7 starts. Several of these hook systems are still in preview and change between versions.
+> **Planned for Phase 7, partly built.** Built so far (#109): the two links, `…/agent-started` and `…/agent-finished`, and the `0x Round ready` status-bar notice they show and hide, which appears whenever the link opens, since there are no settings yet. Everything else below (the settings, the badge, the pop-up, `open` mode, the **Copy agent hook setup** command and the per-tool snippets) isn't built yet. This is the design, and the setup guide that will ship with it (see [PLAN.md](PLAN.md#phase-7-agent-integration-later)). Each tool's hook details below were checked in October 2026 and get checked again against the tool's own docs when Phase 7 starts. Several of these hook systems are still in preview and change between versions.
 
 0xWORD can tell you a round is ready while your AI agent is working, and get out of the way when it's done. It works with any agent tool that can run a command when you send a prompt and when the agent finishes. This guide covers **Claude Code, GitHub Copilot, Cursor and Codex**.
 
@@ -116,6 +116,33 @@ The hooks format has changed between versions, so this section is written agains
 
 ## Still to check before Phase 7 ships
 
-- Whether `code --open-url` brings the VS Code window to the front. If it does, it would undo the point of `notify` mode, and a different way to deliver the signal is needed.
-- Which window gets the signal when several VS Code windows are open.
+### The owner's checks on Windows (#109)
+
+To do before #110. If VS Code comes to the front or asks for confirmation, stop and decide on a different way to deliver the signal before #110: a notice that steals focus defeats the point of `notify` mode.
+
+**Setup:** install the `.vsix` built for #109 (Extensions view → `...` → **Install from VSIX...**) and reload the window. Run the commands below in a PowerShell window outside VS Code, not in VS Code's own terminal, so VS Code isn't already the focused app. Don't open the 0xWORD panel first.
+
+```powershell
+code --open-url "vscode://dconyemerekwe.0xword/agent-started"
+code --open-url "vscode://dconyemerekwe.0xword/agent-finished"
+```
+
+1. **Does `code --open-url` bring VS Code to the front?**
+   - Open one VS Code window, then put another app (for example Notepad) in front of it, so VS Code is behind it but not minimised. Click back into the PowerShell window.
+   - Run the `agent-started` command. Note whether VS Code comes to the front, its taskbar button flashes, or nothing visible happens, and whether `0x Round ready` shows in VS Code's status bar (bottom right) when you switch back to it.
+   - Run `agent-finished` and check the notice goes away.
+   - Minimise VS Code and repeat both commands, noting the same things.
+   - Result: not checked yet.
+2. **Does VS Code ask for confirmation before passing the link on?**
+   - On the first `agent-started` above, note whether VS Code shows a dialog asking to allow 0xWORD to open the link, and its exact wording and options (for example a "don't ask again" box).
+   - If it asks, note whether it asks again for the next link, and again after a restart of VS Code.
+   - Result: not checked yet.
+3. **Which window gets the link when several are open?**
+   - Open two VS Code windows on different folders, A and B. Click into A last, then into the PowerShell window.
+   - Run `agent-started` and note which window shows `0x Round ready`: A (the last focused), B, or both.
+   - Click into B, then the PowerShell window, and run `agent-finished`. Note whether the notice in A goes away, or stays because B got the link.
+   - Result: not checked yet.
+
+### Still open
+
 - Each tool's current hook format, events and output rules, as listed in its section above.
