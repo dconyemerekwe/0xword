@@ -5,6 +5,7 @@ import {
   NewRoundRequests,
   answerWebview,
   messagesAfter,
+  sendAgentOpen,
   sendInit,
   sendNewRound,
   viewVisibilityChanged,
@@ -715,5 +716,182 @@ describe("answerWebview", () => {
       }
     });
     assert.deepEqual(calls, []);
+  });
+});
+
+/** How many `agentOpen` messages were posted. */
+function agentOpens(sent: readonly HostMessage[]): number {
+  return sent.filter((message) => message.type === "agentOpen").length;
+}
+
+describe("agentOpen delivery (#111)", () => {
+  describe("NewRoundRequests.requestOpen", () => {
+    it("posts at once to a ready webview, keeping nothing", () => {
+      const { requests } = readyRequests();
+      assert.equal(requests.requestOpen(), requests.generation);
+      assert.equal(requests.openPending, false);
+    });
+
+    it("keeps one for the next ready when the webview isn't listening, however many are asked for", () => {
+      const requests = new NewRoundRequests();
+      assert.equal(requests.requestOpen(), null);
+      assert.equal(requests.requestOpen(), null);
+      assert.equal(requests.openPending, true);
+      const view = requests.attach();
+      assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
+        init(),
+        { type: "agentOpen" },
+      ]);
+      assert.equal(requests.openPending, false);
+    });
+
+    it("doesn't count toward the queued New Round runs", () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      assert.equal(requests.pending, 0);
+    });
+  });
+
+  describe("messagesAfter", () => {
+    it("sends agentOpen once, after init: never again on a later ready", () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      const view = requests.attach();
+      assert.equal(agentOpens(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view)), 1);
+      viewVisibilityChanged(requests, view, false);
+      assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [init()]);
+    });
+
+    it("puts agentOpen after the queued newRound, so it leaves that new round alone", () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      requests.request();
+      const view = requests.attach();
+      assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
+        init(),
+        { type: "newRound" },
+        { type: "agentOpen" },
+      ]);
+    });
+
+    it("keeps agentOpen for the current view when an old view says ready", () => {
+      const requests = new NewRoundRequests();
+      const oldView = requests.attach();
+      const newView = requests.attach();
+      requests.requestOpen();
+      assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, oldView), [init()]);
+      assert.equal(requests.openPending, true);
+      assert.equal(agentOpens(messagesAfter({ type: "ready" }, recordingHandlers(), requests, newView)), 1);
+    });
+
+    it("keeps agentOpen across a hide, for the reloaded webview's ready", () => {
+      const { requests, view } = readyRequests();
+      viewVisibilityChanged(requests, view, false);
+      assert.equal(requests.requestOpen(), null);
+      assert.equal(agentOpens(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view)), 1);
+    });
+
+    it("isn't taken by a message other than ready", () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      const view = requests.attach();
+      assert.deepEqual(messagesAfter({ type: "setTheme", theme: "dark" }, recordingHandlers(), requests, view), []);
+      assert.equal(requests.takeOpen(view), false, "not listening yet");
+      assert.equal(requests.openPending, true);
+    });
+  });
+
+  describe("sendAgentOpen", () => {
+    it("posts agentOpen once when the webview gets it", async () => {
+      const { requests } = readyRequests();
+      const { post, sent } = scriptedPost(["delivered"]);
+      await sendAgentOpen(requests, post, requests.requestOpen());
+      assert.deepEqual(sent, [{ type: "agentOpen" }]);
+      assert.equal(requests.openPending, false);
+    });
+
+    it("posts nothing when it was kept for the next ready", async () => {
+      const requests = new NewRoundRequests();
+      const { post, sent } = scriptedPost(["delivered"]);
+      await sendAgentOpen(requests, post, requests.requestOpen());
+      assert.deepEqual(sent, []);
+      assert.equal(requests.openPending, true);
+    });
+
+    for (const outcome of ["false", "reject", "throw"] as const) {
+      it(`retries a failed post (${outcome}) a fixed number of times, then keeps it for the next ready`, async () => {
+        const { requests, view } = readyRequests();
+        const { post, sent } = scriptedPost([outcome]);
+        await assert.doesNotReject(sendAgentOpen(requests, post, requests.requestOpen()));
+        assert.equal(agentOpens(sent), POST_RETRIES + 1);
+        assert.equal(requests.isReady, false);
+        assert.equal(requests.openPending, true);
+        assert.equal(requests.pending, 0, "no New Round run is queued");
+        assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [
+          init(),
+          { type: "agentOpen" },
+        ]);
+      });
+    }
+
+    it("stops retrying once a retry is delivered, and keeps nothing", async () => {
+      const { requests } = readyRequests();
+      const { post, sent } = scriptedPost(["false", "delivered"]);
+      await sendAgentOpen(requests, post, requests.requestOpen());
+      assert.equal(agentOpens(sent), 2);
+      assert.equal(requests.openPending, false);
+      assert.equal(requests.isReady, true);
+    });
+
+    it("keeps it without retrying when the panel stopped listening while the post was in flight", async () => {
+      const { requests, view } = readyRequests();
+      const { post, sent } = scriptedPost(["false"], () => requests.reset(view));
+      await sendAgentOpen(requests, post, requests.requestOpen());
+      assert.equal(agentOpens(sent), 1);
+      assert.equal(requests.openPending, true);
+    });
+
+    it("logs nothing when posts fail", async () => {
+      const calls = await consoleCallsDuring(async () => {
+        for (const outcome of ["false", "reject", "throw"] as const) {
+          const { requests } = readyRequests();
+          await sendAgentOpen(requests, scriptedPost([outcome]).post, requests.requestOpen());
+        }
+      });
+      assert.deepEqual(calls, []);
+    });
+  });
+
+  describe("answerWebview", () => {
+    it("delivers agentOpen once to a view that wasn't loaded when it was asked for", async () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      const view = requests.attach();
+      const { post, sent } = scriptedPost(["delivered"]);
+      await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+      assert.deepEqual(sent, [init(), { type: "agentOpen" }]);
+      await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+      assert.equal(agentOpens(sent), 1, "a second ready doesn't send it again");
+    });
+
+    it("posts init, the queued newRound and then agentOpen, in that order", async () => {
+      const requests = new NewRoundRequests();
+      requests.request();
+      requests.requestOpen();
+      const view = requests.attach();
+      const { post, sent } = scriptedPost(["delivered"]);
+      await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+      assert.deepEqual(sent, [init(), { type: "newRound" }, { type: "agentOpen" }]);
+    });
+
+    it("keeps agentOpen again if the panel stops listening while init is posted", async () => {
+      const requests = new NewRoundRequests();
+      requests.requestOpen();
+      const view = requests.attach();
+      const { post, sent } = scriptedPost(["false"], () => requests.reset(view));
+      await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+      assert.deepEqual(sent, [init()]);
+      assert.equal(requests.openPending, true);
+    });
   });
 });
