@@ -64,8 +64,9 @@ export function deactivate(): void {}
  * has ever been opened.
  *
  * In `open` mode (#111) no notice shows. Instead, once the agent has worked
- * for the set delay, the panel opens with the same focus command, and the
- * webview is told to keep the round in progress or start one. The wait is
+ * for the set delay, the panel opens without taking keyboard focus (see
+ * `GameViewProvider.agentOpen`), and the webview is told to keep the round in
+ * progress or start one. The wait is
  * decided by the pure `OpenTimer`, cancelled when the agent finishes, when
  * the mode leaves `open` and when the extension stops.
  *
@@ -254,15 +255,30 @@ class GameViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * `open` mode's wait has ended: opens the panel with the view's focus
-   * command, never New Round, and tells the webview with `agentOpen`, now if
-   * it's listening or once it's ready, exactly once. The webview keeps a round
-   * in progress. Isn't awaited, and any failure is ignored, so the timer
-   * never waits or throws.
+   * `open` mode's wait has ended: opens the panel, never with New Round, and
+   * tells the webview with `agentOpen`, now if it's listening or once it's
+   * ready, exactly once. The webview keeps a round in progress.
+   *
+   * The player may be typing elsewhere, and keys reaching the webview would
+   * play the round, so the panel opens without taking keyboard focus
+   * (`show(true)`). VS Code's API has no way to open a view that was never
+   * resolved without focusing it, so only then, the first time since VS Code
+   * started, the view's focus command opens it and takes focus.
+   *
+   * Isn't awaited, and any failure is ignored, so the timer never waits or
+   * throws.
    */
   agentOpen(): void {
     void sendAgentOpen(this.#requests, this.#postToView, this.#requests.requestOpen());
-    // Opens the panel, resolving the view first if it was never opened.
+    if (this.#view) {
+      try {
+        this.#view.show(true);
+        return;
+      } catch {
+        // A view already disposed throws; open it again as below.
+      }
+    }
+    // Fallback: never resolved (or disposed). Resolves the view and takes focus.
     vscode.commands.executeCommand(`${VIEW_ID}.focus`).then(undefined, () => undefined);
   }
 

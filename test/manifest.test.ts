@@ -511,9 +511,28 @@ describe("open mode (#111)", () => {
     assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
   });
 
-  it("opens the panel with the view's focus command, never New Round", () => {
+  it("opens a resolved view without taking keyboard focus, and returns before any focus command", () => {
     assert.ok(agentOpen, "the provider has an agentOpen method");
-    assert.ok(agentOpen.includes("vscode.commands.executeCommand(`${VIEW_ID}.focus`)"));
+    assert.match(
+      agentOpen,
+      /\n {4}if \(this\.#view\) \{\n {6}try \{\n {8}this\.#view\.show\(true\);\n {8}return;\n {6}\} catch \{\s*\}\n {4}\}\n/,
+    );
+    // Nothing else in the method shows or focuses the view.
+    assert.equal(agentOpen.match(/\.show\(/g)?.length, 1);
+    assert.doesNotMatch(agentOpen, /\.show\(\s*(false)?\s*\)/);
+    assert.doesNotMatch(agentOpen, /preserveFocus:\s*false/);
+  });
+
+  it("uses the view's focus command only as the fallback for a view never resolved, after the show(true) path", () => {
+    const focusCalls = agentOpen.match(/executeCommand\(`\$\{VIEW_ID\}\.focus`\)/g) ?? [];
+    assert.equal(focusCalls.length, 1);
+    assert.ok(agentOpen.indexOf("this.#view.show(true);") < agentOpen.indexOf("executeCommand(`${VIEW_ID}.focus`)"));
+    // The fallback is the method's last statement, outside the `if (this.#view)` block.
+    assert.match(agentOpen, /\n {4}vscode\.commands\.executeCommand\(`\$\{VIEW_ID\}\.focus`\)\.then\(undefined, \(\) => undefined\);\n {2}\}\n$/);
+  });
+
+  it("never starts a round with New Round when opening", () => {
+    assert.ok(agentOpen, "the provider has an agentOpen method");
     for (const banned of ["NEW_ROUND_COMMAND", "newRound", "sendNewRound", "this.#requests.request()"]) {
       assert.ok(!agentOpen.includes(banned), banned);
     }
