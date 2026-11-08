@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import { RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
-import { NewRoundRequests, answerWebview, sendNewRound, viewVisibilityChanged } from "./newRoundRequests.ts";
+import {
+  NewRoundRequests,
+  answerWebview,
+  sendAgentOpen,
+  sendNewRound,
+  viewVisibilityChanged,
+} from "./newRoundRequests.ts";
 import {
   SETTINGS_SECTION,
   readNoticeSettings,
@@ -8,6 +14,7 @@ import {
   visibleNotices,
   type NoticeSettings,
 } from "./noticeSettings.ts";
+import { OpenTimer, type Schedule } from "./openTimer.ts";
 import type { PostMessage } from "./post.ts";
 import type { HostHandlers, HostMessage } from "./protocol.ts";
 import { StatsStore } from "./stats.ts";
@@ -56,6 +63,12 @@ export function deactivate(): void {}
  * `onUri` activation event lets a link reach this handler before the panel
  * has ever been opened.
  *
+ * In `open` mode (#111) no notice shows. Instead, once the agent has worked
+ * for the set delay, the panel opens with the same focus command, and the
+ * webview is told to keep the round in progress or start one. The wait is
+ * decided by the pure `OpenTimer`, cancelled when the agent finishes, when
+ * the mode leaves `open` and when the extension stops.
+ *
  * The settings are read again on every signal and every change, so a change
  * applies straight away, and are never stored. "Agent working" is tracked
  * even when the settings show nothing. Returns the disposables to push.
@@ -68,6 +81,7 @@ function agentSignals(provider: GameViewProvider): vscode.Disposable[] {
   item.accessibilityInformation = { label: ROUND_READY_LABEL, role: "button" };
   item.command = { command: `${VIEW_ID}.focus`, title: "Open 0xWORD" };
   const notice = new RoundReadyNotice();
+  const timer = new OpenTimer(schedule, () => provider.agentOpen());
   /** Shows or hides the lasting notices to match the signals and settings. */
   const update = (settings: NoticeSettings): void => {
     const visible = visibleNotices(notice.showing, settings);
@@ -82,9 +96,11 @@ function agentSignals(provider: GameViewProvider): vscode.Disposable[] {
     // Only plain strings reach the reader; any other link is ignored silently.
     // Nothing from the link reaches a notice: each one's text is fixed.
     handleUri: (uri) => {
-      const change = notice.apply(readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment }));
+      const signal = readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment });
+      const change = notice.apply(signal);
       const settings = noticeSettings();
       update(settings);
+      timer.signal(signal, settings);
       if (showPopup(change, settings)) {
         roundReadyPopup();
       }
@@ -92,13 +108,23 @@ function agentSignals(provider: GameViewProvider): vscode.Disposable[] {
   });
   const settingsListener = vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration(SETTINGS_SECTION)) {
-      update(noticeSettings());
+      const settings = noticeSettings();
+      update(settings);
+      timer.settingsChanged(settings);
     }
   });
   // Clears the badge when the extension stops; the item clears itself.
   const badge = new vscode.Disposable(() => provider.setBadge(false));
-  return [item, handler, settingsListener, badge];
+  // Cancels a wait in progress when the extension stops.
+  const openWait = new vscode.Disposable(() => timer.dispose());
+  return [item, handler, settingsListener, badge, openWait];
 }
+
+/** The real clock for `OpenTimer`: `setTimeout`, cancelled with `clearTimeout`. */
+const schedule: Schedule = (callback, milliseconds) => {
+  const handle = setTimeout(callback, milliseconds);
+  return () => clearTimeout(handle);
+};
 
 /**
  * The notice settings, as VS Code merges them (a workspace value overrides
@@ -225,6 +251,19 @@ class GameViewProvider implements vscode.WebviewViewProvider {
     void sendNewRound(this.#requests, this.#postToView, this.#requests.request());
     // Opens the panel, resolving the view first if it was never opened.
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+  }
+
+  /**
+   * `open` mode's wait has ended: opens the panel with the view's focus
+   * command, never New Round, and tells the webview with `agentOpen`, now if
+   * it's listening or once it's ready, exactly once. The webview keeps a round
+   * in progress. Isn't awaited, and any failure is ignored, so the timer
+   * never waits or throws.
+   */
+  agentOpen(): void {
+    void sendAgentOpen(this.#requests, this.#postToView, this.#requests.requestOpen());
+    // Opens the panel, resolving the view first if it was never opened.
+    vscode.commands.executeCommand(`${VIEW_ID}.focus`).then(undefined, () => undefined);
   }
 
   /**
