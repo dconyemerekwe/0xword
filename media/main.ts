@@ -915,6 +915,12 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     case "newRound":
       controller.dispatch({ type: "newRound" });
       break;
+    case "agentOpen":
+      // `open` mode opened the panel: the controller keeps a round in
+      // progress, and starts one only after the result card or before the
+      // first round. Saved by `changed()` like every action.
+      controller.dispatch({ type: "agentOpen" });
+      break;
   }
 });
 

@@ -77,6 +77,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["an unknown type", { type: "deleteFiles" }],
   ["setTheme in the wrong case", { type: "SetTheme", theme: "dark" }],
   ["newRound, which only the host sends", { type: "newRound" }],
+  ["agentOpen, which only the host sends", { type: "agentOpen" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
   ["a non-string type", { type: 1 }],
@@ -434,7 +435,26 @@ describe("parseHostMessage", () => {
     assert.notEqual(parseHostMessage(raw), raw);
   });
 
+  it("accepts agentOpen (#111)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentOpen" }), { type: "agentOpen" });
+  });
+
+  it("returns a new agentOpen object, not the one it was given", () => {
+    const raw = { type: "agentOpen" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
   const invalid: readonly (readonly [string, unknown])[] = [
+    ["agentOpen with an extra field", { type: "agentOpen", answer: "BYTE" }],
+    ["agentOpen with an undefined extra field", { type: "agentOpen", round: undefined }],
+    ["agentOpen with a delay", { type: "agentOpen", delaySeconds: 20 }],
+    ["agentOpen with a path", { type: "agentOpen", path: "/agent-started" }],
+    ["agentOpen with a command", { type: "agentOpen", command: "0xword.newRound" }],
+    ["agentOpen in the wrong case", { type: "AgentOpen" }],
+    ["agentOpen with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentOpen","__proto__":{"polluted":true}}')],
+    ["agentOpen with a JSON-parsed constructor key", JSON.parse('{"type":"agentOpen","constructor":{}}')],
+    ["agentOpen inherited from a prototype", Object.create({ type: "agentOpen" })],
+    ["a string agentOpen", "agentOpen"],
     ["an unknown type", { type: "setTheme" }],
     ["a webview message", { type: "ready" }],
     ["newRound with an extra field", { type: "newRound", answer: "BYTE" }],

@@ -816,6 +816,138 @@ describe("GameController: new round", () => {
   });
 });
 
+describe("GameController: open mode opening the panel (#111)", () => {
+  const agentOpen: Action = { type: "agentOpen" };
+
+  /** Rounds in progress, which `agentOpen` must leave exactly as they are. */
+  const inProgress: readonly (readonly [string, () => Harness])[] = [
+    ["a fresh round", () => harness()],
+    ["a half-typed row", () => {
+      const h = harness();
+      h.play(...type("4259"));
+      return h;
+    }],
+    ["a scored row", () => {
+      const h = harness();
+      h.play(...guess("TEAM"));
+      return h;
+    }],
+    ["hints on", () => {
+      const h = harness();
+      h.play(...guess("BITE"), toggleHints);
+      return h;
+    }],
+    ["a rejected row's message", () => {
+      const h = harness();
+      h.play(...type("41414141"), { type: "enter" });
+      return h;
+    }],
+    ["the decode step after a solved grid", () => solvedGridAt(2)],
+    ["the decode step after row 6", () => atRowSix()],
+    ["a rejected word at the decode step", () => {
+      const h = solvedGridAt(1);
+      h.play(decode("QXZJ"));
+      return h;
+    }],
+    ["a round restored after a reload", () => {
+      const h = harness();
+      h.play(...guess("TEAM"), ...type("42"));
+      return reloaded(h);
+    }],
+    ["How to play open", () => {
+      const h = harness();
+      h.play(...guess("TEAM"), { type: "openHowToPlay" });
+      return h;
+    }],
+  ];
+  for (const [name, make] of inProgress) {
+    it(`shows a round in progress untouched: ${name}`, () => {
+      const h = make();
+      const before = h.controller.view();
+      const savedBefore = JSON.parse(JSON.stringify(h.controller.savedState()));
+      const roundNumber = h.session.roundNumber;
+      const view = h.play(agentOpen);
+      assert.equal(h.session.roundNumber, roundNumber, "no new round");
+      assert.deepEqual(h.saves.at(-1), savedBefore, "the same round, draft and message are saved");
+      assert.deepEqual(view, before, "the screen is unchanged, message and announcement included");
+      assert.deepEqual(h.posts, []);
+    });
+  }
+
+  for (const [name, make] of [
+    ["solved", () => solvedAfter(1)],
+    ["failed", () => failed()],
+    ["failed after a solved grid", () => {
+      const h = solvedGridAt(2);
+      h.play(decode("BITE"));
+      return h;
+    }],
+    ["solved, restored after a reload", () => reloaded(solvedAfter(0))],
+  ] as const) {
+    it(`starts a new round from the ${name} result card, saved through changed()`, () => {
+      const h = make();
+      assert.notEqual(h.controller.view().result, null, "the result card shows");
+      const posted = h.posts.length;
+      const saves = h.saves.length;
+      const roundNumber = h.session.roundNumber;
+      const view = h.play(agentOpen);
+      assert.equal(h.session.roundNumber, roundNumber + 1);
+      assert.equal(view.result, null);
+      assert.equal(view.status, "4-letter word · row 1 of 6");
+      assert.ok(view.rows.every((row) => row.every((tile) => tile.state === "empty")));
+      assert.equal(view.announcement, NEW_ROUND_ANNOUNCEMENT, "read out like New round");
+      assert.equal(h.saves.length, saves + 1, "saved once, by changed()");
+      const saved = h.saves.at(-1) as SessionState;
+      assert.equal(saved.round.phase, "guess");
+      assert.deepEqual(saved.round.rows, []);
+      assert.equal(saved.reported, false);
+      assert.equal(h.posts.length, posted, "posts no roundFinished");
+    });
+  }
+
+  it("starts one new round from the result card, and leaves it alone on a second agentOpen", () => {
+    const h = solvedAfter(0);
+    h.play(agentOpen, ...type("42"), agentOpen);
+    assert.equal(h.session.roundNumber, 2);
+    assert.equal(h.session.draft, "42");
+  });
+
+  it("starts a new round behind How to play open over the result card", () => {
+    const h = failed();
+    const view = h.play({ type: "openHowToPlay" }, agentOpen);
+    assert.equal(view.howToPlayOpen, true);
+    assert.equal(view.result, null);
+    assert.equal(h.session.roundNumber, 2);
+  });
+
+  it("starts the first round, unannounced, when no round has been played", () => {
+    const h = harness(new Session(WORDS, answerIs("BYTE")), false);
+    assert.equal(h.session.round, null);
+    const view = h.play(agentOpen);
+    assert.equal(h.session.roundNumber, 1);
+    assert.equal(view.status, "4-letter word · row 1 of 6");
+    assert.equal(view.announcement, "", "like init's first round");
+    assert.equal((h.saves.at(-1) as SessionState).round.phase, "guess");
+  });
+
+  it("never starts a second round on a fresh panel: init then agentOpen", () => {
+    const h = harness(new Session(WORDS, answerIs("BYTE")), false);
+    h.play({ type: "init" }, agentOpen);
+    assert.equal(h.session.roundNumber, 1);
+  });
+
+  it("never starts a second round on a fresh panel: agentOpen then init", () => {
+    const h = harness(new Session(WORDS, answerIs("BYTE")), false);
+    h.play(agentOpen, ...type("42"), { type: "init" });
+    assert.equal(h.session.roundNumber, 1);
+    assert.equal(h.session.draft, "42");
+  });
+
+  it("applies while How to play is open, like the host's other messages", () => {
+    assert.equal(APPLIES_WHILE_HOW_TO_PLAY_OPEN.agentOpen, true);
+  });
+});
+
 describe("GameController: announcing a new round (#62)", () => {
   const starts: readonly (readonly [string, () => Harness])[] = [
     ["mid-round", () => harness()],
@@ -1428,6 +1560,7 @@ describe("GameController: every action saves", () => {
   const samples: { readonly [T in ActionType]: Extract<Action, { type: T }> } = {
     init: { type: "init" },
     newRound: { type: "newRound" },
+    agentOpen: { type: "agentOpen" },
     digit: { type: "digit", digit: "4" },
     delete: { type: "delete" },
     enter: { type: "enter" },

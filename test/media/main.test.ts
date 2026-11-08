@@ -749,6 +749,81 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
   }
 });
 
+describe("media/main.ts: open mode's agentOpen (#111), run as the bundled webview script", () => {
+  const INIT = JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" });
+  const AGENT_OPEN = '{"type":"agentOpen"}';
+
+  /** What the visually hidden announcement region says now. */
+  function announced(run: WebviewRun): unknown {
+    const region = run.elements.find(
+      (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+    );
+    return region?.["textContent"];
+  }
+
+  it("hands agentOpen to the controller, like the host's other messages", () => {
+    assert.match(source, /case "agentOpen":\s*controller\.dispatch\(\{ type: "agentOpen" \}\);\s*break;/);
+  });
+
+  const inProgress: readonly (readonly [string, () => SessionState])[] = [
+    ["a fresh round", () => savedAfter()],
+    ["a half-typed row", () => savedAfter(...guess("TEAM"), { type: "digit", digit: "4" })],
+    ["hints on", () => savedAfter(...guess("BITE"), { type: "toggleHints" })],
+    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE"))],
+    ["the decode step after row 6", () => savedAfter(...["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((w) => guess(w)))],
+  ];
+  for (const [name, saved] of inProgress) {
+    it(`shows a restored round in progress untouched: ${name}`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      const before = snapshot(run);
+      const saves = run.saves();
+      run.send(AGENT_OPEN);
+      assert.equal(snapshot(run), before, "the screen is unchanged");
+      assert.equal(run.saves(), saves + 1, "saved through changed(), as every action is");
+      assert.deepEqual(run.posts, [{ type: "ready" }], "posts nothing back");
+    });
+  }
+
+  for (const [name, saved] of FINISHED) {
+    it(`starts a new round from the restored ${name} result card, saved through changed()`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      assert.equal(byClass(run, "result")["hidden"], false);
+      const saves = run.saves();
+      run.send(AGENT_OPEN);
+      assert.equal(byClass(run, "result")["hidden"], true);
+      assert.equal(byClass(run, "keypad")["hidden"], false);
+      assert.equal(allByClass(run, "tile tile-empty").length, 48, "an empty grid");
+      assert.equal(run.saves(), saves + 1);
+      assert.equal(announced(run), "New round");
+      assert.deepEqual(run.posts, [{ type: "ready" }], "posts no roundFinished");
+    });
+  }
+
+  it("starts one round, not two, on a fresh panel with no saved state", () => {
+    const run = runWebview(undefined);
+    run.send(INIT);
+    run.press("4");
+    run.send(AGENT_OPEN);
+    assert.equal(allByClass(run, "tile tile-typed").length, 1, "the digit typed in init's round is still there");
+    assert.equal(announced(run), "", "no new round was announced");
+  });
+
+  it("ignores an agentOpen with any extra field", () => {
+    const [, saved] = FINISHED[0] ?? [];
+    assert.ok(saved);
+    const run = runWebview(saved());
+    run.send(INIT);
+    const saves = run.saves();
+    for (const json of ['{"type":"agentOpen","x":1}', '{"type":"AgentOpen"}', '"agentOpen"']) {
+      run.send(json);
+    }
+    assert.equal(byClass(run, "result")["hidden"], false, "the result card stays");
+    assert.equal(run.saves(), saves, "no action ran");
+  });
+});
+
 describe("media/main.ts: How to play (page 5), run as the bundled webview script", () => {
   const halfTyped: Action[] = [...guess("TEAM"), ...[..."4259"].map((digit) => ({ type: "digit", digit }) as const)];
   const firstFive = ["BITE", "TEAM", "BEAT", "BEST", "BUSY"].flatMap((w) => guess(w));

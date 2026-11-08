@@ -23,6 +23,7 @@ import type { RoundFinishedMessage } from "../protocol.ts";
 export type Action =
   | { readonly type: "init" } // the host answered `ready`: start round 1 unless one was restored
   | { readonly type: "newRound" } // the host's `newRound`
+  | { readonly type: "agentOpen" } // the host's `agentOpen`: keep a round in progress, or start one
   | { readonly type: "digit"; readonly digit: string } // one hex digit, from the keypad or keyboard
   | { readonly type: "delete" } // DEL or Backspace
   | { readonly type: "enter" } // ENTER: submit the typed hex row
@@ -35,13 +36,14 @@ export type ActionType = Action["type"];
 
 /**
  * Whether each action applies while How to play is open. The player's moves
- * in the round are ignored; the host's `init` and `newRound` still apply, so
- * New Round from the command palette starts a round behind How to play.
- * `satisfies` makes every new action type declare its entry here.
+ * in the round are ignored; the host's `init`, `newRound` and `agentOpen`
+ * still apply, so New Round from the command palette starts a round behind
+ * How to play. `satisfies` makes every new action type declare its entry here.
  */
 export const APPLIES_WHILE_HOW_TO_PLAY_OPEN = {
   init: true,
   newRound: true,
+  agentOpen: true,
   digit: false,
   delete: false,
   enter: false,
@@ -448,6 +450,8 @@ export class GameController {
         session.newRound();
         // `init`'s first round isn't announced: the panel has only just opened.
         return announced(NEW_ROUND_ANNOUNCEMENT);
+      case "agentOpen":
+        return this.#agentOpen();
       case "digit": {
         const digit = action.digit.toUpperCase();
         if (this.#typing() && /^[0-9A-F]$/.test(digit) && session.draft.length < HEX_LENGTH) {
@@ -497,6 +501,28 @@ export class GameController {
         return NO_NOTICE;
       }
     }
+  }
+
+  /**
+   * `open` mode opened the panel (#111). The owner's rule:
+   * - a round in progress (guessing, or at the decode step) is left exactly
+   *   as it is, message included;
+   * - the result card (solved or failed) gets a new round, announced like
+   *   New round;
+   * - no round played yet gets the first round, as `init` starts it. `init`
+   *   comes first, so this is normally a round in progress already, and a
+   *   fresh panel never gets a second new round on top.
+   */
+  #agentOpen(): Notice {
+    const session = this.#session;
+    if (session.ensureRound()) {
+      return NO_NOTICE;
+    }
+    if (session.round?.isOver) {
+      session.newRound();
+      return announced(NEW_ROUND_ANNOUNCEMENT);
+    }
+    return this.#notice;
   }
 
   /** True while the round is waiting for a hex row. */
