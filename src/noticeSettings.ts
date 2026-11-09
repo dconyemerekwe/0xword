@@ -15,6 +15,11 @@ export const AutoStartMode = {
   Off: "off",
   /** Show the notices the player has switched on. */
   Notify: "notify",
+  /**
+   * Open the panel once the agent has worked for `delaySeconds` (#111). The
+   * notices show nothing: opening the panel is the signal.
+   */
+  Open: "open",
 } as const;
 export type AutoStartMode = (typeof AutoStartMode)[keyof typeof AutoStartMode];
 
@@ -27,6 +32,7 @@ export const SettingKey = {
   Badge: "notify.badge",
   StatusBar: "notify.statusBar",
   Popup: "notify.popup",
+  DelaySeconds: "autoStart.delaySeconds",
 } as const;
 export type SettingKey = (typeof SettingKey)[keyof typeof SettingKey];
 
@@ -36,7 +42,16 @@ export interface NoticeSettings {
   readonly badge: boolean;
   readonly statusBar: boolean;
   readonly popup: boolean;
+  /** In `open` mode, how long the agent works before the panel opens. 0 opens it at once. */
+  readonly delaySeconds: number;
 }
+
+/**
+ * The longest delay allowed, an hour: `minimum` and `maximum` in
+ * package.json, so VS Code's settings editor shows the bounds. A longer one
+ * typed into settings.json gets the default, like any invalid value.
+ */
+export const MAX_DELAY_SECONDS = 3600;
 
 /** Each setting's default, the same as in package.json. */
 export const DEFAULT_NOTICE_SETTINGS: NoticeSettings = {
@@ -44,9 +59,10 @@ export const DEFAULT_NOTICE_SETTINGS: NoticeSettings = {
   badge: true,
   statusBar: true,
   popup: false,
+  delaySeconds: 20,
 };
 
-/** The modes a setting may hold. `open` comes later (#111). */
+/** The modes a setting may hold. */
 const MODES: ReadonlySet<unknown> = new Set(Object.values(AutoStartMode));
 
 /** True if `value` is one of the modes. */
@@ -66,12 +82,24 @@ export function readNoticeSettings(get: (key: SettingKey) => unknown): NoticeSet
     badge: flag(get(SettingKey.Badge), DEFAULT_NOTICE_SETTINGS.badge),
     statusBar: flag(get(SettingKey.StatusBar), DEFAULT_NOTICE_SETTINGS.statusBar),
     popup: flag(get(SettingKey.Popup), DEFAULT_NOTICE_SETTINGS.popup),
+    delaySeconds: delay(get(SettingKey.DelaySeconds)),
   };
 }
 
 /** `value` if it's a boolean, otherwise `fallback`. */
 function flag(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+/**
+ * `value` if it's a number from 0 to MAX_DELAY_SECONDS, otherwise the
+ * default: a negative, `NaN`, infinite or too long delay, a numeric string
+ * or any other type. A fraction is kept, as package.json allows one.
+ */
+function delay(value: unknown): number {
+  return typeof value === "number" && value >= 0 && value <= MAX_DELAY_SECONDS
+    ? value
+    : DEFAULT_NOTICE_SETTINGS.delaySeconds;
 }
 
 /** The notices that stay up while the agent works. */
@@ -82,8 +110,9 @@ export interface VisibleNotices {
 
 /**
  * Which lasting notices show: only while the agent is working, only in
- * `notify` mode, and only those switched on. Called after every signal and
- * every settings change, so a change applies straight away.
+ * `notify` mode (never in `off` or `open`), and only those switched on.
+ * Called after every signal and every settings change, so a change applies
+ * straight away.
  */
 export function visibleNotices(working: boolean, settings: NoticeSettings): VisibleNotices {
   const on = working && settings.mode === AutoStartMode.Notify;
@@ -93,8 +122,8 @@ export function visibleNotices(working: boolean, settings: NoticeSettings): Visi
 /**
  * Whether to show the pop-up after a signal: only when the agent has just
  * started (not on a repeated start while it's still working), in `notify`
- * mode, with the pop-up switched on. So it shows at most once per run, and a
- * settings change never shows it.
+ * mode (never in `off` or `open`), with the pop-up switched on. So it shows
+ * at most once per run, and a settings change never shows it.
  */
 export function showPopup(change: NoticeChange | null, settings: NoticeSettings): boolean {
   return change === NoticeChange.Show && settings.mode === AutoStartMode.Notify && settings.popup;

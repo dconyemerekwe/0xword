@@ -4,7 +4,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { matchesGlob } from "node:path/posix";
 import { describe, it } from "node:test";
-import { DEFAULT_NOTICE_SETTINGS, SETTINGS_SECTION, readNoticeSettings } from "../src/noticeSettings.ts";
+import {
+  DEFAULT_NOTICE_SETTINGS,
+  MAX_DELAY_SECONDS,
+  SETTINGS_SECTION,
+  readNoticeSettings,
+} from "../src/noticeSettings.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
 
 const root = new URL("../", import.meta.url);
@@ -32,6 +37,9 @@ interface Setting {
   enum?: string[];
   enumDescriptions?: string[];
   default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  order?: number;
   scope?: string;
   description?: string;
   markdownDescription?: string;
@@ -277,7 +285,8 @@ describe("agent links (#109)", () => {
     assert.equal(agentCode.match(/registerUriHandler\(/g)?.length, 1);
     // #110 passes the view provider in, for the badge, and adds the settings listener.
     assert.ok(agentCode.includes("...agentSignals(provider),"));
-    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge];"));
+    // #111 adds the open-mode timer's disposable.
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
   });
 
   it("reads links only through the pure reader, passing plain strings", () => {
@@ -321,9 +330,10 @@ describe("notice settings (#110)", () => {
     return setting?.markdownDescription ?? setting?.description ?? "";
   }
 
-  it("lists exactly the four settings under 0xWORD", () => {
+  it("lists exactly the five settings under 0xWORD", () => {
     assert.equal(configuration?.title, "0xWORD");
     assert.deepEqual(Object.keys(properties).sort(), [
+      "0xword.autoStart.delaySeconds",
       "0xword.autoStart.mode",
       "0xword.notify.badge",
       "0xword.notify.popup",
@@ -331,12 +341,12 @@ describe("notice settings (#110)", () => {
     ]);
   });
 
-  it("makes autoStart.mode a choice of off or notify, off by default, with a description for each", () => {
+  it("makes autoStart.mode a choice of off, notify or open, off by default, with a description for each", () => {
     const mode = properties["0xword.autoStart.mode"];
     assert.equal(mode?.type, "string");
-    assert.deepEqual(mode?.enum, ["off", "notify"]);
+    assert.deepEqual(mode?.enum, ["off", "notify", "open"]);
     assert.equal(mode?.default, "off");
-    assert.equal(mode?.enumDescriptions?.length, 2);
+    assert.equal(mode?.enumDescriptions?.length, 3);
     for (const text of mode?.enumDescriptions ?? []) {
       assert.ok(text.trim().length > 0);
     }
@@ -346,6 +356,40 @@ describe("notice settings (#110)", () => {
     const text = describedAs(properties["0xword.autoStart.mode"]);
     assert.match(text, /`off` by default/);
     assert.match(text, /Choose `notify` to turn them on/);
+    assert.match(text, /`open` to open the panel/);
+  });
+
+  it("makes autoStart.delaySeconds a number of seconds, 20 by default, from 0 to an hour, only for open mode (#111)", () => {
+    const delay = properties["0xword.autoStart.delaySeconds"];
+    assert.equal(delay?.type, "number");
+    assert.equal(delay?.default, 20);
+    assert.equal(delay?.minimum, 0);
+    assert.equal(delay?.maximum, MAX_DELAY_SECONDS);
+    assert.equal(delay?.scope, "window");
+    assert.match(describedAs(delay), /^Only in `open` mode/);
+  });
+
+  it("describes open mode as opening the panel and showing none of the notices (#111)", () => {
+    const mode = properties["0xword.autoStart.mode"];
+    const open = mode?.enumDescriptions?.[mode.enum?.indexOf("open") ?? -1] ?? "";
+    assert.match(open, /Open the 0xWORD panel/);
+    assert.match(open, /none of the notices/);
+    for (const key of ["0xword.notify.badge", "0xword.notify.statusBar", "0xword.notify.popup"]) {
+      assert.match(describedAs(properties[key]), /^In `notify` mode/, key);
+    }
+  });
+
+  it("orders the settings: mode, delay, then the notices", () => {
+    const order = Object.entries(properties)
+      .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
+      .map(([key]) => key);
+    assert.deepEqual(order, [
+      "0xword.autoStart.mode",
+      "0xword.autoStart.delaySeconds",
+      "0xword.notify.badge",
+      "0xword.notify.statusBar",
+      "0xword.notify.popup",
+    ]);
   });
 
   it("makes the badge and status bar on by default and the pop-up off, all on/off", () => {
@@ -377,6 +421,7 @@ describe("notice settings (#110)", () => {
     assert.equal(properties["0xword.notify.badge"]?.default, DEFAULT_NOTICE_SETTINGS.badge);
     assert.equal(properties["0xword.notify.statusBar"]?.default, DEFAULT_NOTICE_SETTINGS.statusBar);
     assert.equal(properties["0xword.notify.popup"]?.default, DEFAULT_NOTICE_SETTINGS.popup);
+    assert.equal(properties["0xword.autoStart.delaySeconds"]?.default, DEFAULT_NOTICE_SETTINGS.delaySeconds);
   });
 
   it("matches each setting the reader asks for to a contributed one", () => {
@@ -397,7 +442,7 @@ describe("notice settings (#110)", () => {
   it("applies a change straight away with onDidChangeConfiguration, and disposes the listener", () => {
     assert.ok(agentCode.includes("const settingsListener = vscode.workspace.onDidChangeConfiguration("));
     assert.ok(agentCode.includes("event.affectsConfiguration(SETTINGS_SECTION)"));
-    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge];"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
   });
 
   it("keeps nothing about the settings in globalState", () => {
@@ -439,6 +484,65 @@ describe("notice settings (#110)", () => {
   it("puts nothing from a link into a notice: every message is a fixed string", () => {
     assert.match(agentCode, /const POPUP_MESSAGE = "[^"`$]*";/);
     assert.equal(agentCode.match(/showInformationMessage\(/g)?.length, 1);
+  });
+});
+
+describe("open mode (#111)", () => {
+  const agentCode = code(extensionSource);
+  /** The provider's `agentOpen` method, which the timer calls. */
+  const agentOpen = /\n {2}agentOpen\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("makes one OpenTimer with the real clock, which opens through the provider", () => {
+    assert.equal(agentCode.match(/new OpenTimer\(/g)?.length, 1);
+    assert.ok(agentCode.includes("const timer = new OpenTimer(schedule, () => provider.agentOpen());"));
+    assert.match(agentCode, /const handle = setTimeout\(callback, milliseconds\);\n\s*return \(\) => clearTimeout\(handle\);/);
+  });
+
+  it("gives the timer every signal and every settings change", () => {
+    const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+    assert.ok(handler.includes("timer.signal(signal, settings);"));
+    assert.ok(handler.includes("readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment })"));
+    const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+    assert.ok(listener.includes("timer.settingsChanged(settings);"));
+  });
+
+  it("disposes the timer with the extension, so a wait in progress is cancelled", () => {
+    assert.ok(agentCode.includes("const openWait = new vscode.Disposable(() => timer.dispose());"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
+  });
+
+  it("opens a resolved view without taking keyboard focus, and returns before any focus command", () => {
+    assert.ok(agentOpen, "the provider has an agentOpen method");
+    assert.match(
+      agentOpen,
+      /\n {4}if \(this\.#view\) \{\n {6}try \{\n {8}this\.#view\.show\(true\);\n {8}return;\n {6}\} catch \{\s*\}\n {4}\}\n/,
+    );
+    // Nothing else in the method shows or focuses the view.
+    assert.equal(agentOpen.match(/\.show\(/g)?.length, 1);
+    assert.doesNotMatch(agentOpen, /\.show\(\s*(false)?\s*\)/);
+    assert.doesNotMatch(agentOpen, /preserveFocus:\s*false/);
+  });
+
+  it("uses the view's focus command only as the fallback for a view never resolved, after the show(true) path", () => {
+    const focusCalls = agentOpen.match(/executeCommand\(`\$\{VIEW_ID\}\.focus`\)/g) ?? [];
+    assert.equal(focusCalls.length, 1);
+    assert.ok(agentOpen.indexOf("this.#view.show(true);") < agentOpen.indexOf("executeCommand(`${VIEW_ID}.focus`)"));
+    // The fallback is the method's last statement, outside the `if (this.#view)` block.
+    assert.match(agentOpen, /\n {4}vscode\.commands\.executeCommand\(`\$\{VIEW_ID\}\.focus`\)\.then\(undefined, \(\) => undefined\);\n {2}\}\n$/);
+  });
+
+  it("never starts a round with New Round when opening", () => {
+    assert.ok(agentOpen, "the provider has an agentOpen method");
+    for (const banned of ["NEW_ROUND_COMMAND", "newRound", "sendNewRound", "this.#requests.request()"]) {
+      assert.ok(!agentOpen.includes(banned), banned);
+    }
+    assert.equal(agentCode.match(/provider\.agentOpen\(\)/g)?.length, 1, "only the timer calls it");
+  });
+
+  it("sends the webview only the fixed agentOpen message, now or once it's ready", () => {
+    assert.ok(agentOpen.includes("void sendAgentOpen(this.#requests, this.#postToView, this.#requests.requestOpen());"));
+    assert.ok(!agentOpen.includes("await"), "the timer never waits");
+    assert.ok(agentOpen.includes(".then(undefined, () => undefined)"), "a failed focus is ignored");
   });
 });
 

@@ -5,6 +5,7 @@ import { AgentSignal, NoticeChange, RoundReadyNotice } from "../src/agentSignals
 import {
   AutoStartMode,
   DEFAULT_NOTICE_SETTINGS,
+  MAX_DELAY_SECONDS,
   SettingKey,
   readNoticeSettings,
   showPopup,
@@ -26,12 +27,13 @@ function notify(changes: Partial<NoticeSettings> = {}): NoticeSettings {
 const NONE: VisibleNotices = { badge: false, statusBar: false };
 
 describe("readNoticeSettings", () => {
-  it("uses the defaults when nothing is set: off, badge on, status bar on, pop-up off", () => {
+  it("uses the defaults when nothing is set: off, badge on, status bar on, pop-up off, a 20-second delay", () => {
     assert.deepEqual(readNoticeSettings(getter({})), {
       mode: AutoStartMode.Off,
       badge: true,
       statusBar: true,
       popup: false,
+      delaySeconds: 20,
     });
   });
 
@@ -42,9 +44,14 @@ describe("readNoticeSettings", () => {
         [SettingKey.Badge]: false,
         [SettingKey.StatusBar]: false,
         [SettingKey.Popup]: true,
+        [SettingKey.DelaySeconds]: 45,
       }),
     );
-    assert.deepEqual(settings, { mode: "notify", badge: false, statusBar: false, popup: true });
+    assert.deepEqual(settings, { mode: "notify", badge: false, statusBar: false, popup: true, delaySeconds: 45 });
+  });
+
+  it("keeps the open mode (#111)", () => {
+    assert.equal(readNoticeSettings(getter({ [SettingKey.Mode]: "open" })).mode, AutoStartMode.Open);
   });
 
   it("reads each setting under its own key", () => {
@@ -53,12 +60,60 @@ describe("readNoticeSettings", () => {
       asked.push(key);
       return undefined;
     });
-    assert.deepEqual(asked.sort(), ["autoStart.mode", "notify.badge", "notify.popup", "notify.statusBar"]);
+    assert.deepEqual(asked.sort(), [
+      "autoStart.delaySeconds",
+      "autoStart.mode",
+      "notify.badge",
+      "notify.popup",
+      "notify.statusBar",
+    ]);
+  });
+
+  describe("keeps a valid delay (#111)", () => {
+    const valid: readonly (readonly [string, number])[] = [
+      ["0, which opens the panel at once", 0],
+      ["1 second", 1],
+      ["the default, 20", 20],
+      ["a fraction", 2.5],
+      ["the maximum, an hour", MAX_DELAY_SECONDS],
+    ];
+    for (const [name, value] of valid) {
+      it(name, () => {
+        assert.equal(readNoticeSettings(getter({ [SettingKey.DelaySeconds]: value })).delaySeconds, value);
+      });
+    }
+
+    it("with an hour as the maximum", () => {
+      assert.equal(MAX_DELAY_SECONDS, 3600);
+    });
+  });
+
+  describe("uses 20 for an invalid delay (#111)", () => {
+    const invalid: readonly (readonly [string, unknown])[] = [
+      ["a negative number", -1],
+      ["a small negative fraction", -0.5],
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY],
+      ["just over the maximum", MAX_DELAY_SECONDS + 1],
+      ["a huge number", Number.MAX_VALUE],
+      ['a numeric string, "30"', "30"],
+      ["the empty string", ""],
+      ["a boolean", true],
+      ["null", null],
+      ["an array", [30]],
+      ["an object", { seconds: 30 }],
+    ];
+    for (const [name, value] of invalid) {
+      it(name, () => {
+        assert.equal(readNoticeSettings(getter({ [SettingKey.DelaySeconds]: value })).delaySeconds, 20);
+      });
+    }
   });
 
   describe("uses the default for an invalid mode", () => {
     const invalid: readonly (readonly [string, unknown])[] = [
-      ["open, which isn't built yet", "open"],
+      ["open in another letter case", "Open"],
       ["an unknown word", "loud"],
       ["__proto__", "__proto__"],
       ["constructor", "constructor"],
@@ -110,7 +165,7 @@ describe("readNoticeSettings", () => {
         [SettingKey.Popup]: true,
       }),
     );
-    assert.deepEqual(settings, { mode: "notify", badge: true, statusBar: false, popup: true });
+    assert.deepEqual(settings, { mode: "notify", badge: true, statusBar: false, popup: true, delaySeconds: 20 });
   });
 
   it("never throws, even for a very long string", () => {
@@ -128,8 +183,14 @@ describe("visibleNotices", () => {
   });
 
   it("shows nothing in off mode, whatever is switched on", () => {
-    const all = { mode: AutoStartMode.Off, badge: true, statusBar: true, popup: true };
+    const all = { mode: AutoStartMode.Off, badge: true, statusBar: true, popup: true, delaySeconds: 20 };
     assert.deepEqual(visibleNotices(true, all), NONE);
+  });
+
+  it("shows nothing in open mode, whatever is switched on: opening the panel is the signal (#111)", () => {
+    const all = { mode: AutoStartMode.Open, badge: true, statusBar: true, popup: true, delaySeconds: 20 };
+    assert.deepEqual(visibleNotices(true, all), NONE);
+    assert.deepEqual(visibleNotices(false, all), NONE);
   });
 
   it("shows the badge and status bar by default in notify mode while the agent works", () => {
@@ -164,6 +225,10 @@ describe("showPopup", () => {
 
   it("doesn't show in off mode, even with the pop-up on", () => {
     assert.equal(showPopup(NoticeChange.Show, { ...DEFAULT_NOTICE_SETTINGS, popup: true }), false);
+  });
+
+  it("doesn't show in open mode, even with the pop-up on (#111)", () => {
+    assert.equal(showPopup(NoticeChange.Show, { ...DEFAULT_NOTICE_SETTINGS, mode: AutoStartMode.Open, popup: true }), false);
   });
 
   it("doesn't show on a repeated start, a finish or a link that isn't a signal", () => {

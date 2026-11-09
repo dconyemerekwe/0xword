@@ -47,7 +47,17 @@ export interface NewRoundMessage {
   readonly type: "newRound";
 }
 
-export type HostMessage = InitMessage | NewRoundMessage;
+/**
+ * The agent has been working for the `open` mode's delay and the panel was
+ * opened (#111): show the round in progress as it is, or start a new one if
+ * the result card shows or no round was played. The webview decides, since
+ * only it knows the round. Never carries anything from the link.
+ */
+export interface AgentOpenMessage {
+  readonly type: "agentOpen";
+}
+
+export type HostMessage = InitMessage | NewRoundMessage | AgentOpenMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -79,6 +89,9 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   }
   if (fields?.get("type") === "newRound" && hasExactKeys(fields, ["type"])) {
     return { type: "newRound" };
+  }
+  if (fields?.get("type") === "agentOpen" && hasExactKeys(fields, ["type"])) {
+    return { type: "agentOpen" };
   }
   return null;
 }

@@ -147,9 +147,23 @@ describe("media/main.ts", () => {
     assert.match(source, /ui\.decodeButton\.disabled = !view\.decodeAvailable/);
   });
 
-  it("moves focus to the decode box only once the hex is locked", () => {
-    assert.match(source, /if \(!view\.howToPlayOpen && view\.hexLocked && document\.activeElement !== ui\.decodeInput\) \{\s*ui\.decodeInput\.focus\(\);/);
-    assert.equal(source.match(/decodeInput\.focus\(\)/g)?.length, 2, "here and in the keydown handler");
+  it("moves focus to the decode box only once the hex is locked, and only while the panel has focus (#111)", () => {
+    assert.match(
+      source,
+      /if \(!view\.howToPlayOpen && view\.hexLocked && document\.activeElement !== ui\.decodeInput\) \{\s*focusWhenPanelFocused\(ui\.decodeInput\);/,
+    );
+    assert.equal(source.match(/decodeInput\.focus\(\)/g)?.length, 1, "directly only in the keydown handler, after the player's key");
+  });
+
+  it("guards every focus move render makes by itself with document.hasFocus() (#111)", () => {
+    assert.match(source, /if \(appearing\) \{\s*focusWhenPanelFocused\(ui\.resultButton\);\s*\}/);
+    assert.doesNotMatch(source, /resultButton\.focus\(\)/);
+    assert.match(
+      source,
+      /function focusWhenPanelFocused\(target: HTMLElement\): void \{\s*if \(document\.hasFocus\(\)\) \{\s*deferredFocus = null;\s*target\.focus\(\);\s*\} else \{\s*deferredFocus = target;\s*\}\s*\}/,
+    );
+    assert.equal(source.match(/focusWhenPanelFocused\(/g)?.length, 3, "the decode box, New round and the definition");
+    assert.match(source, /window\.addEventListener\("focus", applyDeferredFocus\);/);
   });
 
   it("gives DEL and ENTER accessible names that start with their visible labels (WCAG 2.5.3)", () => {
@@ -383,13 +397,24 @@ interface WebviewRun {
   send(json: string): void;
   /** Presses a physical key wherever focus is. True if the webview blocked its default. */
   press(key: string, modifiers?: { readonly shiftKey?: boolean }): boolean;
+  /** Whether `document.hasFocus()` says the panel has keyboard focus. */
+  readonly panel: { hasFocus: boolean };
+  /** The panel gains keyboard focus: `hasFocus()` turns true and `window` gets a `focus` event. */
+  focusPanel(): void;
 }
 
 /**
  * Runs the bundled webview against a fake DOM, restoring `saved` as its
  * state, with `bodyAttributes` on <body> as the host's HTML put them.
+ * `hasFocus` is what `document.hasFocus()` returns at first: true, as when
+ * the player is using the panel, unless a test says the focus is elsewhere.
  */
-function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, string>> = {}): WebviewRun {
+function runWebview(
+  saved: unknown,
+  bodyAttributes: Readonly<Record<string, string>> = {},
+  { hasFocus = true }: { readonly hasFocus?: boolean } = {},
+): WebviewRun {
+  const panel = { hasFocus };
   const elements: Record<string, unknown>[] = [];
   const namespaces: { tag: string; ns: unknown }[] = [];
   const posts: unknown[] = [];
@@ -422,6 +447,7 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
     get activeElement() {
       return focus.active;
     },
+    hasFocus: () => panel.hasFocus,
   };
   const context = createContext({
     document,
@@ -470,6 +496,11 @@ function runWebview(saved: unknown, bodyAttributes: Readonly<Record<string, stri
     focus,
     frames,
     send: (json) => fire("message", { data: webviewJson.parse(json) }),
+    panel,
+    focusPanel: () => {
+      panel.hasFocus = true;
+      fire("focus", {});
+    },
     press: (key, modifiers = {}) => {
       let prevented = false;
       fire("keydown", {
@@ -747,6 +778,161 @@ describe("media/main.ts: focus on the result card, run as the bundled webview sc
       assert.equal(run.focus.active, null, "focus stays on the page for the next row");
     });
   }
+});
+
+describe("media/main.ts: open mode's agentOpen (#111), run as the bundled webview script", () => {
+  const INIT = JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" });
+  const AGENT_OPEN = '{"type":"agentOpen"}';
+
+  /** What the visually hidden announcement region says now. */
+  function announced(run: WebviewRun): unknown {
+    const region = run.elements.find(
+      (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+    );
+    return region?.["textContent"];
+  }
+
+  it("hands agentOpen to the controller, like the host's other messages", () => {
+    assert.match(source, /case "agentOpen":\s*controller\.dispatch\(\{ type: "agentOpen" \}\);\s*break;/);
+  });
+
+  const inProgress: readonly (readonly [string, () => SessionState])[] = [
+    ["a fresh round", () => savedAfter()],
+    ["a half-typed row", () => savedAfter(...guess("TEAM"), { type: "digit", digit: "4" })],
+    ["hints on", () => savedAfter(...guess("BITE"), { type: "toggleHints" })],
+    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE"))],
+    ["the decode step after row 6", () => savedAfter(...["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((w) => guess(w)))],
+  ];
+  for (const [name, saved] of inProgress) {
+    it(`shows a restored round in progress untouched: ${name}`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      const before = snapshot(run);
+      const saves = run.saves();
+      run.send(AGENT_OPEN);
+      assert.equal(snapshot(run), before, "the screen is unchanged");
+      assert.equal(run.saves(), saves + 1, "saved through changed(), as every action is");
+      assert.deepEqual(run.posts, [{ type: "ready" }], "posts nothing back");
+    });
+  }
+
+  for (const [name, saved] of FINISHED) {
+    it(`starts a new round from the restored ${name} result card, saved through changed()`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      assert.equal(byClass(run, "result")["hidden"], false);
+      const saves = run.saves();
+      run.send(AGENT_OPEN);
+      assert.equal(byClass(run, "result")["hidden"], true);
+      assert.equal(byClass(run, "keypad")["hidden"], false);
+      assert.equal(allByClass(run, "tile tile-empty").length, 48, "an empty grid");
+      assert.equal(run.saves(), saves + 1);
+      assert.equal(announced(run), "New round");
+      assert.deepEqual(run.posts, [{ type: "ready" }], "posts no roundFinished");
+    });
+  }
+
+  it("starts one round, not two, on a fresh panel with no saved state", () => {
+    const run = runWebview(undefined);
+    run.send(INIT);
+    run.press("4");
+    run.send(AGENT_OPEN);
+    assert.equal(allByClass(run, "tile tile-typed").length, 1, "the digit typed in init's round is still there");
+    assert.equal(announced(run), "", "no new round was announced");
+  });
+
+  it("ignores an agentOpen with any extra field", () => {
+    const [, saved] = FINISHED[0] ?? [];
+    assert.ok(saved);
+    const run = runWebview(saved());
+    run.send(INIT);
+    const saves = run.saves();
+    for (const json of ['{"type":"agentOpen","x":1}', '{"type":"AgentOpen"}', '"agentOpen"']) {
+      run.send(json);
+    }
+    assert.equal(byClass(run, "result")["hidden"], false, "the result card stays");
+    assert.equal(run.saves(), saves, "no action ran");
+  });
+});
+
+describe("media/main.ts: no focus move while the panel doesn't have focus (#111), run as the bundled webview script", () => {
+  const INIT = JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" });
+  const AGENT_OPEN = '{"type":"agentOpen"}';
+  const decodeStep = (): SessionState => savedAfter(...guess("TEAM"), ...guess("BYTE"));
+  const solved = (): SessionState => savedAfter(...guess("TEAM"), ...guess("BYTE"), decode("BYTE"));
+
+  it("doesn't focus the decode box at the decode step on load, after init or after agentOpen", () => {
+    const run = runWebview(decodeStep(), {}, { hasFocus: false });
+    const box = byClass(run, "decode-input");
+    run.send(INIT);
+    run.send(AGENT_OPEN);
+    assert.equal(box["focusCalls"], 0);
+    assert.equal(run.focus.active, null);
+  });
+
+  it("doesn't focus New round on a restored result card", () => {
+    const run = runWebview(solved(), {}, { hasFocus: false });
+    run.send(INIT);
+    assert.equal(byClass(run, "result-button")["focusCalls"], 0);
+    assert.equal(run.focus.active, null);
+  });
+
+  it("focuses the decode box once the panel gains focus, if it's still the decode step", () => {
+    const run = runWebview(decodeStep(), {}, { hasFocus: false });
+    run.send(INIT);
+    run.focusPanel();
+    const box = byClass(run, "decode-input");
+    assert.equal(box["focusCalls"], 1);
+    assert.equal(run.focus.active, box);
+  });
+
+  it("focuses New round once the panel gains focus, if the result card still shows", () => {
+    const run = runWebview(solved(), {}, { hasFocus: false });
+    run.focusPanel();
+    const button = byClass(run, "result-button");
+    assert.equal(button["focusCalls"], 1);
+    assert.equal(run.focus.active, button);
+    run.focusPanel();
+    assert.equal(button["focusCalls"], 1, "only once");
+  });
+
+  it("drops New round's focus when agentOpen replaced the result card before the panel gained focus", () => {
+    const run = runWebview(solved(), {}, { hasFocus: false });
+    run.send(INIT);
+    run.send(AGENT_OPEN);
+    run.focusPanel();
+    assert.equal(byClass(run, "result-button")["focusCalls"], 0);
+    assert.equal(run.focus.active, null, "the page keeps the keyboard, for the new round's first row");
+  });
+
+  it("leaves a control the player focused alone when the panel gains focus", () => {
+    const run = runWebview(decodeStep(), {}, { hasFocus: false });
+    const theme = byLabel(run, THEME_BUTTON_LABEL.system);
+    (theme["focus"] as () => void)();
+    run.focusPanel();
+    assert.equal(run.focus.active, theme);
+    assert.equal(byClass(run, "decode-input")["focusCalls"], 0);
+  });
+
+  it("does nothing when the panel gains focus mid-guess", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")), {}, { hasFocus: false });
+    run.focusPanel();
+    assert.equal(run.focus.active, null);
+  });
+
+  it("still moves focus to the decode box when the player types a letter", () => {
+    const run = runWebview(decodeStep(), {}, { hasFocus: false });
+    run.press("T");
+    assert.equal(run.focus.active, byClass(run, "decode-input"));
+  });
+
+  it("keeps the usual focus moves while the panel has focus", () => {
+    const atDecode = runWebview(decodeStep());
+    assert.equal(atDecode.focus.active, byClass(atDecode, "decode-input"));
+    const onCard = runWebview(solved());
+    assert.equal(onCard.focus.active, byClass(onCard, "result-button"));
+    assert.equal(byClass(onCard, "result-button")["focusCalls"], 1);
+  });
 });
 
 describe("media/main.ts: How to play (page 5), run as the bundled webview script", () => {

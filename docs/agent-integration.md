@@ -1,6 +1,6 @@
 # Play while your agent works
 
-> **Planned for Phase 7, partly built.** Built so far: the two links, `…/agent-started` and `…/agent-finished` (#109), and the settings with the three notices they show and hide: the badge, the `0x Round ready` status-bar item and the pop-up (#110). Notices are off until you choose `notify`. Everything else below (`open` mode and `delaySeconds`, the **Copy agent hook setup** command and the per-tool snippets) isn't built yet. This is the design, and the setup guide that will ship with it (see [PLAN.md](PLAN.md#phase-7-agent-integration-later)). Each tool's hook details below were checked in October 2026 and get checked again against the tool's own docs when Phase 7 starts. Several of these hook systems are still in preview and change between versions.
+> **Planned for Phase 7, partly built.** Built so far: the two links, `…/agent-started` and `…/agent-finished` (#109), and the settings with the three notices they show and hide: the badge, the `0x Round ready` status-bar item and the pop-up (#110), and `open` mode with `delaySeconds` (#111). Nothing shows until you choose `notify` or `open`. Everything else below (the message in the panel when the agent finishes, the **Copy agent hook setup** command and the per-tool snippets) isn't built yet. This is the design, and the setup guide that will ship with it (see [PLAN.md](PLAN.md#phase-7-agent-integration-later)). Each tool's hook details below were checked in October 2026 and get checked again against the tool's own docs when Phase 7 starts. Several of these hook systems are still in preview and change between versions.
 
 0xWORD can tell you a round is ready while your AI agent is working, and get out of the way when it's done. It works with any agent tool that can run a command when you send a prompt and when the agent finishes. This guide covers **Claude Code, GitHub Copilot, Cursor and Codex**.
 
@@ -31,19 +31,20 @@ Find these under **Settings → Extensions → 0xWORD**. VS Code saves them for 
 
 | Setting | Values | Default | What it does |
 |---|---|---|---|
-| `0xword.autoStart.mode` | `off`, `notify`, `open` | `off` | What happens when your agent starts working. `off` shows nothing, so a fresh install stays quiet, and you can pause notices without removing your hooks. Choose `notify` to turn them on. `notify` shows the notices switched on below. `open` opens the 0xWORD panel (not built yet, #111). |
+| `0xword.autoStart.mode` | `off`, `notify`, `open` | `off` | What happens when your agent starts working. `off` shows nothing, so a fresh install stays quiet, and you can pause notices without removing your hooks. Choose `notify` to turn them on. `notify` shows the notices switched on below. `open` opens the 0xWORD panel once your agent has worked for `delaySeconds`, and shows none of the notices. |
 | `0xword.notify.badge` | on / off | on | In `notify` mode, a badge on the 0xWORD icon in the activity bar. It shows once you've opened the 0xWORD panel since VS Code started. |
 | `0xword.notify.statusBar` | on / off | on | In `notify` mode, `0x Round ready` in the status bar. Click it to open the panel. |
 | `0xword.notify.popup` | on / off | off | In `notify` mode, a notification in the corner with **Play** and **Not now**, once each time your agent starts. **Play** opens the panel without touching your round. |
-| `0xword.autoStart.delaySeconds` | a number of seconds | 20 | In `open` mode only: how long the agent must still be working before the panel opens. Short prompts that finish sooner never open it. Not built yet (#111). |
+| `0xword.autoStart.delaySeconds` | 0 to 3600 seconds | 20 | In `open` mode only: how long the agent must still be working before the panel opens. Short prompts that finish sooner never open it. `0` opens it as soon as you send a prompt. |
 
-A change applies straight away, even while a notice is showing: turning the status bar off hides it, and choosing `off` clears every notice. A value in a workspace's settings overrides your user setting. A value that isn't valid, for example a word other than `off` or `notify` typed into `settings.json`, counts as that setting's default.
+A change applies straight away, even while a notice is showing: turning the status bar off hides it, and choosing `off` clears every notice. Leaving `open` mode while 0xWORD is waiting to open the panel cancels the wait. Choosing `open` while your agent is already working starts nothing until your next prompt, and a new `delaySeconds` applies from your next prompt too. A value in a workspace's settings overrides your user setting. A value that isn't valid, for example a word other than `off`, `notify` or `open` typed into `settings.json`, or a delay that's negative, over 3600 or not a number, counts as that setting's default.
 
 ### What you'll see
 
 - **In `off` mode, the default,** nothing shows.
 - **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
-- **In `open` mode,** the panel opens once the agent has been working for `delaySeconds`.
+- **In `open` mode,** the panel opens once the agent has been working for `delaySeconds`, at most once per prompt. If the agent finishes sooner, nothing happens. A round in progress is shown as you left it. If the last round is over (the result card is showing), or you haven't played one yet, a new round starts. The panel opens without taking keyboard focus, so typing elsewhere keeps going there (expected; not yet checked, see check 5 below). The panel itself doesn't move focus to its decode box or **New round** button unless it has keyboard focus (expected; see check 5). If it doesn't, that move waits until the panel gets keyboard focus. The one exception is when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started: VS Code has no way for an extension to open a view it hasn't loaded without focusing it, so then the panel takes keyboard focus. A link from a terminal outside VS Code also brings VS Code to the front as soon as you send the prompt, before the delay. No badge, status-bar item or pop-up shows in this mode.
+- **If you interrupt the agent,** some tools may not run their "finished" hook. For example, our understanding (not tested here) is that Claude Code's `Stop` hook doesn't run when you interrupt Claude. 0xWORD then still counts the agent as working, so your next prompt counts as the same run: in `open` mode the panel won't open for that prompt (and in `notify` mode no new pop-up shows). That prompt's own finish resets it, and the prompt after works as usual.
 - **A round in progress is never interrupted.** If the agent finishes mid-round, the panel just says so, and you can finish or leave the round.
 - **An unfinished round carries over.** Play a row or two while one prompt runs and pick it up again on the next.
 
@@ -114,7 +115,7 @@ The hooks format has changed between versions, so this section is written agains
 
 - **No telemetry.** 0xWORD still collects nothing and sends nothing. The hooks only open a link on your own machine.
 - **Your prompts stay with your agent tool.** The hook commands never read them, and the links never carry them.
-- **Only two fixed links do anything.** Any other `vscode://` link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, and bring VS Code to the front.
+- **Only two fixed links do anything.** Any other `vscode://` link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, open the 0xWORD panel in `open` mode (never replacing a round in progress, and without taking keyboard focus, except when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started), and bring VS Code to the front.
 - **Your config files stay yours.** 0xWORD never writes to your agent tool's settings. You add and remove the hooks.
 
 ## Still to check before Phase 7 ships
@@ -156,7 +157,23 @@ Do the checks in this order. A confirmation dialog may bring VS Code to the fron
 
 **What this means:** a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus. From an outside terminal, VS Code comes to the front. Agent hooks run as background processes, which weren't tested.
 
+### The owner's check for `open` mode (#111)
+
+5. **Does the panel open without taking keyboard focus?**
+   - Set `0xword.autoStart.mode` to `open`, with `0xword.autoStart.delaySeconds` at 20. Play a row or two, so a round is in progress.
+   - Put the cursor in the Claude Code prompt box. Run `agent-started` from VS Code's own terminal, click back into the prompt box, and keep typing, including digits, Backspace and Enter, until well after the 20 seconds are up.
+   - Note whether the keys stay in the prompt box when the panel opens, and whether the round is unchanged: the same rows, no new digits, nothing submitted.
+   - Try it twice: once with the 0xWORD panel opened earlier in the session (expected: focus stays in the prompt box), and once after a restart of VS Code without opening the panel first (expected: VS Code hasn't loaded the panel yet, so this open takes keyboard focus, as VS Code has no way to avoid it).
+   - **At the decode step:** play until a row is fully right (or six rows are used), so the panel shows the one-try word box, and don't type in it. Then repeat the steps above, typing letters and Enter in the prompt box, in two ways:
+     - **(a) Hidden:** open another view in the same side bar (for example the Explorer), so the 0xWORD panel is hidden behind it before `agent-started`.
+     - **(b) Visible:** keep the 0xWORD panel showing, then click into the editor and type there instead of the prompt box.
+   - Expected for both (not yet checked): when the panel shows or reloads, it doesn't move focus to its word box, because the panel doesn't have keyboard focus. Your keys stay where you're typing, and nothing is submitted as the word try. When you then click into the panel, the word box takes focus. On a result card, **New round** takes focus at that point instead.
+   - Result: not tried yet.
+
 ### Still open
 
 - Which window gets the link when several are open (check 3).
+- Whether `open` mode opens the panel without taking keyboard focus (check 5), in a round in progress and at the decode step.
+- At the decode step, with the panel hidden behind another view in the same side bar (check 5a).
+- At the decode step, with the panel visible after clicking into the editor (check 5b).
 - Each tool's current hook format, events and output rules, as listed in its section above.
