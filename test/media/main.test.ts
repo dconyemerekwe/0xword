@@ -290,12 +290,14 @@ interface FocusTracker {
  * no-op function. `focus()` and `blur()` move `focus.active` and count the
  * node's `focusCalls`. `append` and `replaceChildren` record its `children`,
  * in document order, for `tabOrder`. `texts` records every `textContent`
- * write, so a test can count what a live region was given.
+ * write, so a test can count what a live region was given. `classes` holds
+ * the classes `classList` has turned on.
  */
 function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { active: null }): Record<string, unknown> {
   const attributes: Record<string, string> = {};
   const listeners: Record<string, (event: unknown) => void> = {};
   const children: unknown[] = [];
+  const classes = new Set<string>();
   const target: Record<string, unknown> = {
     ...record,
     attributes,
@@ -314,7 +316,19 @@ function fakeNode(record: Record<string, unknown>, focus: FocusTracker = { activ
     replaceChildren: (...nodes: unknown[]) => {
       children.splice(0, children.length, ...nodes);
     },
-    classList: { toggle() {}, add() {}, remove() {} },
+    // The classes `classList` turned on, as a set: `className` holds the ones set at creation.
+    classes,
+    classList: {
+      toggle: (name: string, force?: boolean) => {
+        if (force ?? !classes.has(name)) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+      },
+      add: (...names: string[]) => names.forEach((name) => classes.add(name)),
+      remove: (...names: string[]) => names.forEach((name) => classes.delete(name)),
+    },
     setAttribute: (name: string, value: string) => {
       attributes[name] = value;
     },
@@ -852,6 +866,190 @@ describe("media/main.ts: open mode's agentOpen (#111), run as the bundled webvie
     }
     assert.equal(byClass(run, "result")["hidden"], false, "the result card stays");
     assert.equal(run.saves(), saves, "no action ran");
+  });
+});
+
+describe("media/main.ts: the agent-finished message (#112), run as the bundled webview script", () => {
+  const INIT = JSON.stringify({ type: "init", stats: toStatsView(EMPTY_STATS), theme: "system" });
+  const AGENT_FINISHED = '{"type":"agentFinished"}';
+  const TEXT = "Your agent has finished. Your round is still here.";
+
+  /** The visually hidden announcement region. */
+  function announcementRegion(run: WebviewRun): Record<string, unknown> {
+    const found = run.elements.filter(
+      (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+    );
+    assert.equal(found.length, 1);
+    return found[0] ?? {};
+  }
+
+  /** Every element's `focusCalls`, in order. */
+  function focusCalls(run: WebviewRun): unknown[] {
+    return run.elements.map((node) => node["focusCalls"]);
+  }
+
+  it("hands agentFinished to the controller and draws only the message line: not through changed(), no focus", () => {
+    const branch = /case "agentFinished":([\s\S]*?)break;/.exec(source)?.[1] ?? "";
+    assert.match(branch, /^\s*if \(controller\.agentFinished\(\)\) \{\s*drawNotice\(controller\.view\(\)\);\s*\}\s*$/);
+    const drawNotice = /function drawNotice\(view: ScreenView\): void \{[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+    assert.ok(drawNotice, "drawNotice");
+    for (const banned of ["focus", "setState", "postMessage", "changed(", "dispatch", "innerHTML"]) {
+      assert.ok(!drawNotice.includes(banned), banned);
+    }
+  });
+
+  const inProgress: readonly (readonly [string, () => SessionState])[] = [
+    ["a fresh round", () => savedAfter()],
+    ["a half-typed row", () => savedAfter(...guess("TEAM"), { type: "digit", digit: "4" })],
+    ["the decode step after a solved grid", () => savedAfter(...guess("TEAM"), ...guess("BYTE"))],
+    ["the decode step after row 6", () => savedAfter(...["BITE", "TEAM", "BEAT", "BEST", "BUSY", "ABLE"].flatMap((w) => guess(w)))],
+  ];
+  for (const [name, saved] of inProgress) {
+    it(`shows the text on the message line, in its normal colour, changing nothing else: ${name}`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      const message = byClass(run, "message");
+      const others = run.elements.filter((node) => node !== message);
+      const before = JSON.stringify(others.map((node) => [node["textContent"], node["attributes"], node["hidden"], node["disabled"], node["value"]]));
+      const writes = Number(message["textWrites"]);
+      const saves = run.saves();
+      const focus = focusCalls(run);
+      const active = run.focus.active;
+      run.send(AGENT_FINISHED);
+      assert.equal(message["textContent"], TEXT);
+      assert.equal(message["textWrites"], writes + 1, "written once, with textContent");
+      assert.equal((message["classes"] as Set<string>).has("message-error"), false, "not the error colour");
+      assert.equal(
+        JSON.stringify(others.map((node) => [node["textContent"], node["attributes"], node["hidden"], node["disabled"], node["value"]])),
+        before,
+        "nothing else on screen changes",
+      );
+      assert.equal(run.saves(), saves, "not saved");
+      assert.deepEqual(run.posts, [{ type: "ready" }], "nothing posted to the host");
+      assert.deepEqual(focusCalls(run), focus, "no focus() call");
+      assert.equal(run.focus.active, active, "focus stays where it was");
+    });
+  }
+
+  it("is read out politely, once: the message line is a polite status region, and no re-announce is queued", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    run.send(INIT);
+    const message = byClass(run, "message");
+    assert.equal((message["attributes"] as Record<string, string>)["aria-live"], "polite");
+    assert.equal((message["attributes"] as Record<string, string>)["role"], "status");
+    const frames = run.frames.length;
+    run.send(AGENT_FINISHED);
+    assert.equal((message["texts"] as unknown[]).filter((text) => text === TEXT).length, 1);
+    assert.equal(run.frames.length, frames, "no clear-and-rewrite");
+    assert.notEqual(announcementRegion(run)["textContent"], TEXT, "not read out a second time by the hidden region");
+  });
+
+  it("doesn't move focus to the decode box at the decode step, even with the panel focused", () => {
+    const run = runWebview(savedAfter(...guess("TEAM"), ...guess("BYTE")));
+    run.send(INIT);
+    const theme = byLabel(run, THEME_BUTTON_LABEL.system);
+    (theme["focus"] as () => void)();
+    const box = byClass(run, "decode-input");
+    const calls = box["focusCalls"];
+    run.send(AGENT_FINISHED);
+    assert.equal(run.focus.active, theme);
+    assert.equal(box["focusCalls"], calls);
+    assert.equal(byClass(run, "message")["textContent"], TEXT);
+  });
+
+  it("replaces an error on the line, and drops the error colour", () => {
+    const run = runWebview(savedAfter());
+    run.send(INIT);
+    for (const key of [...wordToHex("AAAA"), "Enter"]) {
+      run.press(key);
+    }
+    const message = byClass(run, "message");
+    assert.equal(message["textContent"], "AAAA isn't in the word list");
+    assert.equal((message["classes"] as Set<string>).has("message-error"), true);
+    run.send(AGENT_FINISHED);
+    assert.equal(message["textContent"], TEXT);
+    assert.equal((message["classes"] as Set<string>).has("message-error"), false);
+  });
+
+  it("clears on the next key typed in the panel", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    run.send(INIT);
+    run.send(AGENT_FINISHED);
+    run.press("4");
+    assert.equal(byClass(run, "message")["textContent"], "");
+    assert.equal(allByClass(run, "tile tile-typed").length, 1, "and the key is typed as usual");
+  });
+
+  it("clears once a row is scored", () => {
+    const run = runWebview(savedAfter());
+    run.send(INIT);
+    run.send(AGENT_FINISHED);
+    for (const key of [...wordToHex("TEAM"), "Enter"]) {
+      run.press(key);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "");
+    assert.match(String(announcementRegion(run)["textContent"]), /^Row 1: /);
+  });
+
+  for (const [name, saved] of FINISHED) {
+    it(`shows nothing on the restored ${name} result card`, () => {
+      const run = runWebview(saved());
+      run.send(INIT);
+      const before = snapshot(run);
+      const writes = run.elements.map((node) => node["textWrites"]);
+      run.send(AGENT_FINISHED);
+      assert.equal(snapshot(run), before);
+      assert.deepEqual(run.elements.map((node) => node["textWrites"]), writes, "nothing written");
+    });
+  }
+
+  it("shows nothing on a fresh panel before init", () => {
+    const run = runWebview(undefined);
+    const before = snapshot(run);
+    run.send(AGENT_FINISHED);
+    assert.equal(snapshot(run), before);
+    assert.equal(run.saves(), 0, "no round was started");
+    run.send(INIT);
+    assert.equal(byClass(run, "message")["textContent"], "", "nor once the first round starts");
+  });
+
+  it("ignores an agentFinished with any extra field, another case or as a string", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    run.send(INIT);
+    for (const json of ['{"type":"agentFinished","x":1}', '{"type":"agentFinished","text":"<b>hi</b>"}', '{"type":"AgentFinished"}', '"agentFinished"']) {
+      run.send(json);
+    }
+    assert.equal(byClass(run, "message")["textContent"], "");
+  });
+
+  it("with How to play open, puts it on the line behind it and reads it out once from the announcement region", () => {
+    const run = runWebview(savedAfter(...guess("TEAM")));
+    run.send(INIT);
+    click(byLabel(run, "How to play"));
+    const back = byLabel(run, "Back to game");
+    const active = run.focus.active;
+    run.send(AGENT_FINISHED);
+    const region = announcementRegion(run);
+    assert.equal(region["textContent"], TEXT);
+    assert.equal(byClass(run, "message")["textContent"], TEXT);
+    assert.equal(run.focus.active, active, "focus stays in How to play");
+    const regionWrites = region["textWrites"];
+    const messageWrites = byClass(run, "message")["textWrites"];
+    click(back);
+    assert.equal(byClass(run, "message")["textContent"], TEXT, "seen on return");
+    assert.equal(region["textWrites"], regionWrites, "not read out again");
+    assert.equal(byClass(run, "message")["textWrites"], messageWrites);
+  });
+
+  it("is gone after a hide and show: the reloaded webview restores the saved round without it", () => {
+    const saved = savedAfter(...guess("TEAM"));
+    const run = runWebview(saved);
+    run.send(INIT);
+    run.send(AGENT_FINISHED);
+    // Nothing was saved, so the next load restores the same state.
+    const reloaded = runWebview(saved);
+    reloaded.send(INIT);
+    assert.equal(byClass(reloaded, "message")["textContent"], "");
   });
 });
 
