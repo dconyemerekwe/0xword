@@ -67,7 +67,22 @@ export interface AgentFinishedMessage {
   readonly type: "agentFinished";
 }
 
-export type HostMessage = InitMessage | NewRoundMessage | AgentOpenMessage | AgentFinishedMessage;
+/**
+ * The agent has started a run, in `notify` or `open` mode (#112): the webview
+ * clears a "finished" message left from the last run, so the line never says
+ * "finished" while the agent works. Delivered like `agentFinished`. Never
+ * carries anything from the link.
+ */
+export interface AgentStartedMessage {
+  readonly type: "agentStarted";
+}
+
+export type HostMessage =
+  | InitMessage
+  | NewRoundMessage
+  | AgentOpenMessage
+  | AgentFinishedMessage
+  | AgentStartedMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -105,6 +120,9 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   }
   if (fields?.get("type") === "agentFinished" && hasExactKeys(fields, ["type"])) {
     return { type: "agentFinished" };
+  }
+  if (fields?.get("type") === "agentStarted" && hasExactKeys(fields, ["type"])) {
+    return { type: "agentStarted" };
   }
   return null;
 }

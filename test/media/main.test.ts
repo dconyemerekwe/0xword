@@ -399,6 +399,8 @@ interface WebviewRun {
   readonly posts: readonly unknown[];
   /** How many times the webview saved its state with `setState`. */
   readonly saves: () => number;
+  /** What the next load would restore: the last `setState` value, or the state this run was given. */
+  readonly lastSaved: () => unknown;
   /** The fake `<body>`, whose attributes hold the theme choice. */
   readonly body: Record<string, unknown>;
   /** The `#app` element the screen is built in. */
@@ -433,6 +435,8 @@ function runWebview(
   const namespaces: { tag: string; ns: unknown }[] = [];
   const posts: unknown[] = [];
   let saves = 0;
+  // What a reload would restore: the last `setState`, or the state this run started from.
+  let lastSaved: unknown = saved;
   const focus: FocusTracker = { active: null };
   const body = fakeNode({ tag: "body" }, focus);
   const app = fakeNode({ tag: "div" }, focus);
@@ -488,8 +492,9 @@ function runWebview(
       // state must be a plain object of the webview's own realm to be restored.
       postMessage: (message: unknown) => posts.push(JSON.parse(JSON.stringify(message))),
       getState: () => (saved === undefined ? undefined : webviewJson.parse(JSON.stringify(saved))),
-      setState() {
+      setState(state: unknown) {
         saves++;
+        lastSaved = JSON.parse(JSON.stringify(state));
       },
     }),
   });
@@ -505,6 +510,7 @@ function runWebview(
     namespaces,
     posts,
     saves: () => saves,
+    lastSaved: () => lastSaved,
     body,
     app,
     focus,
@@ -1041,16 +1047,164 @@ describe("media/main.ts: the agent-finished message (#112), run as the bundled w
     assert.equal(byClass(run, "message")["textWrites"], messageWrites);
   });
 
-  it("is gone after a hide and show: the reloaded webview restores the saved round without it", () => {
-    const saved = savedAfter(...guess("TEAM"));
-    const run = runWebview(saved);
-    run.send(INIT);
-    run.send(AGENT_FINISHED);
-    // Nothing was saved, so the next load restores the same state.
-    const reloaded = runWebview(saved);
-    reloaded.send(INIT);
-    assert.equal(byClass(reloaded, "message")["textContent"], "");
+  describe("at the decode step", () => {
+    const decodeStep = (): SessionState => savedAfter(...guess("TEAM"), ...guess("BYTE"));
+
+    /** Types `word` in the decode box, key by key, as the player does: the box takes them. */
+    function typeInBox(run: WebviewRun, word: string): void {
+      const box = byClass(run, "decode-input");
+      for (const key of word) {
+        run.press(key);
+        assert.equal(run.focus.active, box, "the box has the keys");
+      }
+      box["value"] = word;
+    }
+
+    /** Submits the decode form, as Enter in the box does. */
+    function submit(run: WebviewRun): void {
+      (byClass(run, "decode")["listeners"] as Record<string, (event: unknown) => void>)["submit"]?.({ preventDefault() {} });
+    }
+
+    it("stays while the player types in the decode box, the first key included", () => {
+      const run = runWebview(decodeStep(), {}, { hasFocus: false });
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      typeInBox(run, "BY");
+      assert.equal(byClass(run, "message")["textContent"], TEXT);
+    });
+
+    it("is replaced when a word that isn't listed is submitted", () => {
+      const run = runWebview(decodeStep());
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      typeInBox(run, "QXZJ");
+      submit(run);
+      assert.equal(byClass(run, "message")["textContent"], "QXZJ isn't in the word list");
+    });
+
+    it("gives way to the result card when the word is submitted", () => {
+      const run = runWebview(decodeStep());
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      typeInBox(run, "BYTE");
+      submit(run);
+      assert.equal(byClass(run, "result")["hidden"], false);
+      assert.equal(byClass(run, "message")["textContent"], "Solved");
+    });
   });
+
+  describe("agentStarted clears it", () => {
+    const AGENT_STARTED = '{"type":"agentStarted"}';
+
+    it("hands agentStarted to the controller and draws only the message line", () => {
+      const branch = /case "agentStarted":([\s\S]*?)break;/.exec(source)?.[1] ?? "";
+      assert.match(branch, /^\s*if \(controller\.agentStarted\(\)\) \{\s*drawNotice\(controller\.view\(\)\);\s*\}\s*$/);
+    });
+
+    for (const [name, saved] of inProgress) {
+      it(`clears the line with nothing read out, changing nothing else: ${name}`, () => {
+        const run = runWebview(saved());
+        run.send(INIT);
+        run.send(AGENT_FINISHED);
+        const message = byClass(run, "message");
+        const region = announcementRegion(run);
+        const others = run.elements.filter((node) => node !== message);
+        const before = JSON.stringify(others.map((node) => [node["textContent"], node["attributes"], node["hidden"], node["disabled"], node["value"]]));
+        const saves = run.saves();
+        const focus = focusCalls(run);
+        const active = run.focus.active;
+        const regionWrites = region["textWrites"];
+        run.send(AGENT_STARTED);
+        assert.equal(message["textContent"], "");
+        assert.equal(region["textWrites"], regionWrites, "nothing read out");
+        assert.equal(
+          JSON.stringify(others.map((node) => [node["textContent"], node["attributes"], node["hidden"], node["disabled"], node["value"]])),
+          before,
+        );
+        assert.equal(run.saves(), saves, "not saved");
+        assert.deepEqual(run.posts, [{ type: "ready" }], "nothing posted");
+        assert.deepEqual(focusCalls(run), focus, "no focus() call");
+        assert.equal(run.focus.active, active);
+      });
+    }
+
+    it("lets a second run's finish be read out again: start, finish, start, finish", () => {
+      const run = runWebview(savedAfter(...guess("TEAM")));
+      run.send(INIT);
+      const message = byClass(run, "message");
+      const writes = (message["texts"] as unknown[]).length;
+      for (const json of [AGENT_STARTED, AGENT_FINISHED, AGENT_STARTED, AGENT_FINISHED]) {
+        run.send(json);
+      }
+      assert.deepEqual((message["texts"] as unknown[]).slice(writes), [TEXT, "", TEXT], "two fresh writes of the text, so two announcements");
+      assert.equal(message["textContent"], TEXT);
+    });
+
+    it("leaves an error alone", () => {
+      const run = runWebview(savedAfter());
+      run.send(INIT);
+      for (const key of [...wordToHex("AAAA"), "Enter"]) {
+        run.press(key);
+      }
+      const message = byClass(run, "message");
+      const writes = message["textWrites"];
+      run.send(AGENT_STARTED);
+      assert.equal(message["textContent"], "AAAA isn't in the word list");
+      assert.equal(message["textWrites"], writes);
+      assert.equal((message["classes"] as Set<string>).has("message-error"), true);
+    });
+
+    for (const [name, saved] of FINISHED) {
+      it(`does nothing on the restored ${name} result card`, () => {
+        const run = runWebview(saved());
+        run.send(INIT);
+        const before = snapshot(run);
+        const writes = run.elements.map((node) => node["textWrites"]);
+        run.send(AGENT_STARTED);
+        assert.equal(snapshot(run), before);
+        assert.deepEqual(run.elements.map((node) => node["textWrites"]), writes);
+      });
+    }
+
+    it("ignores an agentStarted with any extra field, another case or as a string", () => {
+      const run = runWebview(savedAfter(...guess("TEAM")));
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      for (const json of ['{"type":"agentStarted","x":1}', '{"type":"AgentStarted"}', '"agentStarted"']) {
+        run.send(json);
+      }
+      assert.equal(byClass(run, "message")["textContent"], TEXT);
+    });
+
+    it("is also cleared by open mode's agentOpen, which keeps the round", () => {
+      const run = runWebview(savedAfter(...guess("TEAM"), { type: "digit", digit: "4" }));
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      run.send('{"type":"agentOpen"}');
+      assert.equal(byClass(run, "message")["textContent"], "");
+      assert.equal(allByClass(run, "tile tile-typed").length, 1, "the typed digit is still there");
+    });
+  });
+
+  for (const [name, afterwards] of [
+    ["nothing else", (_run: WebviewRun) => {}],
+    ["How to play opened and closed, which saves", (run: WebviewRun) => {
+      click(byLabel(run, "How to play"));
+      run.press("Escape");
+    }],
+  ] as const) {
+    it(`is gone after a hide and show, reloaded from the last save, after ${name}`, () => {
+      const run = runWebview(savedAfter(...guess("TEAM")));
+      run.send(INIT);
+      run.send(AGENT_FINISHED);
+      afterwards(run);
+      assert.equal(byClass(run, "message")["textContent"], TEXT, "still showing before the hide");
+      const reloaded = runWebview(run.lastSaved());
+      reloaded.send(INIT);
+      assert.equal(byClass(reloaded, "message")["textContent"], "");
+      assert.equal(allByClass(reloaded, "tile tile-right").length + allByClass(reloaded, "tile tile-wrong").length + allByClass(reloaded, "tile tile-absent").length, 8, "the scored row is back");
+    });
+  }
 });
 
 describe("media/main.ts: no focus move while the panel doesn't have focus (#111), run as the bundled webview script", () => {

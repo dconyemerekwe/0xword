@@ -1134,14 +1134,49 @@ describe("GameController: the agent-finished message (#112)", () => {
     assert.notEqual(view.result, null);
   });
 
-  it("stays through opening and closing How to play, and init and agentOpen on a round in progress", () => {
+  it("stays through opening and closing How to play, and init on a round in progress", () => {
     const h = harness();
     h.play(...guess("TEAM"));
     h.controller.agentFinished();
     const noticeId = h.controller.view().noticeId;
-    const view = h.play({ type: "openHowToPlay" }, { type: "closeHowToPlay" }, { type: "init" }, { type: "agentOpen" });
+    const view = h.play({ type: "openHowToPlay" }, { type: "closeHowToPlay" }, { type: "init" });
     assert.equal(view.message, AGENT_FINISHED_MESSAGE);
     assert.equal(view.noticeId, noticeId, "not a new notice, so it isn't read out again");
+  });
+
+  for (const [name, make] of [
+    ["mid-guess", () => {
+      const h = harness();
+      h.play(...guess("TEAM"), ...type("42"));
+      return h;
+    }],
+    ["at the decode step", () => solvedGridAt(2)],
+  ] as const) {
+    it(`is cleared by agentOpen, which otherwise leaves the round in progress as it is (#111): ${name}`, () => {
+      const h = make();
+      h.controller.agentFinished();
+      const before = h.controller.view();
+      const savedBefore = JSON.parse(JSON.stringify(h.controller.savedState()));
+      const roundNumber = h.session.roundNumber;
+      const view = h.play({ type: "agentOpen" });
+      assert.equal(view.message, "", "never says finished while the agent works");
+      assert.equal(view.announcement, "");
+      assert.deepEqual(
+        { ...view, message: "", noticeId: 0 },
+        { ...before, message: "", noticeId: 0 },
+      );
+      assert.equal(h.session.roundNumber, roundNumber, "no new round");
+      assert.deepEqual(h.saves.at(-1), savedBefore, "the same round and draft are saved");
+      assert.deepEqual(h.posts, []);
+    });
+  }
+
+  it("leaves an error alone on agentOpen, as #111 does", () => {
+    const h = harness();
+    const rejected = h.play(...type("41414141"), { type: "enter" });
+    const view = h.play({ type: "agentOpen" });
+    assert.equal(view.message, rejected.message);
+    assert.equal(view.messageIsError, true);
   });
 
   it("while How to play is open, puts it on the line behind it and reads it out once in the announcement region", () => {
@@ -1164,6 +1199,102 @@ describe("GameController: the agent-finished message (#112)", () => {
     assert.equal(h.controller.agentFinished(), true);
     assert.equal(h.controller.view().noticeId, first + 1);
     assert.equal(h.controller.view().message, AGENT_FINISHED_MESSAGE);
+  });
+});
+
+describe("GameController: agentStarted clears the agent-finished message (#112)", () => {
+  for (const [name, make] of [
+    ["mid-guess", () => {
+      const h = harness();
+      h.play(...guess("TEAM"), ...type("42"));
+      return h;
+    }],
+    ["at the decode step after a solved grid", () => solvedGridAt(2)],
+    ["at the decode step after row 6", () => atRowSix()],
+  ] as const) {
+    it(`clears it with nothing read out, changing nothing else: ${name}`, () => {
+      const h = make();
+      const original = h.controller.view();
+      h.controller.agentFinished();
+      const finished = h.controller.view();
+      const savedBefore = JSON.parse(JSON.stringify(h.controller.savedState()));
+      const saves = h.saves.length;
+      assert.equal(h.controller.agentStarted(), true);
+      const view = h.controller.view();
+      assert.equal(view.message, "");
+      assert.equal(view.messageIsError, false);
+      assert.equal(view.announcement, "", "nothing read out");
+      assert.equal(view.noticeId, finished.noticeId + 1);
+      assert.deepEqual(
+        { ...view, announcement: "", noticeId: 0 },
+        { ...original, message: "", messageIsError: false, announcement: "", noticeId: 0 },
+        "the round is as it was",
+      );
+      assert.deepEqual(JSON.parse(JSON.stringify(h.controller.savedState())), savedBefore);
+      assert.equal(h.saves.length, saves, "not saved");
+      assert.deepEqual(h.posts, []);
+    });
+  }
+
+  it("leaves an error alone", () => {
+    const h = harness();
+    const rejected = h.play(...type("41414141"), { type: "enter" });
+    assert.equal(h.controller.agentStarted(), false);
+    assert.deepEqual(h.controller.view(), rejected);
+  });
+
+  it("leaves a scored row's announcement and an empty line alone", () => {
+    const h = harness();
+    const scored = h.play(...guess("TEAM"));
+    assert.equal(h.controller.agentStarted(), false);
+    assert.deepEqual(h.controller.view(), scored);
+  });
+
+  it("does nothing on the result card or before the first round", () => {
+    for (const h of [solvedAfter(0), failed(), harness(new Session(WORDS, answerIs("BYTE")), false)]) {
+      const before = h.controller.view();
+      const saves = h.saves.length;
+      assert.equal(h.controller.agentStarted(), false);
+      assert.deepEqual(h.controller.view(), before);
+      assert.equal(h.saves.length, saves);
+    }
+  });
+
+  it("makes the next run's finish a new notice with the text, so it's read out again: start, finish, start, finish", () => {
+    const h = harness();
+    h.play(...guess("TEAM"));
+    const shown: string[] = [];
+    let noticeId = h.controller.view().noticeId;
+    for (const signal of ["started", "finished", "started", "finished"] as const) {
+      const changed = signal === "started" ? h.controller.agentStarted() : h.controller.agentFinished();
+      const view = h.controller.view();
+      if (changed) {
+        assert.equal(view.noticeId, noticeId + 1);
+        noticeId = view.noticeId;
+        shown.push(view.message);
+      }
+    }
+    assert.deepEqual(shown, [AGENT_FINISHED_MESSAGE, "", AGENT_FINISHED_MESSAGE]);
+  });
+
+  it("clears it behind How to play, and from the announcement region, without closing How to play", () => {
+    const h = harness();
+    h.play(...guess("TEAM"), { type: "openHowToPlay" });
+    h.controller.agentFinished();
+    assert.equal(h.controller.agentStarted(), true);
+    const view = h.controller.view();
+    assert.equal(view.howToPlayOpen, true);
+    assert.equal(view.message, "");
+    assert.equal(view.announcement, "");
+  });
+
+  it("keeps a replaced error in the session, so the saved state is unchanged", () => {
+    const h = harness();
+    h.play(...type("41414141"), { type: "enter" });
+    const rejection = h.session.rejection;
+    h.controller.agentFinished();
+    h.controller.agentStarted();
+    assert.deepEqual(h.session.rejection, rejection);
   });
 });
 

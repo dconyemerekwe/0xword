@@ -824,8 +824,8 @@ function render(view: ScreenView): void {
 /**
  * Draws the message line and the hidden announcement region, both polite
  * live regions, with `textContent`. Part of `render`, and called on its own
- * for the agent's message (#112), which changes nothing else on screen and
- * must not move focus.
+ * to show or clear the agent's message (#112), which changes nothing else on
+ * screen and must not move focus.
  */
 function drawNotice(view: ScreenView): void {
   if (!ui) {
@@ -985,6 +985,14 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
       // posted, and no focus moves. The controller ignores it on the result
       // card and before the first round.
       if (controller.agentFinished()) {
+        drawNotice(controller.view());
+      }
+      break;
+    case "agentStarted":
+      // The agent started again (#112): a "finished" message from the last
+      // run is cleared, so a later finish is read out afresh. The same path
+      // as `agentFinished`: nothing saved or posted, no focus move.
+      if (controller.agentStarted()) {
         drawNotice(controller.view());
       }
       break;

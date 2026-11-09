@@ -10,6 +10,7 @@ import {
   readNoticeSettings,
   showPopup,
   tellAgentFinished,
+  tellAgentStarted,
   visibleNotices,
   type NoticeSettings,
   type VisibleNotices,
@@ -276,6 +277,38 @@ describe("tellAgentFinished (#112)", () => {
 
   it("doesn't tell the panel on a finish before any start", () => {
     assert.equal(tellAgentFinished(new RoundReadyNotice().apply(AgentSignal.Finished), open), false);
+  });
+});
+
+describe("tellAgentStarted (#112)", () => {
+  const open: NoticeSettings = { ...DEFAULT_NOTICE_SETTINGS, mode: AutoStartMode.Open };
+
+  it("tells the panel when a run has just started, in notify and open mode", () => {
+    assert.equal(tellAgentStarted(NoticeChange.Show, notify()), true);
+    assert.equal(tellAgentStarted(NoticeChange.Show, open), true);
+  });
+
+  it("tells the panel in notify mode even with every notice switched off", () => {
+    assert.equal(tellAgentStarted(NoticeChange.Show, notify({ badge: false, statusBar: false, popup: false })), true);
+  });
+
+  it("never tells the panel in off mode, the default", () => {
+    assert.equal(tellAgentStarted(NoticeChange.Show, DEFAULT_NOTICE_SETTINGS), false);
+  });
+
+  it("doesn't tell the panel on a finish, a repeated start or a link that isn't a signal", () => {
+    for (const settings of [notify(), open]) {
+      for (const change of [NoticeChange.Hide, null]) {
+        assert.equal(tellAgentStarted(change, settings), false, `${settings.mode} ${String(change)}`);
+      }
+    }
+  });
+
+  it("tells the panel once per run: a repeated start starts no run", () => {
+    const notice = new RoundReadyNotice();
+    const signals = [AgentSignal.Started, AgentSignal.Started, AgentSignal.Finished, AgentSignal.Started, AgentSignal.Started];
+    const told = signals.map((signal) => tellAgentStarted(notice.apply(signal), open));
+    assert.deepEqual(told, [true, false, false, true, false]);
   });
 });
 
