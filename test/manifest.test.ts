@@ -546,6 +546,32 @@ describe("open mode (#111)", () => {
   });
 });
 
+describe("the agent-finished message (#112)", () => {
+  const agentCode = code(extensionSource);
+  /** The provider's `agentFinished` method, which the link handler calls. */
+  const agentFinished = /\n {2}agentFinished\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+  const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+
+  it("tells the provider only from the link handler, inside the tellAgentFinished check", () => {
+    assert.match(handler, /\n {6}if \(tellAgentFinished\(change, settings\)\) \{\n {8}provider\.agentFinished\(\);\n {6}\}\n/);
+    assert.equal(agentCode.match(/provider\.agentFinished\(\)/g)?.length, 1, "only the link handler calls it");
+    const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+    assert.ok(listener, "the settings listener");
+    assert.ok(!listener.includes("agentFinished"), "a settings change never sends it");
+  });
+
+  it("only posts the fixed message, if the webview is listening now, and never waits", () => {
+    assert.ok(agentFinished, "the provider has an agentFinished method");
+    assert.match(agentFinished, /^\n {2}agentFinished\(\): void \{\n {4}void sendAgentFinished\(this\.#requests, this\.#postToView\);\n {2}\}\n$/);
+  });
+
+  it("never opens, focuses or starts a round, and keeps nothing for later", () => {
+    for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "requestOpen", "request()", "await"]) {
+      assert.ok(!agentFinished.includes(banned), banned);
+    }
+  });
+});
+
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
  * rule 8): the `workspace` API however it's imported or reached, `fs` in any

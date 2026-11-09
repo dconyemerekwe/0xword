@@ -20,6 +20,10 @@
 // `open` mode's `agentOpen` (#111) is delivered the same way, with one
 // difference: it isn't counted. However many are asked for while the webview
 // isn't listening, it gets one, after `init` and any queued `newRound`.
+//
+// `agentFinished` (#112) is never kept: it goes only to a webview listening
+// when the agent finishes (`sendAgentFinished`), and a hidden or closed panel
+// never gets it.
 import { deliver, type PostMessage } from "./post.ts";
 import {
   handleWebviewMessage,
@@ -241,6 +245,27 @@ export function sendAgentOpen(
   return sendOrKeep(post, { type: "agentOpen" }, generation, (current, attempt) =>
     requests.retryOrQueueOpen(current, attempt),
   );
+}
+
+/**
+ * Sends `agentFinished` (#112), only if the webview is listening now: posted
+ * under the current generation, and posted again up to POST_RETRIES times
+ * while it fails and that same load is still listening. It's never queued or
+ * kept, so a webview that isn't listening now (hidden, closed or still
+ * loading) never gets it, not even on its next `ready`. Resolves true if it
+ * was delivered; never rejects, and logs nothing.
+ */
+export async function sendAgentFinished(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
+  const generation = requests.isReady ? requests.generation : null;
+  if (generation === null) {
+    return false;
+  }
+  for (let attempt = 1; attempt <= POST_RETRIES + 1 && requests.isListening(generation); attempt++) {
+    if (await deliver(post, { type: "agentFinished" })) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
