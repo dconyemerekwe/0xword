@@ -83,12 +83,12 @@
           "enumDescriptions": [
             "Show nothing when your agent starts working. Your agent hooks can stay set up.",
             "Show the notices switched on below while your agent works, and remove them when it finishes.",
-            "Open the 0xWORD panel once your agent has worked for the delay below. A round in progress is shown as it is. Shows none of the notices."
+            "Agent-driven: your agent's hooks open the 0xWORD panel when it has been working for Delay Seconds, and start a new round there if your last round is over. A round in progress is never changed. Shows none of the notices."
           ],
           "default": "off",
           "scope": "window",
           "order": 0,
-          "markdownDescription": "What 0xWORD does when your agent starts working. Notices are `off` by default, so nothing shows. Choose `notify` to turn them on, or `open` to open the panel once your agent has worked for a while."
+          "markdownDescription": "What 0xWORD does when your agent starts working. Notices are `off` by default, so nothing shows. Choose `notify` to turn them on, or `open` to open the panel once your agent has worked for a while. `open` is agent-driven: your agent's hooks open the panel, and start a new round there if your last round is over. A round in progress is never changed."
         },
         "0xword.autoStart.delaySeconds": {
           "type": "number",
