@@ -57,7 +57,17 @@ export interface AgentOpenMessage {
   readonly type: "agentOpen";
 }
 
-export type HostMessage = InitMessage | NewRoundMessage | AgentOpenMessage;
+/**
+ * The agent has finished a run, in `notify` or `open` mode (#112): the
+ * webview says so on its message line if a round is in progress. Sent only
+ * to a webview that is listening right then, never kept for a later load.
+ * Never carries anything from the link.
+ */
+export interface AgentFinishedMessage {
+  readonly type: "agentFinished";
+}
+
+export type HostMessage = InitMessage | NewRoundMessage | AgentOpenMessage | AgentFinishedMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -92,6 +102,9 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   }
   if (fields?.get("type") === "agentOpen" && hasExactKeys(fields, ["type"])) {
     return { type: "agentOpen" };
+  }
+  if (fields?.get("type") === "agentFinished" && hasExactKeys(fields, ["type"])) {
+    return { type: "agentFinished" };
   }
   return null;
 }
