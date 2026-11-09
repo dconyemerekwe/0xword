@@ -142,6 +142,13 @@ let howToPlayOpenedByKeyboard = false;
 /** The last button click came from the keyboard: a click event's `detail` is 0. */
 let lastClickByKeyboard = false;
 /**
+ * A focus move `render` skipped because the panel didn't have keyboard focus
+ * (#111): the decode box at the decode step, or New round on the result
+ * card. It's made when the panel gains focus, if it still applies. Declared
+ * before the first `render` below, which may set it.
+ */
+let deferredFocus: HTMLElement | null = null;
+/**
  * The player's theme choice. The host puts a forced one on <body> in the
  * HTML (read here, untrusted like any input), and sends it again in `init`.
  * Not a game action: it isn't saved with the round, and doesn't go through
@@ -850,9 +857,10 @@ function render(view: ScreenView): void {
       ui.backButton.blur();
     }
     // The decode step: the hex is locked and the decode box takes the
-    // keyboard. Before that the box is locked and focus stays put.
+    // keyboard. Before that the box is locked and focus stays put. Only while
+    // the panel has focus: see `focusWhenPanelFocused`.
     if (!view.howToPlayOpen && view.hexLocked && document.activeElement !== ui.decodeInput) {
-      ui.decodeInput.focus();
+      focusWhenPanelFocused(ui.decodeInput);
     }
   }
 }
@@ -895,9 +903,47 @@ function drawResult(result: ScreenView["result"]): void {
   ui.resultButton.textContent = result?.button ?? NEW_ROUND_BUTTON;
   ui.resultNote.textContent = result?.note ?? "";
   if (appearing) {
-    ui.resultButton.focus();
+    focusWhenPanelFocused(ui.resultButton);
   }
 }
+
+/**
+ * Focuses `target`, the decode box or New round, which `render` moves focus
+ * to by itself, only if the panel has keyboard focus (#111). `open` mode can
+ * show and reload the panel while the player types somewhere else in VS Code,
+ * such as an agent's prompt box. Focusing the decode box then would take
+ * their keys, and Enter would submit them as the round's one try. Otherwise
+ * the move waits in `deferredFocus` until the panel gains focus.
+ */
+function focusWhenPanelFocused(target: HTMLElement): void {
+  if (document.hasFocus()) {
+    deferredFocus = null;
+    target.focus();
+  } else {
+    deferredFocus = target;
+  }
+}
+
+/**
+ * The panel gained focus: makes the focus move `render` skipped, if it still
+ * applies (the decode step, or the result card, with How to play closed) and
+ * the player hasn't focused something else in the panel themselves.
+ */
+function applyDeferredFocus(): void {
+  const target = deferredFocus;
+  deferredFocus = null;
+  if (!target || !ui) {
+    return;
+  }
+  const view = controller.view();
+  const due = target === ui.decodeInput ? view.hexLocked : view.result !== null;
+  const active = document.activeElement;
+  if (due && !view.howToPlayOpen && (active === null || active === document.body)) {
+    target.focus();
+  }
+}
+
+window.addEventListener("focus", applyDeferredFocus);
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   const message = parseHostMessage(event.data);

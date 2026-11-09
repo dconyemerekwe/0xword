@@ -261,9 +261,11 @@ class GameViewProvider implements vscode.WebviewViewProvider {
    *
    * The player may be typing elsewhere, and keys reaching the webview would
    * play the round, so the panel opens without taking keyboard focus
-   * (`show(true)`). VS Code's API has no way to open a view that was never
-   * resolved without focusing it, so only then, the first time since VS Code
-   * started, the view's focus command opens it and takes focus.
+   * (`show(true)`), and the webview moves focus by itself only while it has
+   * focus (`focusWhenPanelFocused` in media/main.ts). VS Code's API has no
+   * way to open a view it hasn't loaded without focusing it, so only then,
+   * such as the first time since VS Code started, the view's focus command
+   * opens it and takes focus.
    *
    * Isn't awaited, and any failure is ignored, so the timer never waits or
    * throws.
