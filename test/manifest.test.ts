@@ -359,7 +359,7 @@ describe("notice settings (#110)", () => {
     assert.match(text, /`open` to open the panel/);
     assert.match(
       text,
-      /`open` is agent-driven: your agent's hooks open the panel, and start a new round there if your last round is over\. A round in progress is never changed\./,
+      /`open` is agent-driven: when your agent's hooks report it has started, 0xWORD waits `delaySeconds`, then opens the panel and starts a new round if none is in progress\. A round in progress is kept as it is\.$/,
     );
   });
 
@@ -378,7 +378,7 @@ describe("notice settings (#110)", () => {
     const open = mode?.enumDescriptions?.[mode.enum?.indexOf("open") ?? -1] ?? "";
     assert.match(
       open,
-      /^Agent-driven: your agent's hooks open the 0xWORD panel when it has been working for Delay Seconds, and start a new round there if your last round is over\. A round in progress is never changed\./,
+      /^Agent-driven: when your agent's hooks report that it has started working, 0xWORD waits Delay Seconds, then opens its panel and starts a new round if none is in progress\. A round in progress is kept as it is\. If your agent finishes first, nothing opens\. Shows none of the notices\.$/,
     );
     assert.match(open, /none of the notices/);
     for (const key of ["0xword.notify.badge", "0xword.notify.statusBar", "0xword.notify.popup"]) {
