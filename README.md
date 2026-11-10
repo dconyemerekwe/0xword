@@ -75,7 +75,9 @@ You can play without a mouse:
 
 ## Play while your agent works
 
-Planned: 0xWORD will be able to show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. It works through hooks you add to your agent tool, with guides for Claude Code, GitHub Copilot, Cursor and Codex. Settings let you choose which notices you see, or turn it off. See [docs/agent-integration.md](docs/agent-integration.md).
+**Notices are off by default.** To turn them on, open **Settings → Extensions → 0xWORD** and set **Auto Start: Mode** to `notify` or `open`, or add `"0xword.autoStart.mode": "notify"` to your `settings.json`.
+
+0xWORD can show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes, or open its panel once the agent has worked for a while. It works through hooks you add to your agent tool, and a round in progress is never interrupted. For setup with Claude Code, GitHub Copilot, Copilot CLI, Cursor and Codex, see [docs/agent-integration.md](docs/agent-integration.md).
 
 ## No telemetry
 

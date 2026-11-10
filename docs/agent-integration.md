@@ -1,68 +1,92 @@
 # Play while your agent works
 
-> **Planned for Phase 7, partly built.** Built so far: the two links, `…/agent-started` and `…/agent-finished` (#109), the settings with the three notices they show and hide: the badge, the `0x Round ready` status-bar item and the pop-up (#110), `open` mode with `delaySeconds` (#111), and the message in the panel when the agent finishes (#112). Nothing shows until you choose `notify` or `open`. Everything else below (the **Copy agent hook setup** command and the per-tool snippets) isn't built yet. This is the design, and the setup guide that will ship with it (see [PLAN.md](PLAN.md#phase-7-agent-integration-later)). Each tool's hook details below were checked in October 2026 and get checked again against the tool's own docs when Phase 7 starts. Several of these hook systems are still in preview and change between versions.
+> **Notices are off by default.** Until you turn them on, 0xWORD shows nothing when your agent starts or finishes, even with the hooks below set up. To turn them on, open **Settings → Extensions → 0xWORD** and set **Auto Start: Mode** to `notify` or `open`, or add `"0xword.autoStart.mode": "notify"` to your `settings.json`.
 
-0xWORD can tell you a round is ready while your AI agent is working, and get out of the way when it's done. It works with any agent tool that can run a command when you send a prompt and when the agent finishes. This guide covers **Claude Code, GitHub Copilot, Cursor and Codex**.
+0xWORD can tell you a round is ready while your AI agent is working, and get out of the way when it's done. It works with any agent tool that can run a command when you send a prompt and when the agent finishes. This guide covers **Claude Code, GitHub Copilot (agent hooks in VS Code, and Copilot CLI), Cursor and Codex**.
+
+To set it up:
+
+1. Turn notices on (see [Settings](#settings)).
+2. Add the hooks for your agent tool (see [Setting up your agent tool](#setting-up-your-agent-tool)).
+3. Send your agent a prompt. The first time, VS Code asks **Allow an extension to open this URI?** Tick **Don't ask again** and allow it, once. Until you tick it, VS Code asks for every link.
 
 ## How it works
 
 ```
-you send a prompt ──► the tool's hook runs ──► code --open-url "vscode://…/agent-started"
+you send a prompt ──► the tool's hook runs ──► code --open-url "vscode://dconyemerekwe.0xword/agent-started"
                                                         │
                                                         ▼
                                           0xWORD shows "Round ready"
                                                         │
-the agent finishes ──► the tool's hook runs ──► code --open-url "vscode://…/agent-finished"
+the agent finishes ──► the tool's hook runs ──► code --open-url "vscode://dconyemerekwe.0xword/agent-finished"
                                                         │
                                                         ▼
                                   the notice goes away; a round in progress stays
 ```
 
-- **Two signals, and nothing else.** The hooks open one of two fixed links: `vscode://<publisher>.<extension-id>/agent-started` or `…/agent-finished`. 0xWORD ignores any other link, and any link with extra parts or arguments.
+- **Two signals, and nothing else.** The hooks open one of two fixed links: `vscode://dconyemerekwe.0xword/agent-started` or `vscode://dconyemerekwe.0xword/agent-finished`. `dconyemerekwe.0xword` is 0xWORD's extension ID. 0xWORD ignores any other link, and any link with extra parts or arguments.
 - **No data is passed.** Hooks are given your prompt by the agent tool, but these hook commands never read it, and the links carry nothing from it. 0xWORD never sees what you asked or what the agent did.
-- **You set up the hooks.** 0xWORD never edits your agent tool's config files. You add the hook yourself, using the snippets below. The **0xWORD: Copy agent hook setup** command copies the right one for your tool.
+- **You set up the hooks.** 0xWORD never edits your agent tool's config files. You add the hook yourself, using the snippets below.
 - **Without hooks, nothing changes.** You can always start a round yourself from the panel or with **0xWORD: New Round**.
-
-`<publisher>.<extension-id>` is 0xWORD's ID on the Marketplace. It's set when the extension is first published (Phase 6), and these snippets get the real value then.
 
 ## Settings
 
 Find these under **Settings → Extensions → 0xWORD**. VS Code saves them for you, so a choice lasts until you change it, across rounds, restarts and updates. You can also set them per workspace, for example off in one project and on in another.
 
+![VS Code's Settings filtered to 0xWORD's five settings, with Auto Start: Mode set to open from a list of off, notify and open, and the open choice's description showing.](screenshots/notice-settings.png)
+
 | Setting | Values | Default | What it does |
 |---|---|---|---|
-| `0xword.autoStart.mode` | `off`, `notify`, `open` | `off` | What happens when your agent starts working. `off` shows nothing, so a fresh install stays quiet, and you can pause notices without removing your hooks. Choose `notify` to turn them on. `notify` shows the notices switched on below. `open` opens the 0xWORD panel once your agent has worked for `delaySeconds`, and shows none of the notices. |
+| `0xword.autoStart.mode` | `off`, `notify`, `open` | `off` | What happens when your agent starts working. `off` shows nothing, so a fresh install stays quiet, and you can pause notices without removing your hooks. Choose `notify` to turn them on. `notify` shows the notices switched on below. `open` is agent-driven: it opens the 0xWORD panel once your agent's hooks have reported it working for `delaySeconds`, and shows none of the notices. |
 | `0xword.notify.badge` | on / off | on | In `notify` mode, a badge on the 0xWORD icon in the activity bar. It shows once you've opened the 0xWORD panel since VS Code started. |
 | `0xword.notify.statusBar` | on / off | on | In `notify` mode, `0x Round ready` in the status bar. Click it to open the panel. |
 | `0xword.notify.popup` | on / off | off | In `notify` mode, a notification in the corner with **Play** and **Not now**, once each time your agent starts. **Play** opens the panel without touching your round. |
 | `0xword.autoStart.delaySeconds` | 0 to 3600 seconds | 20 | In `open` mode only: how long the agent must still be working before the panel opens. Short prompts that finish sooner never open it. `0` opens it as soon as you send a prompt. |
+
+To turn notices on in `settings.json` instead (Command Palette → **Preferences: Open User Settings (JSON)**), add:
+
+```json
+{
+  "0xword.autoStart.mode": "notify"
+}
+```
 
 A change applies straight away, even while a notice is showing: turning the status bar off hides it, and choosing `off` clears every notice. Leaving `open` mode while 0xWORD is waiting to open the panel cancels the wait. Choosing `open` while your agent is already working starts nothing until your next prompt, and a new `delaySeconds` applies from your next prompt too. A value in a workspace's settings overrides your user setting. A value that isn't valid, for example a word other than `off`, `notify` or `open` typed into `settings.json`, or a delay that's negative, over 3600 or not a number, counts as that setting's default.
 
 ### What you'll see
 
 - **In `off` mode, the default,** nothing shows.
-- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
-- **In `open` mode,** which is agent-driven, 0xWORD opens the panel once your agent's hooks have reported it working for `delaySeconds`, at most once per prompt. If the agent finishes sooner, nothing happens. A round in progress is kept as you left it, apart from a "finished" message from the last prompt, which is cleared. If the last round is over (the result card is showing), or you haven't played one yet, a new round starts. The panel opens without taking keyboard focus, so typing elsewhere keeps going there (expected; not yet checked, see check 5 below). The panel itself doesn't move focus to its decode box or **New round** button unless it has keyboard focus (expected; see check 5). If it doesn't, that move waits until the panel gets keyboard focus. The one exception is when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started: VS Code has no way for an extension to open a view it hasn't loaded without focusing it, so then the panel takes keyboard focus. A link from a terminal outside VS Code also brings VS Code to the front as soon as you send the prompt, before the delay. No badge, status-bar item or pop-up shows in this mode.
-- **If you interrupt the agent,** some tools may not run their "finished" hook. For example, our understanding (not tested here) is that Claude Code's `Stop` hook doesn't run when you interrupt Claude. 0xWORD then still counts the agent as working, so your next prompt counts as the same run: in `open` mode the panel won't open for that prompt (and in `notify` mode no new pop-up shows). That prompt's own finish resets it, and the prompt after works as usual.
+- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. Hooks run by VS Code itself, as with Copilot's agent or an agent in an editor panel, haven't been tested yet. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
+- **In `open` mode,** which is agent-driven, 0xWORD opens the panel once your agent's hooks have reported it working for `delaySeconds`, at most once per prompt. If the agent finishes sooner, nothing happens. A round in progress is kept as you left it, apart from a "finished" message from the last prompt, which is cleared. If the last round is over (the result card is showing), or you haven't played one yet, a new round starts. The panel is meant to open without taking keyboard focus, so typing elsewhere keeps going there, and not to move focus to its decode box or **New round** button until the panel gets keyboard focus (for example, when you click into it). This hasn't been tested yet. The one exception is when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started: VS Code has no way for an extension to open a view it hasn't loaded without focusing it, so then the panel takes keyboard focus. A link from a terminal outside VS Code also brings VS Code to the front as soon as you send the prompt, before the delay. No badge, status-bar item or pop-up shows in this mode.
+- **If you interrupt the agent,** some tools don't run their "finished" hook. Claude Code's docs say its `Stop` hook doesn't run when you interrupt Claude, and Codex has a separate `Interrupt` event. 0xWORD then still counts the agent as working, so your next prompt counts as the same run: in `open` mode the panel won't open for that prompt (and in `notify` mode no new pop-up shows). That prompt's own finish resets it, and the prompt after works as usual.
 - **A round in progress is never interrupted.** In `notify` and `open` mode, if the agent finishes mid-round while the panel is showing, the line under the grid says "Your agent has finished. Your round is still here." and you can finish or leave the round. It goes away when you next use the keypad, score a row or submit your word, or when your agent starts working again. Typing in the decode box doesn't clear it. If the panel was hidden, or the result card is showing, nothing is shown.
 - **An unfinished round carries over.** Play a row or two while one prompt runs and pick it up again on the next.
 
 ## Setting up your agent tool
 
-Each hook runs one command:
+Each hook runs one command when you send a prompt:
 
 ```sh
-code --open-url "vscode://<publisher>.<extension-id>/agent-started"
+code --open-url "vscode://dconyemerekwe.0xword/agent-started"
 ```
 
-and the same with `/agent-finished`. `code` is VS Code's command-line launcher. The Windows and Linux installers usually add it to your PATH. On macOS, open VS Code's Command Palette and run **Shell Command: Install 'code' command in PATH**.
+and one when the agent finishes:
 
-The commands print nothing. Keep it that way: some tools add a hook's output to the conversation or read it as an answer.
+```sh
+code --open-url "vscode://dconyemerekwe.0xword/agent-finished"
+```
+
+`code` is VS Code's command-line launcher. The Windows and Linux installers usually add it to your PATH. On macOS, open VS Code's Command Palette and run **Shell Command: Install 'code' command in PATH**.
+
+The commands print nothing. Keep it that way: some tools add a hook's output to the conversation or read it as an answer. Don't add `echo` or other output to them.
+
+Agent tools change their hook systems often, and several are still in preview. Each section below says when it was last checked against the tool's own docs, and marks anything not yet tested.
 
 ### Claude Code
 
-Add this to `~/.claude/settings.json` to use it in every project, or `.claude/settings.json` in a project to use it there only. If the file already has a `hooks` section, add these two entries to it.
+Checked 2026-11-10 against [Claude Code's hooks reference](https://code.claude.com/docs/en/hooks).
+
+Add this to `~/.claude/settings.json`, your user settings, so it works in every project. If the file already exists, don't paste in a second object: put the `UserPromptSubmit` and `Stop` entries inside its `hooks` object, or add a `hooks` key if it has none. If the file already has a `UserPromptSubmit` or `Stop` list, add the inner `{ "hooks": [ … ] }` entry to that existing list instead of adding a second key: a second key with the same name replaces the first, so one of the hooks would be lost.
 
 ```json
 {
@@ -70,14 +94,14 @@ Add this to `~/.claude/settings.json` to use it in every project, or `.claude/se
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "code --open-url \"vscode://<publisher>.<extension-id>/agent-started\"" }
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "code --open-url \"vscode://<publisher>.<extension-id>/agent-finished\"" }
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"" }
         ]
       }
     ]
@@ -85,95 +109,137 @@ Add this to `~/.claude/settings.json` to use it in every project, or `.claude/se
 }
 ```
 
-- `UserPromptSubmit` runs when you send a prompt, and `Stop` runs when Claude finishes its reply.
+- `UserPromptSubmit` runs when you send a prompt, and `Stop` runs when Claude finishes its reply. Neither needs a `matcher`.
+- On `UserPromptSubmit`, anything the command prints is added to Claude's context, which is why it must print nothing. Exit code 0 with no output is success.
+- `Stop` doesn't run when you interrupt Claude (see [What you'll see](#what-youll-see)).
+- Each hook can take an optional `"shell"`: `"bash"` or `"powershell"`. The default is bash, or PowerShell on Windows when Git Bash isn't installed. The command works in both.
 - Run `/hooks` in Claude Code to check they're loaded.
+- **Use your user settings, not a project's.** Claude Code also reads `.claude/settings.json` (one project, shared with everyone who clones it) and `.claude/settings.local.json` (one project, just you). GitHub Copilot's agent in VS Code and Copilot CLI read a repo's `.claude/settings.json` too, so a hook placed there could also run from those tools, and for everyone who clones the repo.
 
-### GitHub Copilot
+### GitHub Copilot agent hooks in VS Code
 
-Copilot has two hook systems. Both are newer and may change.
+Checked 2026-11-10 against [VS Code's agent hooks guide](https://code.visualstudio.com/docs/copilot/customization/hooks). Agent hooks are in preview, and organisations can turn them off.
 
-- **Copilot agent in VS Code** (agent hooks, in preview): it has `UserPromptSubmit` and `Stop` events, configured in JSON hook files. To be written up from [VS Code's hooks guide](https://code.visualstudio.com/docs/copilot/customization/hooks) and [hooks reference](https://code.visualstudio.com/docs/agents/reference/hooks-reference) when Phase 7 starts. Organisations can turn hooks off.
-- **Copilot CLI:** hooks live in a `hooks.json` with `"version": 1`, and each entry gives both a `bash` and a `powershell` command so it runs on every OS. It has a `userPromptSubmitted` event, but its closest "finished" event is `sessionEnd`, which fires when the whole session ends, not after each reply. Without a per-reply event, the notice would stay up until the session closes. See [GitHub's hooks reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference).
+Save this as a `.json` file in `~/.copilot/hooks/` (or `$COPILOT_HOME/hooks/`), for example `~/.copilot/hooks/0xword.json`. A repo's `.github/hooks/` folder also works, but would share the hook with everyone who clones the repo.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "userPromptSubmitted": [
+      { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"", "timeoutSec": 10 }
+    ],
+    "agentStop": [
+      { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"", "timeoutSec": 10 }
+    ]
+  }
+}
+```
+
+- Use the **Copilot** session target. The older `chat.useHooks` settings don't configure these hooks.
+- `userPromptSubmitted` runs when you send a prompt, and its output is ignored. `agentStop` runs when the agent finishes.
+- An entry can also give separate `bash` and `powershell` commands. The one `command` above works in both.
+- Not documented on that page: exit codes, and what happens to `agentStop`'s output. The command prints nothing and exits 0, so neither should matter.
+
+### Copilot CLI
+
+Checked 2026-11-10 against [GitHub's Copilot CLI hooks reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference).
+
+Copilot CLI uses the same file format, in the same places: any `.json` file in `~/.copilot/hooks/` (on Windows, `%USERPROFILE%\.copilot\hooks\`), or a repo's `.github/hooks/`. The file from the section above works for Copilot CLI too, so if you've saved it there you're done.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "userPromptSubmitted": [
+      { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"", "timeoutSec": 10 }
+    ],
+    "agentStop": [
+      { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"", "timeoutSec": 10 }
+    ]
+  }
+}
+```
+
+- `userPromptSubmitted` runs when you send a prompt. `agentStop` runs when the main agent finishes a turn, so the notice clears after each reply. (`sessionEnd`, which runs only when the whole session ends, isn't needed.)
+- `command` is used for both `bash` and `powershell` when those aren't given. `timeoutSec` defaults to 30.
+- Empty output counts as no output. A non-zero exit code is logged and skipped. A sandbox may apply to hook commands.
+- Copilot CLI runs in a terminal. From a terminal outside VS Code, the link brings VS Code to the front (see [What you'll see](#what-youll-see)).
 
 ### Cursor
 
-Cursor's hooks live in a `hooks.json`, in your home folder or in a project. It has a `beforeSubmitPrompt` event (when you send a prompt) and a `stop` event (when the agent finishes). See [Cursor's hooks docs](https://cursor.com/docs/agent/hooks).
+Checked 2026-11-10 against [Cursor's hooks docs](https://cursor.com/docs/agent/hooks).
 
-- `beforeSubmitPrompt` can block a prompt, so check what the hook has to print for the prompt to go through.
-- Cursor uses its own link scheme, `cursor://`, and its own launcher. Check both before writing the snippet.
+> **Not yet tested; check before relying on it.** Cursor's docs don't say which link scheme Cursor registers, or whether its `cursor` launcher supports `--open-url`. The snippet below assumes `cursor://` and `cursor --open-url`, as VS Code uses `vscode://` and `code --open-url`. Try both commands in a terminal first: with notices on, `0x Round ready` should appear in Cursor's status bar, then go away.
+
+Add this to `~/.cursor/hooks.json` (your user hooks; their commands run from `~/.cursor/`). A project's `.cursor/hooks.json` also works, but only in a trusted workspace. If the file already exists, keep its one `"version"` and put the two entries under its existing `hooks`. If it already has a `beforeSubmitPrompt` or `stop` list, add the entry to that list instead of a second key.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      { "command": "cursor --open-url \"cursor://dconyemerekwe.0xword/agent-started\"" }
+    ],
+    "stop": [
+      { "command": "cursor --open-url \"cursor://dconyemerekwe.0xword/agent-finished\"" }
+    ]
+  }
+}
+```
+
+- `beforeSubmitPrompt` runs when you send a prompt, and `stop` when the agent finishes. `"version": 1` is required.
+- On Windows, Cursor's desktop app runs hook commands through PowerShell.
+- Exit code 0 is success, 2 blocks, and any other code fails open.
+- `beforeSubmitPrompt` can block a prompt. Cursor's docs don't say whether a hook that prints nothing lets the prompt through. Their own example hook prints nothing and exits 0, so it's expected to, but that isn't confirmed.
 
 ### Codex
 
-Codex CLI has two ways to run a command:
+Checked 2026-11-10 against [Codex's hooks docs](https://learn.chatgpt.com/docs/hooks).
 
-- **Hooks** (experimental, off by default): turned on with a feature flag in `~/.codex/config.toml`. It has `UserPromptSubmit` and `Stop` events, so it can send both signals.
-- **`notify`:** an older setting in `config.toml` that runs a command when the agent finishes a turn. It can only send `agent-finished`, so on its own it can't show a notice when you send a prompt.
+Codex hooks are on by default (`[features] hooks = false` in `config.toml` turns them off). Add this to `~/.codex/hooks.json`. If the file already exists, put the two entries under its existing `hooks`. If it already has a `UserPromptSubmit` or `Stop` list, add the inner `{ "hooks": [ … ] }` entry to that list instead of a second key. A repo's `.codex/` folder also works, but is loaded only when the repo is trusted. Codex asks you to review and trust new hooks before they run.
 
-The hooks format has changed between versions, so this section is written against the current Codex docs when Phase 7 starts.
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `UserPromptSubmit` runs when you send a prompt, and anything it prints becomes context, which is why it must print nothing. `Stop` runs when the agent finishes.
+- On `Stop`, exit code 0 with no output is expected to be fine, but Codex's docs don't say so clearly.
+- Interrupting the agent fires Codex's separate `Interrupt` event, not `Stop`.
+- Hooks can also go in `~/.codex/config.toml`. Use `hooks.json`: the TOML form isn't covered here.
+- Codex's older `notify` setting runs a command only when the agent finishes, so it can send `agent-finished` but never `agent-started`. Use hooks instead.
+
+## Known limits
+
+- **Copilot CLI** sends both signals with `userPromptSubmitted` and `agentStop`. `sessionEnd`, its other "finished" event, fires only when the whole session ends.
+- **Codex** sends both signals with hooks. Its older `notify` setting can only send `agent-finished`.
+- **Cursor's** link scheme and launcher aren't tested yet (see [Cursor](#cursor)).
+- **Interrupting the agent** may skip the "finished" hook (see [What you'll see](#what-youll-see)).
+- **From a terminal outside VS Code,** each link brings VS Code to the front.
+- **Several VS Code windows.** Which window gets the link when several are open hasn't been tested yet.
+- **Only tried on Windows.** How VS Code handles these links (the confirmation, coming to the front, keyboard focus) has only been tried on Windows. Hooks that your agent tool runs in the background haven't been tested yet.
+- **Other editors.** The snippets cover VS Code (stable) and Cursor (not yet tested). VS Code Insiders, VSCodium and other editors use their own launcher and link scheme (for example `code-insiders` with `vscode-insiders`, or `codium` with `vscodium`), and haven't been tested. A snippet that uses `code` sends the link to stable VS Code, even if you play in another editor.
 
 ## Privacy and security
 
 - **No telemetry.** 0xWORD still collects nothing and sends nothing. The hooks only open a link on your own machine.
 - **Your prompts stay with your agent tool.** The hook commands never read them, and the links never carry them.
-- **Only two fixed links do anything.** Any other `vscode://` link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, open the 0xWORD panel in `open` mode (never replacing a round in progress, and without taking keyboard focus, except when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started), and bring VS Code to the front.
+- **Only two fixed links do anything.** Any other link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, open the 0xWORD panel in `open` mode (never replacing a round in progress, and, though this hasn't been tested yet, without taking keyboard focus, except when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started), and bring VS Code to the front.
 - **Your config files stay yours.** 0xWORD never writes to your agent tool's settings. You add and remove the hooks.
-
-## Still to check before Phase 7 ships
-
-### The owner's checks on Windows (#109)
-
-Checks 1 and 2, and the extra focus check 4, are done; their results are below. Check 3 is still open.
-
-**Setup:** get the `.vsix` for #109: download the `0xword-vsix` artifact from this PR's CI run (Actions tab), or run `npm run package`. Install it (Extensions view → `...` → **Install from VSIX...**) and reload the window. Run the commands below in a PowerShell window outside VS Code, not in VS Code's own terminal, so VS Code isn't already the focused app. Don't open the 0xWORD panel first.
-
-```powershell
-code --open-url "vscode://dconyemerekwe.0xword/agent-started"
-code --open-url "vscode://dconyemerekwe.0xword/agent-finished"
-```
-
-Do the checks in this order. A confirmation dialog may bring VS Code to the front by itself, so the focus check runs only once links go through with no dialog.
-
-1. **Does VS Code ask for confirmation before passing the link on?**
-   - Open one VS Code window, then put another app (for example Notepad) in front of it. Click back into the PowerShell window and run the `agent-started` command.
-   - Note whether VS Code shows a dialog asking to allow 0xWORD to open the link, and its exact wording and options (for example a "don't ask again" box). **Don't tick "don't ask again" on this first run.**
-   - If a dialog showed, note separately whether the dialog itself brought VS Code to the front.
-   - If it asks, note whether it asks again for the next link (run `agent-finished`), and again after a restart of VS Code. Once you've answered those, tick "don't ask again" before the focus check.
-   - To undo "don't ask again" later, search the Command Palette for "Authorized Extension URIs".
-   - **Result:** VS Code shows "Allow an extension to open this URI?" for every link, even after allowing it, until **Don't ask again** is ticked. After that, it stops asking and links go straight through. Players will need to tick it once, and the setup guide (#113) must say so.
-2. **Does `code --open-url` bring VS Code to the front?** Only once links go through with no dialog (check 1).
-   - Put another app (for example Notepad) in front of VS Code, so VS Code is behind it but not minimised. Click back into the PowerShell window.
-   - Run the `agent-started` command. Note whether VS Code comes to the front, its taskbar button flashes, or nothing visible happens, and whether `0x Round ready` shows in VS Code's status bar (bottom right) when you switch back to it.
-   - Run `agent-finished` and check the notice goes away.
-   - Minimise VS Code and repeat both commands, noting the same things.
-   - **Result:** with VS Code behind another app, `code --open-url` from an outside PowerShell window brings VS Code to the front.
-3. **Which window gets the link when several are open?**
-   - Open two VS Code windows on different folders, A and B. Click into A last, then into the PowerShell window.
-   - Run `agent-started` and note which window shows `0x Round ready`: A (the last focused), B, both, neither, a new window opened, or something else (describe it).
-   - Click into B, then the PowerShell window, and run `agent-finished`. Note whether the notice in A goes away, stays because B got the link, or something else happens (describe it).
-   - Result: not tried yet (see "Still open" below).
-4. **Does a link from VS Code's own terminal move keyboard focus?** Added by the owner after check 2.
-   - With VS Code already in front and the cursor in the Claude Code prompt box, run `agent-started` from VS Code's own terminal.
-   - **Result:** keyboard focus didn't move. Typing stayed in the prompt box, and `0x Round ready` appeared in the status bar.
-
-**What this means:** a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus. From an outside terminal, VS Code comes to the front. Agent hooks run as background processes, which weren't tested.
-
-### The owner's check for `open` mode (#111)
-
-5. **Does the panel open without taking keyboard focus?**
-   - Set `0xword.autoStart.mode` to `open`, with `0xword.autoStart.delaySeconds` at 20. Play a row or two, so a round is in progress.
-   - Put the cursor in the Claude Code prompt box. Run `agent-started` from VS Code's own terminal, click back into the prompt box, and keep typing, including digits, Backspace and Enter, until well after the 20 seconds are up.
-   - Note whether the keys stay in the prompt box when the panel opens, and whether the round is unchanged: the same rows, no new digits, nothing submitted.
-   - Try it twice: once with the 0xWORD panel opened earlier in the session (expected: focus stays in the prompt box), and once after a restart of VS Code without opening the panel first (expected: VS Code hasn't loaded the panel yet, so this open takes keyboard focus, as VS Code has no way to avoid it).
-   - **At the decode step:** play until a row is fully right (or six rows are used), so the panel shows the one-try word box, and don't type in it. Then repeat the steps above, typing letters and Enter in the prompt box, in two ways:
-     - **(a) Hidden:** open another view in the same side bar (for example the Explorer), so the 0xWORD panel is hidden behind it before `agent-started`.
-     - **(b) Visible:** keep the 0xWORD panel showing, then click into the editor and type there instead of the prompt box.
-   - Expected for both (not yet checked): when the panel shows or reloads, it doesn't move focus to its word box, because the panel doesn't have keyboard focus. Your keys stay where you're typing, and nothing is submitted as the word try. When you then click into the panel, the word box takes focus. On a result card, **New round** takes focus at that point instead.
-   - Result: not tried yet.
-
-### Still open
-
-- Which window gets the link when several are open (check 3).
-- Whether `open` mode opens the panel without taking keyboard focus (check 5), in a round in progress and at the decode step.
-- At the decode step, with the panel hidden behind another view in the same side bar (check 5a).
-- At the decode step, with the panel visible after clicking into the editor (check 5b).
-- Each tool's current hook format, events and output rules, as listed in its section above.

@@ -19,3 +19,7 @@ All notable changes to 0xWORD are listed here, newest first.
 - The round in progress is kept when you hide the panel or reload VS Code.
 - Bundled DM Sans and JetBrains Mono fonts, so nothing is downloaded. No network access and no telemetry.
 - The Marketplace and activity-bar icons.
+- Play while your agent works: hooks you add to Claude Code, GitHub Copilot, Copilot CLI, Cursor (not yet tested) or Codex tell 0xWORD when your agent starts and finishes, with a setup guide for each tool. Notices are off by default: set **Auto Start: Mode** to `notify` or `open` in 0xWORD's settings to turn them on.
+- `notify` mode: while your agent works, a badge on the 0xWORD icon, `0x Round ready` in the status bar, and an optional pop-up with **Play** and **Not now**, each switched on or off in the settings. They go away when the agent finishes.
+- `open` mode: once your agent has worked for a while (20 seconds by default), the 0xWORD panel opens by itself, keeping a round in progress as it is.
+- When your agent finishes mid-round, the panel says "Your agent has finished. Your round is still here."
