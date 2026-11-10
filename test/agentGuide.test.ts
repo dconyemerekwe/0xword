@@ -28,10 +28,13 @@ const ALLOWED_LINKS: ReadonlySet<string> = new Set(
 );
 
 /** The README's "Play while your agent works" section, up to the next section. */
-const readmeAgentSection = readme.slice(
-  readme.indexOf("## Play while your agent works"),
-  readme.indexOf("## No telemetry"),
-);
+const readmeAgentSection = ((): string => {
+  const start = readme.indexOf("## Play while your agent works");
+  const end = readme.indexOf("## No telemetry");
+  assert.ok(start >= 0, "the README has no ## Play while your agent works");
+  assert.ok(end >= 0, "the README has no ## No telemetry");
+  return readme.slice(start, end);
+})();
 
 /** The documents whose links and code blocks are checked: the guide and the maintainer's checklist. */
 const LINKED_DOCUMENTS: readonly (readonly [string, string])[] = [
@@ -295,6 +298,13 @@ describe("the guide is for players only", () => {
     assert.match(guide, /This hasn't been tested yet\./);
     const limits = guide.slice(guide.indexOf("\n## Known limits\n")).split(/\n## /)[1] ?? "";
     assert.match(limits, /Several VS Code windows/);
+  });
+
+  it("states as a known limit that the links were only tried on Windows, and background hooks not at all", () => {
+    const limits = guide.slice(guide.indexOf("\n## Known limits\n")).split(/\n## /)[1] ?? "";
+    const windows = limits.split("\n").find((line) => line.startsWith("- **Only tried on Windows.**")) ?? "";
+    assert.match(windows, /has only been tried on Windows/);
+    assert.match(windows, /in the background haven't been tested yet/);
   });
 });
 
