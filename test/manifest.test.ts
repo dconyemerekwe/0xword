@@ -601,6 +601,46 @@ describe("the agent-finished message (#112)", () => {
   });
 });
 
+
+describe("the result-card line follows the agent (#121)", () => {
+  const agentCode = code(extensionSource);
+  /** `update`, which both the link handler and the settings listener call. */
+  const update = /const update = \(settings: NoticeSettings\): void => \{[\s\S]*?\n {2}\};/.exec(agentCode)?.[0] ?? "";
+  const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+  const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+  /** The provider's `setAgentState` method. */
+  const setAgentState = /\n {2}setAgentState\(state: AgentState\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("records the state from the last signal and the mode in update, after every signal and settings change", () => {
+    assert.ok(update, "update");
+    assert.ok(update.includes("provider.setAgentState(agentStateFor(notice.lastSignal, settings));"));
+    assert.equal(agentCode.match(/provider\.setAgentState\(/g)?.length, 1, "only update calls it");
+    assert.match(handler, /\n {6}update\(settings\);\n/, "the link handler runs update");
+    assert.match(listener, /\n {6}update\(settings\);\n/, "the settings listener runs update");
+  });
+
+  it("keeps the state and posts it only if the webview is listening now, read at each post", () => {
+    assert.ok(setAgentState, "the provider has a setAgentState method");
+    assert.match(
+      setAgentState,
+      /^\n {2}setAgentState\(state: AgentState\): void \{\n {4}this\.#agentState = state;\n {4}void sendAgentState\(this\.#requests, this\.#postToView, this\.#currentAgentState\);\n {2}\}\n$/,
+    );
+    assert.ok(agentCode.includes("readonly #currentAgentState = (): AgentState => this.#agentState;"));
+    assert.ok(agentCode.includes("#agentState: AgentState = AgentState.None;"), "no line until a signal arrives");
+  });
+
+  it("never opens, focuses or starts a round", () => {
+    for (const banned of ["focus", "show(", "executeCommand", "newRound", "requestOpen", "request()", "await"]) {
+      assert.ok(!setAgentState.includes(banned), banned);
+    }
+  });
+
+  it("gives every load the current state: answerWebview reads #currentAgentState", () => {
+    const answer = /void answerWebview\(([\s\S]*?)\);/.exec(agentCode)?.[1] ?? "";
+    assert.ok(answer, "the message listener calls answerWebview");
+    assert.match(answer, /this\.#postToView,\s*this\.#currentAgentState,\s*$/);
+  });
+});
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
  * rule 8): the `workspace` API however it's imported or reached, `fs` in any
