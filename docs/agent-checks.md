@@ -1,6 +1,6 @@
 # Agent integration: the owner's manual checks
 
-> **For the maintainer, not for players.** These are the step-by-step manual checks of how VS Code passes 0xWORD's links on, run by the owner on Windows. Players should read the setup guide, [agent-integration.md](agent-integration.md), which sums up the results under [What's been checked](agent-integration.md#whats-been-checked).
+> **For the maintainer, not for players.** These are the step-by-step manual checks of how VS Code passes 0xWORD's links on, run by the owner on Windows. Players should read the setup guide, [agent-integration.md](agent-integration.md).
 
 Checks 1, 2 and 4 are done; their results are below. Check 3 (several windows) and check 5 (`open` mode and keyboard focus, with its decode-step cases 5a and 5b) are still open.
 

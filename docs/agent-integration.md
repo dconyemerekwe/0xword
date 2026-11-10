@@ -26,7 +26,7 @@ the agent finishes ──► the tool's hook runs ──► code --open-url "vsc
 
 - **Two signals, and nothing else.** The hooks open one of two fixed links: `vscode://dconyemerekwe.0xword/agent-started` or `vscode://dconyemerekwe.0xword/agent-finished`. `dconyemerekwe.0xword` is 0xWORD's extension ID. 0xWORD ignores any other link, and any link with extra parts or arguments.
 - **No data is passed.** Hooks are given your prompt by the agent tool, but these hook commands never read it, and the links carry nothing from it. 0xWORD never sees what you asked or what the agent did.
-- **You set up the hooks.** 0xWORD never edits your agent tool's config files. You add the hook yourself, using the snippets below. A **0xWORD: Copy agent hook setup** command, to copy the right snippet for your tool, is planned for a later update (#114).
+- **You set up the hooks.** 0xWORD never edits your agent tool's config files. You add the hook yourself, using the snippets below.
 - **Without hooks, nothing changes.** You can always start a round yourself from the panel or with **0xWORD: New Round**.
 
 ## Settings
@@ -56,8 +56,8 @@ A change applies straight away, even while a notice is showing: turning the stat
 ### What you'll see
 
 - **In `off` mode, the default,** nothing shows.
-- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, didn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. Hooks run by VS Code itself, as with Copilot's agent or an agent in an editor panel, haven't been tested yet. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
-- **In `open` mode,** which is agent-driven, 0xWORD opens the panel once your agent's hooks have reported it working for `delaySeconds`, at most once per prompt. If the agent finishes sooner, nothing happens. A round in progress is kept as you left it, apart from a "finished" message from the last prompt, which is cleared. If the last round is over (the result card is showing), or you haven't played one yet, a new round starts. The panel opens without taking keyboard focus, so typing elsewhere keeps going there (expected; not yet checked, see check 5 in [What's been checked](#whats-been-checked)). The panel itself doesn't move focus to its decode box or **New round** button unless it has keyboard focus (expected; see check 5). If it doesn't, that move waits until the panel gets keyboard focus. The one exception is when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started: VS Code has no way for an extension to open a view it hasn't loaded without focusing it, so then the panel takes keyboard focus. A link from a terminal outside VS Code also brings VS Code to the front as soon as you send the prompt, before the delay. No badge, status-bar item or pop-up shows in this mode.
+- **In `notify` mode,** the notices you've turned on appear as soon as you send a prompt, and disappear when the agent finishes. Click one to open the panel. Whether VS Code comes forward depends on where your agent runs: a link opened from VS Code's own terminal, with VS Code in front, doesn't move keyboard focus, but from a terminal outside VS Code, VS Code comes to the front. Hooks run by VS Code itself, as with Copilot's agent or an agent in an editor panel, haven't been tested yet. The pop-up itself is a normal VS Code notification and doesn't take keyboard focus. VS Code can't close a pop-up for 0xWORD, so a pop-up still showing when the agent finishes stays until you close it.
+- **In `open` mode,** which is agent-driven, 0xWORD opens the panel once your agent's hooks have reported it working for `delaySeconds`, at most once per prompt. If the agent finishes sooner, nothing happens. A round in progress is kept as you left it, apart from a "finished" message from the last prompt, which is cleared. If the last round is over (the result card is showing), or you haven't played one yet, a new round starts. The panel is meant to open without taking keyboard focus, so typing elsewhere keeps going there, and not to move focus to its decode box or **New round** button until you click into it. This hasn't been tested yet. The one exception is when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started: VS Code has no way for an extension to open a view it hasn't loaded without focusing it, so then the panel takes keyboard focus. A link from a terminal outside VS Code also brings VS Code to the front as soon as you send the prompt, before the delay. No badge, status-bar item or pop-up shows in this mode.
 - **If you interrupt the agent,** some tools don't run their "finished" hook. Claude Code's docs say its `Stop` hook doesn't run when you interrupt Claude, and Codex has a separate `Interrupt` event. 0xWORD then still counts the agent as working, so your next prompt counts as the same run: in `open` mode the panel won't open for that prompt (and in `notify` mode no new pop-up shows). That prompt's own finish resets it, and the prompt after works as usual.
 - **A round in progress is never interrupted.** In `notify` and `open` mode, if the agent finishes mid-round while the panel is showing, the line under the grid says "Your agent has finished. Your round is still here." and you can finish or leave the round. It goes away when you next use the keypad, score a row or submit your word, or when your agent starts working again. Typing in the decode box doesn't clear it. If the panel was hidden, or the result card is showing, nothing is shown.
 - **An unfinished round carries over.** Play a row or two while one prompt runs and pick it up again on the next.
@@ -233,24 +233,12 @@ Codex hooks are on by default (`[features] hooks = false` in `config.toml` turns
 - **Cursor's** link scheme and launcher aren't tested yet (see [Cursor](#cursor)).
 - **Interrupting the agent** may skip the "finished" hook (see [What you'll see](#what-youll-see)).
 - **From a terminal outside VS Code,** each link brings VS Code to the front.
+- **Several VS Code windows.** Which window gets the link when several are open hasn't been tested yet.
 - **Other editors.** The snippets cover VS Code (stable) and Cursor (not yet tested). VS Code Insiders, VSCodium and other editors use their own launcher and link scheme (for example `code-insiders` with `vscode-insiders`, or `codium` with `vscodium`), and haven't been tested. A snippet that uses `code` sends the link to stable VS Code, even if you play in another editor.
 
 ## Privacy and security
 
 - **No telemetry.** 0xWORD still collects nothing and sends nothing. The hooks only open a link on your own machine.
 - **Your prompts stay with your agent tool.** The hook commands never read them, and the links never carry them.
-- **Only two fixed links do anything.** Any other link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, open the 0xWORD panel in `open` mode (never replacing a round in progress, and without taking keyboard focus (expected; see check 5), except when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started), and bring VS Code to the front.
+- **Only two fixed links do anything.** Any other link to 0xWORD is ignored. Because any program or web page on your machine can open a `vscode://` link, the worst a stray link can do is show or clear a "Round ready" notice, open the 0xWORD panel in `open` mode (never replacing a round in progress, and, though this hasn't been tested yet, without taking keyboard focus, except when VS Code hasn't loaded the 0xWORD panel yet, such as the first time since VS Code started), and bring VS Code to the front.
 - **Your config files stay yours.** 0xWORD never writes to your agent tool's settings. You add and remove the hooks.
-
-## What's been checked
-
-The owner has tried the links by hand in VS Code on Windows. The steps are in the maintainer's checklist, [agent-checks.md](agent-checks.md).
-
-- **Checked:**
-  - **The confirmation (check 1):** VS Code asks "Allow an extension to open this URI?" for every link until you tick **Don't ask again**. After that, links go straight through.
-  - **An outside terminal (check 2):** a link opened from a terminal outside VS Code brings VS Code to the front.
-  - **VS Code's own terminal (check 4):** with VS Code in front, a link opened from VS Code's own terminal didn't move keyboard focus.
-- **Not yet checked:**
-  - **Several windows (check 3):** which VS Code window gets the link when several are open.
-  - **`open` mode and keyboard focus (check 5):** whether the panel opens without taking keyboard focus, in a round in progress and at the decode step, with the panel hidden behind another view (5a) or showing while you type elsewhere (5b).
-  - **Hooks run by VS Code itself,** as with Copilot's agent or an agent in an editor panel, and hooks run as background processes.

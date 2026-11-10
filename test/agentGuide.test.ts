@@ -254,12 +254,47 @@ describe("the guide as a setup guide", () => {
 
   it("keeps the maintainer's test steps out of the guide, in agent-checks.md", () => {
     assert.doesNotMatch(guide, /0xword-vsix|this PR|Install from VSIX/);
-    assert.ok(guide.includes("[agent-checks.md](agent-checks.md)"));
-    assert.ok(guide.includes("\n## What's been checked\n"));
     assert.match(checks.split("\n").find((line) => line.startsWith("> ")) ?? "", /For the maintainer, not for players/);
     for (const heading of ["## The owner's checks on Windows (#109)", "## The owner's check for `open` mode (#111)", "## Still open"]) {
       assert.ok(checks.split("\n").includes(heading), heading);
     }
+  });
+});
+
+describe("the guide is for players only", () => {
+  /** What only the maintainer needs: owner check numbers, the checklist, issue numbers and roadmap. */
+  const MAINTAINER_ONLY = [
+    /\bcheck \d/i,
+    /\(expected;/,
+    /agent-checks/,
+    /What's been checked/,
+    /#\d+/,
+    /Copy agent hook setup/,
+    /\bplanned\b|\bPhase \d/i,
+    /\bthe owner\b/i,
+  ];
+
+  it("mentions no owner checks, maintainer checklist, issue numbers or roadmap", () => {
+    for (const pattern of MAINTAINER_ONLY) {
+      assert.doesNotMatch(guide, pattern);
+    }
+  });
+
+  it("the check catches check 5, agent-checks.md, #114 and a planned command", () => {
+    for (const text of [
+      "(expected; see check 5)",
+      "see [agent-checks.md](agent-checks.md)",
+      "planned for a later update (#114)",
+      "A **0xWORD: Copy agent hook setup** command",
+    ]) {
+      assert.ok(MAINTAINER_ONLY.some((pattern) => pattern.test(text)), text);
+    }
+  });
+
+  it("still says plainly what hasn't been tested", () => {
+    assert.match(guide, /This hasn't been tested yet\./);
+    const limits = guide.slice(guide.indexOf("\n## Known limits\n")).split(/\n## /)[1] ?? "";
+    assert.match(limits, /Several VS Code windows/);
   });
 });
 
