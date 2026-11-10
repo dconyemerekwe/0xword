@@ -23,3 +23,4 @@ All notable changes to 0xWORD are listed here, newest first.
 - `notify` mode: while your agent works, a badge on the 0xWORD icon, `0x Round ready` in the status bar, and an optional pop-up with **Play** and **Not now**, each switched on or off in the settings. They go away when the agent finishes.
 - `open` mode: once your agent has worked for a while (20 seconds by default), the 0xWORD panel opens by itself, keeping a round in progress as it is.
 - When your agent finishes mid-round, the panel says "Your agent has finished. Your round is still here."
+- In `notify` and `open` mode, the line under the result card says whether your agent is still working or has finished, and updates as soon as that changes. In `off` mode, or before your agent has sent anything, there's no line.
