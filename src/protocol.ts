@@ -5,6 +5,7 @@
 // Everything arriving through `postMessage` is untrusted (CLAUDE.md security
 // rule 7): it is checked against a fixed allowlist, field by field, and only a
 // freshly built copy of the allowed fields is ever used.
+import { isAgentState, type AgentState } from "./agentSignals.ts";
 import { hasExactKeys, isIntegerInRange, plainFields } from "./game/plain.ts";
 import { MAX_ROWS, type RoundResult } from "./game/round.ts";
 import { parseStatsView, toStatsView, type Stats, type StatsView } from "./stats.ts";
@@ -77,12 +78,26 @@ export interface AgentStartedMessage {
   readonly type: "agentStarted";
 }
 
+/**
+ * What the line under the result card says about the agent (#121): nothing,
+ * "still working" or "finished". The host works it out from the last signal
+ * and the mode, never from the link itself. Sent to a listening webview
+ * after every signal and settings change, and after `init` on every load
+ * unless it's `none`, which every load starts with. The webview keeps it out
+ * of the round's saved state.
+ */
+export interface AgentStateMessage {
+  readonly type: "agentState";
+  readonly state: AgentState;
+}
+
 export type HostMessage =
   | InitMessage
   | NewRoundMessage
   | AgentOpenMessage
   | AgentFinishedMessage
-  | AgentStartedMessage;
+  | AgentStartedMessage
+  | AgentStateMessage;
 
 /**
  * Checks a message from the webview. Returns a new object holding exactly the
@@ -123,6 +138,10 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
   }
   if (fields?.get("type") === "agentStarted" && hasExactKeys(fields, ["type"])) {
     return { type: "agentStarted" };
+  }
+  if (fields?.get("type") === "agentState" && hasExactKeys(fields, ["type", "state"])) {
+    const state = fields.get("state");
+    return isAgentState(state) ? { type: "agentState", state } : null;
   }
   return null;
 }

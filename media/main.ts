@@ -133,6 +133,8 @@ let drawnMessage: string | null = null;
 let drawnAnnouncement: string | null = null;
 /** Like `messageWrites`, for the hidden announcement region. */
 let announcementWrites = 0;
+/** The text the line under the result card shows; null before the first draw. */
+let drawnResultNote: string | null = null;
 /**
  * How to play was opened from the keyboard (Enter or Space on `?`), so
  * closing it gives focus back to `?`. Opened with the mouse, focus goes back
@@ -611,7 +613,13 @@ function buildScreen(app: HTMLElement): Screen {
   const resultHead = element("div", "result-head");
   resultHead.append(resultOutcome, resultHeading, resultLine);
   result.append(resultHead, resultList, resultButton);
+  // What the agent is doing (#121), from the host. A polite live region, so
+  // a change while the card shows is read out without interrupting. Shown
+  // with the card even when empty, so it's already on the page when a line
+  // first appears.
   const resultNote = element("p", "result-note");
+  resultNote.setAttribute("role", "status");
+  resultNote.setAttribute("aria-live", "polite");
   resultNote.hidden = true;
 
   const game = element("div", "game");
@@ -913,9 +921,24 @@ function drawResult(result: ScreenView["result"]): void {
     byte.label.textContent = model?.label ?? "";
   });
   ui.resultButton.textContent = result?.button ?? NEW_ROUND_BUTTON;
-  ui.resultNote.textContent = result?.note ?? "";
+  drawResultNote(result);
   if (appearing) {
     focusWhenPanelFocused(ui.resultButton);
+  }
+}
+
+/**
+ * Writes the line under the result card (#121) with `textContent`, only when
+ * its text changes, so the live region reads each change out once and a
+ * redraw never repeats it. Part of `drawResult`, and called on its own when
+ * the host's `agentState` changes the line while the card shows, which
+ * changes nothing else on screen and must not move focus.
+ */
+function drawResultNote(result: ScreenView["result"]): void {
+  const note = result?.note ?? "";
+  if (ui && note !== drawnResultNote) {
+    ui.resultNote.textContent = note;
+    drawnResultNote = note;
   }
 }
 
@@ -994,6 +1017,15 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
       // as `agentFinished`: nothing saved or posted, no focus move.
       if (controller.agentStarted()) {
         drawNotice(controller.view());
+      }
+      break;
+    case "agentState":
+      // What the line under the result card says (#121). UI only, like
+      // `agentFinished`: not through `changed()`, so nothing is saved or
+      // posted, and no focus moves. Only that line is drawn, and only if the
+      // card shows and its text changed.
+      if (controller.agentState(message.state)) {
+        drawResultNote(controller.view().result);
       }
       break;
   }

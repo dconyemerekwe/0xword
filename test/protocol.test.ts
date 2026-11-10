@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { AgentState } from "../src/agentSignals.ts";
 import { MAX_HINTS, MAX_ROWS, Round, WORD_LIST_SIZE, wordToHex } from "../src/game/index.ts";
 import {
   handleWebviewMessage,
@@ -80,6 +81,8 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["agentOpen, which only the host sends", { type: "agentOpen" }],
   ["agentFinished, which only the host sends", { type: "agentFinished" }],
   ["agentStarted, which only the host sends", { type: "agentStarted" }],
+  ["agentState, which only the host sends (#121)", { type: "agentState", state: "working" }],
+  ["agentState with no line, which only the host sends (#121)", { type: "agentState", state: "none" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
   ["a non-string type", { type: 1 }],
@@ -462,6 +465,53 @@ describe("parseHostMessage", () => {
   it("returns a new agentStarted object, not the one it was given", () => {
     const raw = { type: "agentStarted" };
     assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  for (const state of Object.values(AgentState)) {
+    it(`accepts agentState with the state "${state}" (#121)`, () => {
+      assert.deepEqual(parseHostMessage({ type: "agentState", state }), { type: "agentState", state });
+    });
+  }
+
+  it("returns a new agentState object, not the one it was given (#121)", () => {
+    const raw = { type: "agentState", state: "finished" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  describe("rejects agentState in any other shape (#121)", () => {
+    const rejected: readonly (readonly [string, unknown])[] = [
+      ["no state", { type: "agentState" }],
+      ["an unknown state", { type: "agentState", state: "paused" }],
+      ["the state in the wrong case", { type: "agentState", state: "Working" }],
+      ["the state with a space", { type: "agentState", state: "working " }],
+      ["the empty state", { type: "agentState", state: "" }],
+      ["the state as null", { type: "agentState", state: null }],
+      ["the state as a boolean", { type: "agentState", state: true }],
+      ["the state as a number", { type: "agentState", state: 1 }],
+      ["the state as an array", { type: "agentState", state: ["working"] }],
+      ["the state as an object", { type: "agentState", state: { toString: () => "working" } }],
+      ["the state as a key of Object.prototype", { type: "agentState", state: "__proto__" }],
+      ["a working flag instead of the state", { type: "agentState", working: true }],
+      ["an extra field", { type: "agentState", state: "working", text: "<b>Done</b>" }],
+      ["an undefined extra field", { type: "agentState", state: "finished", note: undefined }],
+      ["a path", { type: "agentState", state: "working", path: "/agent-started" }],
+      ["a command", { type: "agentState", state: "working", command: "0xword.newRound" }],
+      ["the type in the wrong case", { type: "AgentState", state: "working" }],
+      ["a JSON-parsed __proto__ key", JSON.parse('{"type":"agentState","state":"working","__proto__":{"polluted":true}}')],
+      ["a JSON-parsed constructor key", JSON.parse('{"type":"agentState","state":"working","constructor":{}}')],
+      ["fields inherited from a prototype", Object.create({ type: "agentState", state: "working" })],
+      [
+        "a getter for the state",
+        Object.defineProperty({ type: "agentState" }, "state", { enumerable: true, get: () => "working" }),
+      ],
+      ["a string agentState", "agentState"],
+      ["a JSON string", '{"type":"agentState","state":"working"}'],
+    ];
+    for (const [name, raw] of rejected) {
+      it(name, () => {
+        assert.equal(parseHostMessage(raw), null);
+      });
+    }
   });
 
   const invalid: readonly (readonly [string, unknown])[] = [
