@@ -155,9 +155,9 @@ describe("README sections", () => {
       "## How to play",
       "## Start a round",
       "## Keyboard play",
-      "## Accessibility",
       "## Play while your agent works",
       "## No telemetry",
+      "## Accessibility",
       "## Development",
       "## Licence",
     ]);
