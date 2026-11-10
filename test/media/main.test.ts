@@ -2644,12 +2644,17 @@ describe("media/main.ts: the line under the result card follows the agent (#121)
   }
 
   it("hands agentState to the controller and draws only the note: not through changed(), no focus", () => {
-    const branch = /case "agentState":([\s\S]*?)break;/.exec(source)?.[1] ?? "";
-    assert.match(branch, /^\s*if \(controller\.agentState\(message\.state\)\) \{\s*drawResultNote\(controller\.view\(\)\.result\);\s*\}\s*$/);
-    const draw = /function drawResultNote\([^)]*\): void \{[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
-    assert.ok(draw, "drawResultNote");
-    for (const banned of ["focus", "setState", "postMessage", "changed(", "dispatch", "innerHTML"]) {
-      assert.ok(!draw.includes(banned), banned);
+    const branch = /case "agentState": \{([\s\S]*?)break;/.exec(source)?.[1] ?? "";
+    assert.match(
+      branch,
+      /^\s*if \(controller\.agentState\(message\.state\)\) \{\s*const view = controller\.view\(\);\s*drawResultNote\(view\.result\);\s*if \(view\.howToPlayOpen\) \{\s*announceResultNote\(view\.result\?\.note \?\? ""\);\s*\}\s*\}\s*$/,
+    );
+    for (const name of ["drawResultNote", "announceResultNote"]) {
+      const body = new RegExp(`function ${name}\\([^)]*\\): void \\{[\\s\\S]*?\\n\\}`).exec(source)?.[0] ?? "";
+      assert.ok(body, name);
+      for (const banned of ["focus", "setState", "postMessage", "changed(", "dispatch", "innerHTML"]) {
+        assert.ok(!body.includes(banned), `${name}: ${banned}`);
+      }
     }
   });
 
@@ -2788,5 +2793,81 @@ describe("media/main.ts: the line under the result card follows the agent (#121)
     }
     assert.equal(note["textContent"], "");
     assert.deepEqual(note["texts"], [""]);
+  });
+
+  describe("while How to play covers the card", () => {
+    /** The visually hidden announcement region. */
+    function announcementRegion(run: WebviewRun): Record<string, unknown> {
+      const found = run.elements.filter(
+        (node) => node["tag"] === "p" && node["className"] === "sr-only" && (node["attributes"] as Record<string, string>)["aria-live"] === "polite",
+      );
+      assert.equal(found.length, 1);
+      return found[0] ?? {};
+    }
+
+    /** How many times `text` was written to `node`. */
+    function writesOf(node: Record<string, unknown>, text: string): number {
+      return (node["texts"] as unknown[]).filter((written) => written === text).length;
+    }
+
+    /** The card with How to play opened over it with the mouse. */
+    function underHowToPlay(): WebviewRun {
+      const run = onCard();
+      click(byLabel(run, HOW_TO_PLAY));
+      assert.equal(byClass(run, "how-to-play")["hidden"], false);
+      return run;
+    }
+
+    it("reads a change out once from the announcement region, and updates the hidden note for the return", () => {
+      const run = underHowToPlay();
+      const region = announcementRegion(run);
+      const note = byClass(run, "result-note");
+      run.send(FINISHED_STATE);
+      assert.equal(region["textContent"], FINISHED_TEXT);
+      assert.equal(writesOf(region, FINISHED_TEXT), 1);
+      assert.equal(note["textContent"], FINISHED_TEXT);
+      assert.equal(run.frames.length, 0, "no re-announce queued");
+      assert.equal(byClass(run, "how-to-play")["hidden"], false, "How to play stays open");
+    });
+
+    it("shows the line on the card after closing, without reading it out a second time", () => {
+      const run = underHowToPlay();
+      const region = announcementRegion(run);
+      const note = byClass(run, "result-note");
+      run.send(WORKING);
+      const noteWrites = note["textWrites"];
+      run.press("Escape");
+      assert.equal(byClass(run, "how-to-play")["hidden"], true);
+      assert.equal(byClass(run, "result")["hidden"], false);
+      assert.equal(note["textContent"], WORKING_TEXT);
+      assert.equal(note["textWrites"], noteWrites, "the note isn't written again on return");
+      assert.equal(writesOf(region, WORKING_TEXT), 1, "read out once in all");
+      assert.equal(region["textContent"], "", "the region is cleared on return, which isn't read out");
+      assert.equal(writesOf(note, WORKING_TEXT), 1);
+      assert.equal(run.frames.length, 0, "no re-announce queued");
+    });
+
+    it("reads nothing for a repeated state, and only clears the region when the line goes", () => {
+      const run = underHowToPlay();
+      const region = announcementRegion(run);
+      run.send(FINISHED_STATE);
+      const writes = region["textWrites"];
+      run.send(FINISHED_STATE);
+      assert.equal(region["textWrites"], writes, "a repeat writes nothing");
+      run.send(NO_LINE);
+      assert.equal(region["textContent"], "", "the line went: nothing to read out");
+      assert.equal(byClass(run, "result-note")["textContent"], "");
+      run.send(FINISHED_STATE);
+      assert.equal(writesOf(region, FINISHED_TEXT), 2, "the line came back: a new change, read out once more");
+    });
+
+    it("leaves the announcement region alone when How to play is closed", () => {
+      const run = onCard();
+      const region = announcementRegion(run);
+      const writes = region["textWrites"];
+      run.send(WORKING);
+      run.send(FINISHED_STATE);
+      assert.equal(region["textWrites"], writes);
+    });
   });
 });

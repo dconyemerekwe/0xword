@@ -943,6 +943,22 @@ function drawResultNote(result: ScreenView["result"]): void {
 }
 
 /**
+ * Reads a new line under the result card out from the hidden announcement
+ * region (#121), while How to play hides the card's own live region. A line
+ * that goes away clears the region, with nothing read out. Takes any
+ * re-announce still waiting, and records the text as drawn, so the next
+ * `render` doesn't write it again: it only clears it, which isn't read out.
+ */
+function announceResultNote(note: string): void {
+  if (!ui) {
+    return;
+  }
+  ++announcementWrites;
+  ui.announcement.textContent = note;
+  drawnAnnouncement = note;
+}
+
+/**
  * Focuses `target`, the decode box or New round, which `render` moves focus
  * to by itself, only if the panel has keyboard focus (#111). `open` mode can
  * show and reload the panel while the player types somewhere else in VS Code,
@@ -1019,15 +1035,22 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
         drawNotice(controller.view());
       }
       break;
-    case "agentState":
+    case "agentState": {
       // What the line under the result card says (#121). UI only, like
       // `agentFinished`: not through `changed()`, so nothing is saved or
       // posted, and no focus moves. Only that line is drawn, and only if the
-      // card shows and its text changed.
+      // card shows and its text changed. While How to play hides the card,
+      // the line is still updated for the return, and the always visible
+      // announcement region reads the change out instead, as for #112.
       if (controller.agentState(message.state)) {
-        drawResultNote(controller.view().result);
+        const view = controller.view();
+        drawResultNote(view.result);
+        if (view.howToPlayOpen) {
+          announceResultNote(view.result?.note ?? "");
+        }
       }
       break;
+    }
   }
 });
 
