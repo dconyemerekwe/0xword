@@ -601,7 +601,6 @@ describe("the agent-finished message (#112)", () => {
   });
 });
 
-
 describe("the result-card line follows the agent (#121)", () => {
   const agentCode = code(extensionSource);
   /** `update`, which both the link handler and the settings listener call. */
@@ -641,6 +640,7 @@ describe("the result-card line follows the agent (#121)", () => {
     assert.match(answer, /this\.#postToView,\s*this\.#currentAgentState,\s*$/);
   });
 });
+
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
  * rule 8): the `workspace` API however it's imported or reached, `fs` in any
