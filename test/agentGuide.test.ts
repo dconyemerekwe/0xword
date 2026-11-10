@@ -12,6 +12,8 @@ const root = new URL("../", import.meta.url);
 const GUIDE_PATH = "docs/agent-integration.md";
 const guide = readFileSync(new URL(GUIDE_PATH, root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
+/** The maintainer's manual checks, moved out of the guide. */
+const checks = readFileSync(new URL("docs/agent-checks.md", root), "utf8");
 const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { publisher: string; name: string };
 
 /** The extension's ID, as the links' host: `dconyemerekwe.0xword`. */
@@ -29,6 +31,9 @@ const DOCUMENTS: readonly (readonly [string, string])[] = [
   ["the guide", guide],
   ["the README", readme],
 ];
+
+/** The documents whose links and code blocks are checked: the two above and the maintainer's checklist. */
+const LINKED_DOCUMENTS: readonly (readonly [string, string])[] = [...DOCUMENTS, ["the maintainer's checklist", checks]];
 
 interface CodeBlock {
   language: string;
@@ -88,7 +93,9 @@ describe("the guide and README snippets", () => {
         assert.doesNotThrow(() => JSON.parse(block.body), block.body);
       }
     });
+  }
 
+  for (const [name, text] of LINKED_DOCUMENTS) {
     it(`no code block in ${name} prints: no echo, printf, Write-Output or Write-Host`, () => {
       for (const block of codeBlocks(text)) {
         assert.doesNotMatch(block.body, PRINTING, block.body);
@@ -130,7 +137,7 @@ describe("the guide and README snippets", () => {
 });
 
 describe("the guide and README links", () => {
-  for (const [name, text] of DOCUMENTS) {
+  for (const [name, text] of LINKED_DOCUMENTS) {
     it(`every vscode:// or cursor:// link in ${name} is one of the two the handler accepts`, () => {
       const links = schemeLinks(text);
       assert.ok(links.length > 0, `${name} has no link`);
@@ -223,12 +230,34 @@ describe("the guide as a setup guide", () => {
     const headings = guide.split("\n").filter((line) => line.startsWith("### "));
     for (const tool of sections) {
       assert.ok(headings.includes(`### ${tool}`), `missing ${tool}`);
-      assert.match(toolSection(tool),/Checked \d{4}-\d{2}-\d{2} against \[[^\]]+\]\(https:\/\/[^)]+\)/, tool);
+      assert.match(toolSection(tool), /Checked \d{4}-\d{2}-\d{2} against \[[^\]]+\]\(https:\/\/[^)]+\)/, tool);
     }
   });
 
   it("marks Cursor's snippet as not yet tested", () => {
     assert.ok(toolSection("Cursor").includes("Not yet tested; check before relying on it."));
+  });
+
+  it("states the known limits: Copilot CLI's agentStop and sessionEnd, Codex's notify, Cursor and other editors", () => {
+    const start = guide.indexOf("\n## Known limits\n");
+    assert.notEqual(start, -1, "missing ## Known limits");
+    const limits = guide.slice(start + 1).split(/\n## /)[0] ?? "";
+    const copilot = limits.split("\n").find((line) => line.startsWith("- **Copilot CLI**")) ?? "";
+    assert.ok(copilot.includes("`agentStop`") && copilot.includes("`sessionEnd`"), copilot);
+    const codex = limits.split("\n").find((line) => line.startsWith("- **Codex**")) ?? "";
+    assert.ok(codex.includes("`notify`") && codex.includes("`agent-finished`"), codex);
+    assert.ok(limits.includes("**Cursor's**"));
+    assert.ok(limits.includes("`code-insiders`") && limits.includes("`codium`"));
+  });
+
+  it("keeps the maintainer's test steps out of the guide, in agent-checks.md", () => {
+    assert.doesNotMatch(guide, /0xword-vsix|this PR|Install from VSIX/);
+    assert.ok(guide.includes("[agent-checks.md](agent-checks.md)"));
+    assert.ok(guide.includes("\n## What's been checked\n"));
+    assert.match(checks.split("\n").find((line) => line.startsWith("> ")) ?? "", /For the maintainer, not for players/);
+    for (const heading of ["## The owner's checks on Windows (#109)", "## The owner's check for `open` mode (#111)", "## Still open"]) {
+      assert.ok(checks.split("\n").includes(heading), heading);
+    }
   });
 });
 
