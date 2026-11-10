@@ -66,13 +66,6 @@ You can play without a mouse:
 - <kbd>Tab</kbd> moves through the buttons in the order you see them, and <kbd>Enter</kbd> or <kbd>Space</kbd> presses the focused one. Every control has a visible focus ring.
 - <kbd>Esc</kbd> closes How to play.
 
-## Accessibility
-
-- **Screen readers.** Every button has a name, and Hints says whether it's on. Each tile is read out with its digit and mark, scored rows and messages are announced, the hint strip is read as one line, and the result card reads each byte as "42 is B".
-- **Reduced motion.** The only animation is a short colour change on the tiles. It's turned off when your system asks for reduced motion, or when VS Code's own **Reduce Motion** setting (`workbench.reduceMotion`) is on.
-- **High contrast.** VS Code's high-contrast dark and light themes show the game's dark and light palettes. Text you need to read is checked for at least 4.5:1 contrast in all four kinds of VS Code theme; locked and disabled parts are dimmed on purpose. Absent keys are struck through as well as greyed out, the legend names every colour, and screen readers say each tile's mark.
-- **Touch targets.** Every button is at least 44 by 44 pixels.
-
 ## Play while your agent works
 
 **Notices are off by default.** To turn them on, open **Settings → Extensions → 0xWORD** and set **Auto Start: Mode** to `notify` or `open`, or add `"0xword.autoStart.mode": "notify"` to your `settings.json`.
@@ -82,6 +75,13 @@ You can play without a mouse:
 ## No telemetry
 
 0xWORD collects nothing and sends nothing. It makes no network requests and never reads or writes your files. The round in progress stays on your machine in VS Code's own storage, and so do a few counts (rounds played and solved, average rows, how often you used hints), kept for a stats screen planned for a later version. See [SECURITY.md](SECURITY.md) for the full list of rules it's built to.
+
+## Accessibility
+
+- **Screen readers.** Every button has a name, and Hints says whether it's on. Each tile is read out with its digit and mark, scored rows and messages are announced, the hint strip is read as one line, and the result card reads each byte as "42 is B".
+- **Reduced motion.** The only animation is a short colour change on the tiles. It's turned off when your system asks for reduced motion, or when VS Code's own **Reduce Motion** setting (`workbench.reduceMotion`) is on.
+- **High contrast.** VS Code's high-contrast dark and light themes show the game's dark and light palettes. Text you need to read is checked for at least 4.5:1 contrast in all four kinds of VS Code theme; locked and disabled parts are dimmed on purpose. Absent keys are struck through as well as greyed out, the legend names every colour, and screen readers say each tile's mark.
+- **Touch targets.** Every button is at least 44 by 44 pixels.
 
 ## Development
 
