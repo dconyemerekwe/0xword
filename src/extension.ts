@@ -3,7 +3,9 @@ import { RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
 import {
   NewRoundRequests,
   answerWebview,
+  sendAgentFinished,
   sendAgentOpen,
+  sendAgentStarted,
   sendNewRound,
   viewVisibilityChanged,
 } from "./newRoundRequests.ts";
@@ -11,6 +13,8 @@ import {
   SETTINGS_SECTION,
   readNoticeSettings,
   showPopup,
+  tellAgentFinished,
+  tellAgentStarted,
   visibleNotices,
   type NoticeSettings,
 } from "./noticeSettings.ts";
@@ -63,6 +67,11 @@ export function deactivate(): void {}
  * `onUri` activation event lets a link reach this handler before the panel
  * has ever been opened.
  *
+ * In `notify` and `open` mode, a finish that ends a run also tells a panel
+ * that is listening right then (#112), which says so if a round is in
+ * progress, and a start that begins a run tells it to clear that message.
+ * Neither opens, focuses or reloads the panel.
+ *
  * In `open` mode (#111) no notice shows. Instead, once the agent has worked
  * for the set delay, the panel opens without taking keyboard focus (see
  * `GameViewProvider.agentOpen`), and the webview is told to keep the round in
@@ -104,6 +113,12 @@ function agentSignals(provider: GameViewProvider): vscode.Disposable[] {
       timer.signal(signal, settings);
       if (showPopup(change, settings)) {
         roundReadyPopup();
+      }
+      if (tellAgentStarted(change, settings)) {
+        provider.agentStarted();
+      }
+      if (tellAgentFinished(change, settings)) {
+        provider.agentFinished();
       }
     },
   });
@@ -282,6 +297,26 @@ class GameViewProvider implements vscode.WebviewViewProvider {
     }
     // Fallback: never resolved (or disposed). Resolves the view and takes focus.
     vscode.commands.executeCommand(`${VIEW_ID}.focus`).then(undefined, () => undefined);
+  }
+
+  /**
+   * The agent finished a run (#112): tells the webview with `agentFinished`,
+   * only if it's listening now. Never kept for a later load, so a hidden or
+   * closed panel doesn't get it. Doesn't open or focus the view. Isn't
+   * awaited and never rejects, so the link handler never waits or throws.
+   */
+  agentFinished(): void {
+    void sendAgentFinished(this.#requests, this.#postToView);
+  }
+
+  /**
+   * The agent started a run (#112): tells the webview with `agentStarted`, so
+   * it clears a "finished" message from the last run, only if it's listening
+   * now, like `agentFinished`. Doesn't open or focus the view. Isn't awaited
+   * and never rejects.
+   */
+  agentStarted(): void {
+    void sendAgentStarted(this.#requests, this.#postToView);
   }
 
   /**

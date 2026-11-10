@@ -20,10 +20,16 @@
 // `open` mode's `agentOpen` (#111) is delivered the same way, with one
 // difference: it isn't counted. However many are asked for while the webview
 // isn't listening, it gets one, after `init` and any queued `newRound`.
+//
+// `agentFinished` and `agentStarted` (#112) are never kept: each goes only to
+// a webview listening when the agent finishes or starts (`sendIfListening`),
+// and a hidden or closed panel never gets it.
 import { deliver, type PostMessage } from "./post.ts";
 import {
   handleWebviewMessage,
+  type AgentFinishedMessage,
   type AgentOpenMessage,
+  type AgentStartedMessage,
   type HostHandlers,
   type HostMessage,
   type InitMessage,
@@ -241,6 +247,47 @@ export function sendAgentOpen(
   return sendOrKeep(post, { type: "agentOpen" }, generation, (current, attempt) =>
     requests.retryOrQueueOpen(current, attempt),
   );
+}
+
+/**
+ * Sends `agentFinished` (#112), only if the webview is listening now, as
+ * `sendIfListening` does. Never rejects.
+ */
+export function sendAgentFinished(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
+  return sendIfListening(requests, post, { type: "agentFinished" });
+}
+
+/**
+ * Sends `agentStarted` (#112), only if the webview is listening now, as
+ * `sendIfListening` does. Never rejects.
+ */
+export function sendAgentStarted(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
+  return sendIfListening(requests, post, { type: "agentStarted" });
+}
+
+/**
+ * Posts `message` only if the webview is listening now: under the current
+ * generation, and again up to POST_RETRIES times while it fails and that same
+ * load is still listening. It's never queued or kept, so a webview that isn't
+ * listening now (hidden, closed or still loading) never gets it, not even on
+ * its next `ready`. Resolves true if it was delivered; never rejects, and
+ * logs nothing.
+ */
+async function sendIfListening(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  message: AgentFinishedMessage | AgentStartedMessage,
+): Promise<boolean> {
+  const generation = requests.isReady ? requests.generation : null;
+  if (generation === null) {
+    return false;
+  }
+  for (let attempt = 1; attempt <= POST_RETRIES + 1 && requests.isListening(generation); attempt++) {
+    if (await deliver(post, message)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

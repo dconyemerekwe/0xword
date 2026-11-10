@@ -128,3 +128,23 @@ export function visibleNotices(working: boolean, settings: NoticeSettings): Visi
 export function showPopup(change: NoticeChange | null, settings: NoticeSettings): boolean {
   return change === NoticeChange.Show && settings.mode === AutoStartMode.Notify && settings.popup;
 }
+
+/**
+ * Whether to tell the panel the agent has finished (#112): only when a
+ * signal has just ended a run (not on a repeated finish with no run in
+ * progress), in `notify` or `open` mode (never in `off`). The webview then
+ * decides whether a round is in progress to show it on.
+ */
+export function tellAgentFinished(change: NoticeChange | null, settings: NoticeSettings): boolean {
+  return change === NoticeChange.Hide && settings.mode !== AutoStartMode.Off;
+}
+
+/**
+ * Whether to tell the panel the agent has started (#112), so it clears a
+ * "finished" message left from the last run: only when a signal has just
+ * started a run (not on a repeated start while it works), in `notify` or
+ * `open` mode (never in `off`).
+ */
+export function tellAgentStarted(change: NoticeChange | null, settings: NoticeSettings): boolean {
+  return change === NoticeChange.Show && settings.mode !== AutoStartMode.Off;
+}

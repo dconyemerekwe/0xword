@@ -357,6 +357,10 @@ describe("notice settings (#110)", () => {
     assert.match(text, /`off` by default/);
     assert.match(text, /Choose `notify` to turn them on/);
     assert.match(text, /`open` to open the panel/);
+    assert.match(
+      text,
+      /`open` is agent-driven: when your agent's hooks report it has started, 0xWORD waits `delaySeconds`, then opens the panel and starts a new round if none is in progress\. A round in progress is kept as it is\.$/,
+    );
   });
 
   it("makes autoStart.delaySeconds a number of seconds, 20 by default, from 0 to an hour, only for open mode (#111)", () => {
@@ -369,10 +373,13 @@ describe("notice settings (#110)", () => {
     assert.match(describedAs(delay), /^Only in `open` mode/);
   });
 
-  it("describes open mode as opening the panel and showing none of the notices (#111)", () => {
+  it("describes open mode as agent-driven, opening the panel and showing none of the notices (#111, #112)", () => {
     const mode = properties["0xword.autoStart.mode"];
     const open = mode?.enumDescriptions?.[mode.enum?.indexOf("open") ?? -1] ?? "";
-    assert.match(open, /Open the 0xWORD panel/);
+    assert.match(
+      open,
+      /^Agent-driven: when your agent's hooks report that it has started working, 0xWORD waits Delay Seconds, then opens its panel and starts a new round if none is in progress\. A round in progress is kept as it is\. If your agent finishes first, nothing opens\. Shows none of the notices\.$/,
+    );
     assert.match(open, /none of the notices/);
     for (const key of ["0xword.notify.badge", "0xword.notify.statusBar", "0xword.notify.popup"]) {
       assert.match(describedAs(properties[key]), /^In `notify` mode/, key);
@@ -543,6 +550,54 @@ describe("open mode (#111)", () => {
     assert.ok(agentOpen.includes("void sendAgentOpen(this.#requests, this.#postToView, this.#requests.requestOpen());"));
     assert.ok(!agentOpen.includes("await"), "the timer never waits");
     assert.ok(agentOpen.includes(".then(undefined, () => undefined)"), "a failed focus is ignored");
+  });
+});
+
+describe("the agent-finished message (#112)", () => {
+  const agentCode = code(extensionSource);
+  /** The provider's `agentFinished` method, which the link handler calls. */
+  const agentFinished = /\n {2}agentFinished\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+  const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+
+  it("tells the provider only from the link handler, inside the tellAgentFinished check", () => {
+    assert.match(handler, /\n {6}if \(tellAgentFinished\(change, settings\)\) \{\n {8}provider\.agentFinished\(\);\n {6}\}\n/);
+    assert.equal(agentCode.match(/provider\.agentFinished\(\)/g)?.length, 1, "only the link handler calls it");
+    const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+    assert.ok(listener, "the settings listener");
+    assert.ok(!listener.includes("agentFinished"), "a settings change never sends it");
+  });
+
+  it("only posts the fixed message, if the webview is listening now, and never waits", () => {
+    assert.ok(agentFinished, "the provider has an agentFinished method");
+    assert.match(agentFinished, /^\n {2}agentFinished\(\): void \{\n {4}void sendAgentFinished\(this\.#requests, this\.#postToView\);\n {2}\}\n$/);
+  });
+
+  it("never opens, focuses or starts a round, and keeps nothing for later", () => {
+    for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "requestOpen", "request()", "await"]) {
+      assert.ok(!agentFinished.includes(banned), banned);
+    }
+  });
+
+  describe("agentStarted, which clears it when a new run starts", () => {
+    const agentStarted = /\n {2}agentStarted\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+    it("tells the provider only from the link handler, inside the tellAgentStarted check", () => {
+      assert.match(handler, /\n {6}if \(tellAgentStarted\(change, settings\)\) \{\n {8}provider\.agentStarted\(\);\n {6}\}\n/);
+      assert.equal(agentCode.match(/provider\.agentStarted\(\)/g)?.length, 1, "only the link handler calls it");
+      const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+      assert.ok(!listener.includes("agentStarted"), "a settings change never sends it");
+    });
+
+    it("only posts the fixed message, if the webview is listening now, and never waits", () => {
+      assert.match(agentStarted, /^\n {2}agentStarted\(\): void \{\n {4}void sendAgentStarted\(this\.#requests, this\.#postToView\);\n {2}\}\n$/);
+    });
+
+    it("never opens, focuses or starts a round, and keeps nothing for later", () => {
+      assert.ok(agentStarted, "the provider has an agentStarted method");
+      for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "requestOpen", "request()", "await"]) {
+        assert.ok(!agentStarted.includes(banned), banned);
+      }
+    });
   });
 });
 

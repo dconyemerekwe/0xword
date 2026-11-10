@@ -78,6 +78,8 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["setTheme in the wrong case", { type: "SetTheme", theme: "dark" }],
   ["newRound, which only the host sends", { type: "newRound" }],
   ["agentOpen, which only the host sends", { type: "agentOpen" }],
+  ["agentFinished, which only the host sends", { type: "agentFinished" }],
+  ["agentStarted, which only the host sends", { type: "agentStarted" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
   ["a non-string type", { type: 1 }],
@@ -444,7 +446,43 @@ describe("parseHostMessage", () => {
     assert.notEqual(parseHostMessage(raw), raw);
   });
 
+  it("accepts agentFinished (#112)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentFinished" }), { type: "agentFinished" });
+  });
+
+  it("returns a new agentFinished object, not the one it was given", () => {
+    const raw = { type: "agentFinished" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  it("accepts agentStarted (#112)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentStarted" }), { type: "agentStarted" });
+  });
+
+  it("returns a new agentStarted object, not the one it was given", () => {
+    const raw = { type: "agentStarted" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
   const invalid: readonly (readonly [string, unknown])[] = [
+    ["agentStarted with an extra field", { type: "agentStarted", text: "<b>Working</b>" }],
+    ["agentStarted with an undefined extra field", { type: "agentStarted", message: undefined }],
+    ["agentStarted with a path", { type: "agentStarted", path: "/agent-started" }],
+    ["agentStarted with a command", { type: "agentStarted", command: "0xword.newRound" }],
+    ["agentStarted in the wrong case", { type: "AgentStarted" }],
+    ["agentStarted with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentStarted","__proto__":{"polluted":true}}')],
+    ["agentStarted with a JSON-parsed constructor key", JSON.parse('{"type":"agentStarted","constructor":{}}')],
+    ["agentStarted inherited from a prototype", Object.create({ type: "agentStarted" })],
+    ["a string agentStarted", "agentStarted"],
+    ["agentFinished with an extra field", { type: "agentFinished", text: "<b>Done</b>" }],
+    ["agentFinished with an undefined extra field", { type: "agentFinished", message: undefined }],
+    ["agentFinished with a path", { type: "agentFinished", path: "/agent-finished" }],
+    ["agentFinished with a command", { type: "agentFinished", command: "0xword.newRound" }],
+    ["agentFinished in the wrong case", { type: "AgentFinished" }],
+    ["agentFinished with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentFinished","__proto__":{"polluted":true}}')],
+    ["agentFinished with a JSON-parsed constructor key", JSON.parse('{"type":"agentFinished","constructor":{}}')],
+    ["agentFinished inherited from a prototype", Object.create({ type: "agentFinished" })],
+    ["a string agentFinished", "agentFinished"],
     ["agentOpen with an extra field", { type: "agentOpen", answer: "BYTE" }],
     ["agentOpen with an undefined extra field", { type: "agentOpen", round: undefined }],
     ["agentOpen with a delay", { type: "agentOpen", delaySeconds: 20 }],

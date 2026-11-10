@@ -5,6 +5,8 @@ import {
   NewRoundRequests,
   answerWebview,
   messagesAfter,
+  sendAgentFinished,
+  sendAgentStarted,
   sendAgentOpen,
   sendInit,
   sendNewRound,
@@ -895,3 +897,95 @@ describe("agentOpen delivery (#111)", () => {
     });
   });
 });
+
+for (const [type, send] of [
+  ["agentFinished", sendAgentFinished],
+  ["agentStarted", sendAgentStarted],
+] as const) {
+  describe(`${type} delivery (#112)`, () => {
+    const MESSAGE = { type } as const;
+
+    it("posts it once to a webview that is listening", async () => {
+      const { requests } = readyRequests();
+      const { post, sent } = scriptedPost(["delivered"]);
+      assert.equal(await send(requests, post), true);
+      assert.deepEqual(sent, [MESSAGE]);
+    });
+
+    it("posts nothing before any view exists", async () => {
+      const requests = new NewRoundRequests();
+      const { post, sent } = scriptedPost(["delivered"]);
+      assert.equal(await send(requests, post), false);
+      assert.deepEqual(sent, []);
+    });
+
+    it("posts nothing while the view loads", async () => {
+      const requests = new NewRoundRequests();
+      requests.attach();
+      const { post, sent } = scriptedPost(["delivered"]);
+      assert.equal(await send(requests, post), false);
+      assert.deepEqual(sent, []);
+    });
+
+    it("posts nothing to a hidden panel, and never keeps it for the next ready", async () => {
+      const { requests, view } = readyRequests();
+      assert.equal(viewVisibilityChanged(requests, view, false), true);
+      const { post, sent } = scriptedPost(["delivered"]);
+      assert.equal(await send(requests, post), false);
+      assert.deepEqual(sent, []);
+      assert.equal(requests.pending, 0);
+      assert.equal(requests.openPending, false);
+      assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [init()]);
+    });
+
+    it("isn't sent after init when the reloaded webview answers ready", async () => {
+      const { requests, view } = readyRequests();
+      requests.reset(view);
+      const { post, sent } = scriptedPost(["delivered"]);
+      await send(requests, post);
+      await answerWebview({ type: "ready" }, recordingHandlers(), requests, view, post, post);
+      assert.deepEqual(sent, [init()]);
+    });
+
+    for (const outcome of ["false", "reject", "throw"] as const) {
+      it(`retries a failed post (${outcome}) to the same load a fixed number of times, then drops it`, async () => {
+        const { requests, view } = readyRequests();
+        const { post, sent } = scriptedPost([outcome]);
+        await assert.doesNotReject(send(requests, post));
+        assert.deepEqual(sent, Array.from({ length: POST_RETRIES + 1 }, () => MESSAGE));
+        assert.equal(requests.isReady, true, "the webview keeps listening");
+        assert.equal(requests.pending, 0, "no New Round run is queued");
+        assert.equal(requests.openPending, false, "no agentOpen is kept");
+        assert.deepEqual(messagesAfter({ type: "ready" }, recordingHandlers(), requests, view), [init()]);
+      });
+    }
+
+    it("stops retrying once a retry is delivered", async () => {
+      const { requests } = readyRequests();
+      const { post, sent } = scriptedPost(["false", "delivered"]);
+      assert.equal(await send(requests, post), true);
+      assert.equal(sent.length, 2);
+    });
+
+    it("doesn't retry into a later load when the panel reloaded while the post was in flight", async () => {
+      const { requests, view } = readyRequests();
+      const { post, sent } = scriptedPost(["false"], () => {
+        // Hidden, then shown again and ready, before the failed post resolves.
+        requests.reset(view);
+        requests.ready(view);
+      });
+      assert.equal(await send(requests, post), false);
+      assert.deepEqual(sent, [MESSAGE]);
+    });
+
+    it("logs nothing when posts fail", async () => {
+      const calls = await consoleCallsDuring(async () => {
+        for (const outcome of ["false", "reject", "throw"] as const) {
+          const { requests } = readyRequests();
+          await send(requests, scriptedPost([outcome]).post);
+        }
+      });
+      assert.deepEqual(calls, []);
+    });
+  });
+}

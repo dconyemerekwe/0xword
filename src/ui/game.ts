@@ -154,6 +154,12 @@ export const NEW_ROUND_ANNOUNCEMENT = NEW_ROUND_BUTTON;
 /** Under the result card, in muted text (page 4). */
 export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
 
+/**
+ * On the message line, in its normal colour, when the agent finishes a run
+ * mid-round (#112). The mock-ups don't cover it: the owner's wording.
+ */
+export const AGENT_FINISHED_MESSAGE = "Your agent has finished. Your round is still here.";
+
 /** The message for a solved round: read out, since the result card replaces the message line. */
 export const SOLVED_MESSAGE = "Solved";
 
@@ -311,7 +317,11 @@ interface Notice {
   readonly text: string;
   readonly error: boolean;
   readonly announcement: string;
-  /** The rejected move the text describes, saved with the session; null for none. */
+  /**
+   * The rejected move the text describes, saved with the session; null for
+   * none. The agent's message keeps the rejection it replaced on screen, so
+   * the session stays exactly as it was (see `agentFinished`).
+   */
   readonly rejection: Rejection | null;
 }
 
@@ -381,6 +391,69 @@ export class GameController {
     this.#session.setRejection(notice.rejection);
     const result = this.#session.takeResult();
     this.#changed(result ? { type: "roundFinished", ...result } : null);
+  }
+
+  /**
+   * The host's `agentFinished` (#112): while a round is in progress (guessing,
+   * or at the decode step after a solved grid or after row 6), the message
+   * line says `AGENT_FINISHED_MESSAGE`, in its normal colour, replacing any
+   * message on it, as a new error replaces an old one. On the result card, or
+   * before the first round, nothing changes. Returns true if the message
+   * line changed, so the DOM layer draws it.
+   *
+   * Not a game action, so it doesn't go through `dispatch` and `changed`: the
+   * round, the session and the saved state stay exactly as they were, nothing
+   * is posted, and no focus moves. The message isn't saved, so a reload drops
+   * it (and brings back a replaced error, which the session still holds). It
+   * clears like any other message (on the next keypad move, scored row or
+   * submitted word), and when the agent starts again (`agentStarted`). While
+   * How to play is open, the game behind it gets the message, and the always
+   * visible announcement region reads it out instead of the hidden line.
+   */
+  agentFinished(): boolean {
+    if (!this.#inProgress()) {
+      return false;
+    }
+    this.#notice = {
+      text: AGENT_FINISHED_MESSAGE,
+      error: false,
+      announcement: this.#howToPlayOpen ? AGENT_FINISHED_MESSAGE : "",
+      rejection: this.#session.rejection,
+    };
+    this.#noticeId++;
+    return true;
+  }
+
+  /**
+   * The host's `agentStarted` (#112): a new run began, so a "finished"
+   * message left from the last run is cleared, with nothing read out, and a
+   * later finish is read out afresh. Any other message, an error included,
+   * stays. Returns true if the message line changed, so the DOM layer draws
+   * it.
+   *
+   * Like `agentFinished`, not a game action: the round, the session and the
+   * saved state stay exactly as they were (a replaced error the session still
+   * holds is kept for a reload), nothing is saved or posted, and no focus
+   * moves.
+   */
+  agentStarted(): boolean {
+    if (!this.#inProgress() || !this.#showsAgentFinished()) {
+      return false;
+    }
+    this.#notice = { text: "", error: false, announcement: "", rejection: this.#session.rejection };
+    this.#noticeId++;
+    return true;
+  }
+
+  /** True while a round is in progress: guessing, or at the decode step. */
+  #inProgress(): boolean {
+    const phase = this.#session.round?.phase;
+    return phase === "guess" || phase === "decode";
+  }
+
+  /** True while the message line shows `AGENT_FINISHED_MESSAGE`. */
+  #showsAgentFinished(): boolean {
+    return !this.#notice.error && this.#notice.text === AGENT_FINISHED_MESSAGE;
   }
 
   /** What to save: the session with its round and draft, or null before the first round. */
@@ -506,7 +579,8 @@ export class GameController {
   /**
    * `open` mode opened the panel (#111). The owner's rule:
    * - a round in progress (guessing, or at the decode step) is left exactly
-   *   as it is, message included;
+   *   as it is, message included, apart from a "finished" message from the
+   *   last run (#112), which is cleared, since the agent is working again;
    * - the result card (solved or failed) gets a new round, announced like
    *   New round;
    * - no round played yet gets the first round, as `init` starts it. `init`
@@ -522,7 +596,7 @@ export class GameController {
       session.newRound();
       return announced(NEW_ROUND_ANNOUNCEMENT);
     }
-    return this.#notice;
+    return this.#showsAgentFinished() ? NO_NOTICE : this.#notice;
   }
 
   /** True while the round is waiting for a hex row. */
