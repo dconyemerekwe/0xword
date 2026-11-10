@@ -77,34 +77,7 @@ You can play without a mouse:
 
 **Notices are off by default.** To turn them on, open **Settings → Extensions → 0xWORD** and set **Auto Start: Mode** to `notify` or `open`, or add `"0xword.autoStart.mode": "notify"` to your `settings.json`.
 
-0xWORD can show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. In `notify` mode you choose the notices: a badge on the 0xWORD icon, `0x Round ready` in the status bar, or a pop-up. `open` mode is agent-driven: it opens the panel once your agent has worked for a while, and keeps a round in progress as it is. If the agent finishes mid-round, the panel says so and your round stays.
-
-![VS Code's Settings filtered to 0xWORD's five settings, with Auto Start: Mode set to open from a list of off, notify and open, and the open choice's description showing.](docs/screenshots/notice-settings.png)
-
-It works through hooks you add to your agent tool. For Claude Code, add this to `~/.claude/settings.json`. If the file already exists, don't paste in a second object: put the two entries inside its `hooks` object, or add a `hooks` key if it has none. If `UserPromptSubmit` or `Stop` is already listed, add the inner `{ "hooks": [ … ] }` entry to that list instead of a second key.
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-The first time a hook runs, VS Code asks **Allow an extension to open this URI?** Tick **Don't ask again** and allow it, once. For GitHub Copilot, Copilot CLI, Cursor and Codex, and the details, see the setup guide, [docs/agent-integration.md](docs/agent-integration.md). The hooks pass nothing from your prompts, and 0xWORD never edits your agent tool's config.
+0xWORD can show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes, or open its panel once the agent has worked for a while. It works through hooks you add to your agent tool, and a round in progress is never interrupted. For setup with Claude Code, GitHub Copilot, Copilot CLI, Cursor and Codex, see [docs/agent-integration.md](docs/agent-integration.md).
 
 ## No telemetry
 

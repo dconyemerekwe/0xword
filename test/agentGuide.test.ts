@@ -1,7 +1,8 @@
 // Checks the agent setup guide (docs/agent-integration.md) and the README's
-// "Play while your agent works" section (#113): the snippets parse, every
-// link is one the URI handler accepts, nothing a hook runs prints, notices are
-// said to be off by default, and the settings screenshot is shown.
+// short "Play while your agent works" section (#113): the guide's snippets
+// parse, every link is one the URI handler accepts, nothing a hook runs prints,
+// notices are said to be off by default, the settings screenshot is shown, and
+// the README leaves the setup to the guide.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -26,14 +27,17 @@ const ALLOWED_LINKS: ReadonlySet<string> = new Set(
   ),
 );
 
-/** The documents under test, by name. */
-const DOCUMENTS: readonly (readonly [string, string])[] = [
-  ["the guide", guide],
-  ["the README", readme],
-];
+/** The README's "Play while your agent works" section, up to the next section. */
+const readmeAgentSection = readme.slice(
+  readme.indexOf("## Play while your agent works"),
+  readme.indexOf("## No telemetry"),
+);
 
-/** The documents whose links and code blocks are checked: the two above and the maintainer's checklist. */
-const LINKED_DOCUMENTS: readonly (readonly [string, string])[] = [...DOCUMENTS, ["the maintainer's checklist", checks]];
+/** The documents whose links and code blocks are checked: the guide and the maintainer's checklist. */
+const LINKED_DOCUMENTS: readonly (readonly [string, string])[] = [
+  ["the guide", guide],
+  ["the maintainer's checklist", checks],
+];
 
 interface CodeBlock {
   language: string;
@@ -84,18 +88,16 @@ function hookSnippets(markdown: string): Record<string, unknown>[] {
 const OFF_BY_DEFAULT = "Notices are off by default.";
 const TURN_ON_SETTING = '"0xword.autoStart.mode": "notify"';
 
-describe("the guide and README snippets", () => {
-  for (const [name, text] of DOCUMENTS) {
-    it(`every JSON block in ${name} parses`, () => {
-      const json = codeBlocks(text).filter((block) => block.language === "json");
-      assert.ok(json.length > 0, `${name} has no JSON block`);
-      for (const block of json) {
-        assert.doesNotThrow(() => JSON.parse(block.body), block.body);
-      }
-    });
-  }
+describe("the guide's snippets", () => {
+  it("every JSON block in the guide parses", () => {
+    const json = codeBlocks(guide).filter((block) => block.language === "json");
+    assert.ok(json.length > 0, "the guide has no JSON block");
+    for (const block of json) {
+      assert.doesNotThrow(() => JSON.parse(block.body), block.body);
+    }
+  });
 
-  for (const [name, text] of LINKED_DOCUMENTS) {
+  for (const [name, text] of [...LINKED_DOCUMENTS, ["the README", readme]]) {
     it(`no code block in ${name} prints: no echo, printf, Write-Output or Write-Host`, () => {
       for (const block of codeBlocks(text)) {
         assert.doesNotMatch(block.body, PRINTING, block.body);
@@ -108,7 +110,7 @@ describe("the guide and README snippets", () => {
   });
 
   it("every hook command just opens one of the two links, with VS Code's or Cursor's launcher", () => {
-    const commands = [...hookSnippets(guide), ...hookSnippets(readme)].flatMap(hookCommands);
+    const commands = hookSnippets(guide).flatMap(hookCommands);
     assert.ok(commands.length > 0);
     for (const command of commands) {
       assert.match(command, /^(code --open-url "vscode|cursor --open-url "cursor):\/\/[^"]+"$/, command);
@@ -116,12 +118,13 @@ describe("the guide and README snippets", () => {
     }
   });
 
-  it("the README shows the Claude Code setup, the same as the guide's", () => {
-    const [readmeSnippet] = hookSnippets(readme);
-    const [guideSnippet] = hookSnippets(guide);
-    assert.ok(readmeSnippet);
-    assert.deepEqual(readmeSnippet, guideSnippet);
-    assert.deepEqual(Object.keys(readmeSnippet.hooks as object), ["UserPromptSubmit", "Stop"]);
+  it("the README keeps setup in the guide: its agent section has no snippet, screenshot or hook link, and links to the guide", () => {
+    assert.deepEqual(codeBlocks(readmeAgentSection), []);
+    assert.deepEqual(imageLinks(readmeAgentSection), []);
+    assert.deepEqual(schemeLinks(readme), []);
+    assert.doesNotMatch(readme, /<publisher>|<extension-id>/);
+    assert.doesNotMatch(readmeAgentSection, /Don't ask again/);
+    assert.ok(readmeAgentSection.includes("[docs/agent-integration.md](docs/agent-integration.md)"));
   });
 
   describe("the print check catches", () => {
@@ -136,7 +139,7 @@ describe("the guide and README snippets", () => {
   });
 });
 
-describe("the guide and README links", () => {
+describe("the guide's links", () => {
   for (const [name, text] of LINKED_DOCUMENTS) {
     it(`every vscode:// or cursor:// link in ${name} is one of the two the handler accepts`, () => {
       const links = schemeLinks(text);
@@ -209,7 +212,6 @@ describe("notices are off by default", () => {
   it("the guide tells players to tick Don't ask again once", () => {
     assert.ok(guide.includes("**Allow an extension to open this URI?**"));
     assert.ok(guide.includes("**Don't ask again**"));
-    assert.ok(readme.includes("**Don't ask again**"));
   });
 });
 
@@ -268,23 +270,20 @@ describe("the settings screenshot", () => {
     assert.ok(existsSync(new URL(SCREENSHOT, root)));
   });
 
-  for (const [name, text, link] of [
-    ["the guide", guide, "screenshots/notice-settings.png"],
-    ["the README", readme, SCREENSHOT],
-  ] as const) {
-    it(`${name} shows it by a relative path, with plain alt text`, () => {
-      assert.ok(imageLinks(text).includes(link));
-      const alt = [...text.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)].find((match) => match[2] === link)?.[1] ?? "";
-      assert.ok(alt.trim().length > 0, "alt text is empty");
-      assert.doesNotMatch(alt, /[*`_<>]/, "alt text is plain");
-    });
-  }
+  it("the guide shows it by a relative path, with plain alt text describing open mode", () => {
+    const link = "screenshots/notice-settings.png";
+    assert.ok(imageLinks(guide).includes(link));
+    const alt = [...guide.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)].find((match) => match[2] === link)?.[1] ?? "";
+    assert.ok(alt.trim().length > 0, "alt text is empty");
+    assert.doesNotMatch(alt, /[*`_<>]/, "alt text is plain");
+    assert.match(alt, /Auto Start: Mode set to open/);
+  });
 });
 
 describe("copying a snippet into a config file that already exists (#120)", () => {
   it("each setup that adds to an existing file says how to merge into its hooks", () => {
     for (const [name, text] of [
-      ["README", readme.slice(readme.indexOf("## Play while your agent works"), readme.indexOf("## No telemetry"))],
+      ["Claude Code", toolSection("Claude Code")],
       ["Cursor", toolSection("Cursor")],
       ["Codex", toolSection("Codex")],
     ] as const) {
