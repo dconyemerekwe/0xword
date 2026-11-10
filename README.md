@@ -79,7 +79,7 @@ You can play without a mouse:
 
 0xWORD can show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. In `notify` mode you choose the notices: a badge on the 0xWORD icon, `0x Round ready` in the status bar, or a pop-up. `open` mode is agent-driven: it opens the panel once your agent has worked for a while, and keeps a round in progress as it is. If the agent finishes mid-round, the panel says so and your round stays.
 
-![VS Code's Settings filtered to 0xWORD, with Auto Start: Mode being set to notify. The 0xWORD icon has a badge, and the status bar shows 0x Round ready.](docs/screenshots/notice-settings.png)
+![VS Code's Settings filtered to 0xWORD's five settings, with Auto Start: Mode set to open from a list of off, notify and open, and the open choice's description showing.](docs/screenshots/notice-settings.png)
 
 It works through hooks you add to your agent tool. For Claude Code, add this to `~/.claude/settings.json`. If the file already exists, don't paste in a second object: put the two entries inside its `hooks` object, or add a `hooks` key if it has none. If `UserPromptSubmit` or `Stop` is already listed, add the inner `{ "hooks": [ … ] }` entry to that list instead of a second key.
 

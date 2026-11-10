@@ -33,7 +33,7 @@ the agent finishes ──► the tool's hook runs ──► code --open-url "vsc
 
 Find these under **Settings → Extensions → 0xWORD**. VS Code saves them for you, so a choice lasts until you change it, across rounds, restarts and updates. You can also set them per workspace, for example off in one project and on in another.
 
-![VS Code's Settings filtered to 0xWORD's five settings, with Auto Start: Mode being set to notify from a list of off, notify and open. The 0xWORD icon in the activity bar has a badge, and the status bar shows 0x Round ready.](screenshots/notice-settings.png)
+![VS Code's Settings filtered to 0xWORD's five settings, with Auto Start: Mode set to open from a list of off, notify and open, and the open choice's description showing.](screenshots/notice-settings.png)
 
 | Setting | Values | Default | What it does |
 |---|---|---|---|
