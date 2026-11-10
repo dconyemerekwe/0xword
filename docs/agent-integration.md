@@ -86,7 +86,7 @@ Agent tools change their hook systems often, and several are still in preview. E
 
 Checked 2026-11-10 against [Claude Code's hooks reference](https://code.claude.com/docs/en/hooks).
 
-Add this to `~/.claude/settings.json`, your user settings, so it works in every project. If the file already has a `hooks` section, add these two entries to it.
+Add this to `~/.claude/settings.json`, your user settings, so it works in every project. If the file already exists, don't paste in a second object: put the `UserPromptSubmit` and `Stop` entries inside its `hooks` object, or add a `hooks` key if it has none. If the file already has a `UserPromptSubmit` or `Stop` list, add the inner `{ "hooks": [ … ] }` entry to that existing list instead of adding a second key: a second key with the same name replaces the first, so one of the hooks would be lost.
 
 ```json
 {
@@ -172,7 +172,7 @@ Checked 2026-11-10 against [Cursor's hooks docs](https://cursor.com/docs/agent/h
 
 > **Not yet tested; check before relying on it.** Cursor's docs don't say which link scheme Cursor registers, or whether its `cursor` launcher supports `--open-url`. The snippet below assumes `cursor://` and `cursor --open-url`, as VS Code uses `vscode://` and `code --open-url`. Try both commands in a terminal first: with notices on, `0x Round ready` should appear in Cursor's status bar, then go away.
 
-Add this to `~/.cursor/hooks.json` (your user hooks; their commands run from `~/.cursor/`). A project's `.cursor/hooks.json` also works, but only in a trusted workspace.
+Add this to `~/.cursor/hooks.json` (your user hooks; their commands run from `~/.cursor/`). A project's `.cursor/hooks.json` also works, but only in a trusted workspace. If the file already exists, keep its one `"version"` and put the two entries under its existing `hooks`. If it already has a `beforeSubmitPrompt` or `stop` list, add the entry to that list instead of a second key.
 
 ```json
 {
@@ -197,7 +197,7 @@ Add this to `~/.cursor/hooks.json` (your user hooks; their commands run from `~/
 
 Checked 2026-11-10 against [Codex's hooks docs](https://learn.chatgpt.com/docs/hooks).
 
-Codex hooks are on by default (`[features] hooks = false` in `config.toml` turns them off). Add this to `~/.codex/hooks.json`. A repo's `.codex/` folder also works, but is loaded only when the repo is trusted. Codex asks you to review and trust new hooks before they run.
+Codex hooks are on by default (`[features] hooks = false` in `config.toml` turns them off). Add this to `~/.codex/hooks.json`. If the file already exists, put the two entries under its existing `hooks`. If it already has a `UserPromptSubmit` or `Stop` list, add the inner `{ "hooks": [ … ] }` entry to that list instead of a second key. A repo's `.codex/` folder also works, but is loaded only when the repo is trusted. Codex asks you to review and trust new hooks before they run.
 
 ```json
 {

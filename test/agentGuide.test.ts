@@ -280,3 +280,19 @@ describe("the settings screenshot", () => {
     });
   }
 });
+
+describe("copying a snippet into a config file that already exists (#120)", () => {
+  it("each setup that adds to an existing file says how to merge into its hooks", () => {
+    for (const [name, text] of [
+      ["README", readme.slice(readme.indexOf("## Play while your agent works"), readme.indexOf("## No telemetry"))],
+      ["Cursor", toolSection("Cursor")],
+      ["Codex", toolSection("Codex")],
+    ] as const) {
+      assert.match(text, /already (has|have|exists)/, `${name} doesn't say what to do if the file already exists`);
+    }
+  });
+
+  it("the Claude Code note adds to an existing UserPromptSubmit or Stop list instead of a second key", () => {
+    assert.match(toolSection("Claude Code"), /already has a `(UserPromptSubmit|Stop)`|existing `(UserPromptSubmit|Stop)`/);
+  });
+});

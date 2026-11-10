@@ -81,7 +81,7 @@ You can play without a mouse:
 
 ![VS Code's Settings filtered to 0xWORD, with Auto Start: Mode being set to notify. The 0xWORD icon has a badge, and the status bar shows 0x Round ready.](docs/screenshots/notice-settings.png)
 
-It works through hooks you add to your agent tool. For Claude Code, add this to `~/.claude/settings.json`:
+It works through hooks you add to your agent tool. For Claude Code, add this to `~/.claude/settings.json`. If the file already exists, don't paste in a second object: put the two entries inside its `hooks` object, or add a `hooks` key if it has none. If `UserPromptSubmit` or `Stop` is already listed, add the inner `{ "hooks": [ … ] }` entry to that list instead of a second key.
 
 ```json
 {
