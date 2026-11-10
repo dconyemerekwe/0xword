@@ -75,7 +75,36 @@ You can play without a mouse:
 
 ## Play while your agent works
 
-Planned: 0xWORD will be able to show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. It works through hooks you add to your agent tool, with guides for Claude Code, GitHub Copilot, Cursor and Codex. Settings let you choose which notices you see, or turn it off. See [docs/agent-integration.md](docs/agent-integration.md).
+**Notices are off by default.** To turn them on, open **Settings → Extensions → 0xWORD** and set **Auto Start: Mode** to `notify` or `open`, or add `"0xword.autoStart.mode": "notify"` to your `settings.json`.
+
+0xWORD can show a "Round ready" notice when you send a prompt to your AI agent, and clear it when the agent finishes. In `notify` mode you choose the notices: a badge on the 0xWORD icon, `0x Round ready` in the status bar, or a pop-up. `open` mode is agent-driven: it opens the panel once your agent has worked for a while, and keeps a round in progress as it is. If the agent finishes mid-round, the panel says so and your round stays.
+
+![VS Code's Settings filtered to 0xWORD, with Auto Start: Mode being set to notify. The 0xWORD icon has a badge, and the status bar shows 0x Round ready.](docs/screenshots/notice-settings.png)
+
+It works through hooks you add to your agent tool. For Claude Code, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-started\"" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "code --open-url \"vscode://dconyemerekwe.0xword/agent-finished\"" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The first time a hook runs, VS Code asks **Allow an extension to open this URI?** Tick **Don't ask again** and allow it, once. For GitHub Copilot, Copilot CLI, Cursor and Codex, and the details, see the setup guide, [docs/agent-integration.md](docs/agent-integration.md). The hooks pass nothing from your prompts, and 0xWORD never edits your agent tool's config.
 
 ## No telemetry
 

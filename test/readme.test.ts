@@ -161,7 +161,10 @@ describe("README sections", () => {
       "## Development",
       "## Licence",
     ]);
-    assert.ok(section(readme, "## Play while your agent works").some((line) => line.startsWith("Planned:")));
+    // The feature is built (#113): no "Planned" note, and the guide is linked.
+    const agent = section(readme, "## Play while your agent works");
+    assert.ok(!agent.some((line) => line.startsWith("Planned")));
+    assert.ok(agent.some((line) => line.includes("[docs/agent-integration.md](docs/agent-integration.md)")));
   });
 });
 
