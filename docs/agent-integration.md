@@ -83,6 +83,10 @@ The commands print nothing. Keep it that way: some tools add a hook's output to 
 
 Agent tools change their hook systems often, and several are still in preview. Each section below says when it was last checked against the tool's own docs, and marks anything not yet tested.
 
+You can also copy your tool's setup with **0xWORD: Copy agent hook setup**.
+
+![VS Code's Command Palette listing the agent tools to copy a setup for: Claude Code, GitHub Copilot agent hooks in VS Code, Copilot CLI, Cursor and Codex, each with the file its setup goes in.](screenshots/copy-hook-setup.png)
+
 ### Claude Code
 
 Checked 2026-11-10 against [Claude Code's hooks reference](https://code.claude.com/docs/en/hooks).

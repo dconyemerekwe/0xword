@@ -50,6 +50,11 @@
         "command": "0xword.newRound",
         "title": "New Round",
         "category": "0xWORD"
+      },
+      {
+        "command": "0xword.copyHookSetup",
+        "title": "Copy agent hook setup",
+        "category": "0xWORD"
       }
     ],
     "viewsContainers": {

@@ -263,6 +263,29 @@ describe("package.json commands", () => {
     assert.ok(extensionSource.includes("registerCommand(NEW_ROUND_COMMAND,"));
   });
 
+  it('contributes 0xword.copyHookSetup, shown in the palette as "0xWORD: Copy agent hook setup" (#114)', () => {
+    const copy = commands.find((c) => c.command === "0xword.copyHookSetup");
+    assert.ok(copy);
+    assert.equal(paletteLabel(copy), "0xWORD: Copy agent hook setup");
+  });
+
+  it("registers the copyHookSetup command under the id it contributes, and pushes it into the subscriptions (#114)", () => {
+    assert.ok(extensionSource.includes('const COPY_HOOK_SETUP_COMMAND = "0xword.copyHookSetup";'));
+    assert.ok(
+      extensionSource.includes(
+        "context.subscriptions.push(\n    vscode.window.registerWebviewViewProvider(VIEW_ID, provider),\n    vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),\n    vscode.commands.registerCommand(COPY_HOOK_SETUP_COMMAND, () => copyAgentHookSetup()),\n",
+      ),
+    );
+  });
+
+  it("registers every contributed command, and contributes every registered one", () => {
+    const registered = [...code(extensionSource).matchAll(/registerCommand\((\w+),/g)].map((match) => {
+      const name = match[1] ?? "";
+      return new RegExp(`const ${name} = "([^"]+)";`).exec(extensionSource)?.[1];
+    });
+    assert.deepEqual(registered.sort(), commands.map((c) => c.command).sort());
+  });
+
   it("registers exactly as many commands as it contributes", () => {
     const registered = extensionSource.match(/registerCommand\(/g) ?? [];
     assert.equal(registered.length, commands.length);
@@ -490,7 +513,13 @@ describe("notice settings (#110)", () => {
 
   it("puts nothing from a link into a notice: every message is a fixed string", () => {
     assert.match(agentCode, /const POPUP_MESSAGE = "[^"`$]*";/);
-    assert.equal(agentCode.match(/showInformationMessage\(/g)?.length, 1);
+    // The pop-up, and since #114 the copy command's message, which no link reaches.
+    assert.deepEqual(
+      [...agentCode.matchAll(/showInformationMessage\(([^)]*)\)/g)].map((match) => match[1]),
+      ["message, ...buttons", "POPUP_MESSAGE, POPUP_PLAY, POPUP_NOT_NOW"],
+    );
+    const copy = /async function copyAgentHookSetup\(\)[\s\S]*?\n\}\n/.exec(agentCode)?.[0] ?? "";
+    assert.ok(copy.includes(".showInformationMessage(message, ...buttons)"));
   });
 });
 
@@ -638,6 +667,46 @@ describe("the result-card line follows the agent (#121)", () => {
     const answer = /void answerWebview\(([\s\S]*?)\);/.exec(agentCode)?.[1] ?? "";
     assert.ok(answer, "the message listener calls answerWebview");
     assert.match(answer, /this\.#postToView,\s*this\.#currentAgentState,\s*$/);
+  });
+});
+
+describe("the Copy agent hook setup command (#114)", () => {
+  const agentCode = code(extensionSource);
+  /** The function the command runs, up to the next top-level declaration. */
+  const command = /async function copyAgentHookSetup\(\): Promise<void> \{[\s\S]*?\n\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("runs the pure copyHookSetup with VS Code's tool list, clipboard and editor scheme", () => {
+    assert.ok(command, "copyAgentHookSetup is defined");
+    assert.ok(command.includes("await copyHookSetup({"));
+    assert.ok(command.includes("uriScheme: vscode.env.uriScheme,"));
+    assert.ok(command.includes("vscode.window.showQuickPick(items, {"));
+    assert.ok(command.includes("copy: (text) => vscode.env.clipboard.writeText(text),"));
+  });
+
+  it("reads whether notices are off through the settings reader", () => {
+    assert.ok(command.includes("noticesOff: () => noticeSettings().mode === AutoStartMode.Off,"));
+    assert.ok(!command.includes("getConfiguration"));
+  });
+
+  it("shows a non-modal message whose Open Settings button opens 0xWORD's settings, unawaited", () => {
+    assert.ok(command.includes("vscode.window\n        .showInformationMessage(message, ...buttons)"));
+    assert.ok(!command.includes("modal"));
+    assert.ok(command.includes('vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${EXTENSION_ID}`)'));
+    assert.ok(command.includes("const buttons = offerSettings ? [OPEN_SETTINGS] : [];"));
+  });
+
+  it("never opens, focuses or starts a round", () => {
+    for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "provider"]) {
+      assert.ok(!command.includes(banned), banned);
+    }
+  });
+
+  it("keeps its modules in the file-access scan", () => {
+    const files = sourceFiles();
+    for (const file of ["src/copyHookSetup.ts", "src/hookSnippets.ts"]) {
+      assert.ok(files.includes(file), file);
+      assert.doesNotMatch(readFileSync(new URL(file, root), "utf8"), /from\s*["']vscode["']/, file);
+    }
   });
 });
 
