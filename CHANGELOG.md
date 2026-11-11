@@ -24,3 +24,4 @@ All notable changes to 0xWORD are listed here, newest first.
 - `open` mode: once your agent has worked for a while (20 seconds by default), the 0xWORD panel opens by itself, keeping a round in progress as it is.
 - When your agent finishes mid-round, the panel says "Your agent has finished. Your round is still here."
 - In `notify` and `open` mode, the line under the result card says whether your agent is still working or has finished, and updates as soon as that changes. In `off` mode, or before your agent has sent anything, there's no line.
+- The **0xWORD: Copy agent hook setup** command: pick your agent tool and its hook setup is copied to the clipboard, with a note on where to paste it. 0xWORD never edits your agent tool's files.
