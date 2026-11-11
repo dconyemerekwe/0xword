@@ -3,7 +3,7 @@
 // where to paste it; Esc copies and shows nothing.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { COPY_FAILED, OPEN_SETTINGS, copiedMessage, copyHookSetup, type CopyHookSetupDeps } from "../src/copyHookSetup.ts";
+import { COPY_FAILED, CURSOR_UNTESTED, OPEN_SETTINGS, copiedMessage, copyHookSetup, type CopyHookSetupDeps } from "../src/copyHookSetup.ts";
 import { AgentTool, CURSOR, TOOL_ITEMS, VS_CODE, editorFor, hookSnippet, type ToolItem } from "../src/hookSnippets.ts";
 
 /** What the fake VS Code saw. */
@@ -83,7 +83,7 @@ describe("the message after copying", () => {
   it("shows once, saying where to paste the snippet, with no button while notices are on", async () => {
     const { deps, calls } = fake(AgentTool.ClaudeCode, { noticesOff: false });
     await copyHookSetup(deps);
-    assert.deepEqual(calls.messages, [{ message: copiedMessage(item(AgentTool.ClaudeCode), false), offerSettings: false }]);
+    assert.deepEqual(calls.messages, [{ message: copiedMessage(item(AgentTool.ClaudeCode), VS_CODE, false), offerSettings: false }]);
     const message = calls.messages[0]?.message ?? "";
     assert.ok(message.includes("Paste it into ~/.claude/settings.json."), message);
     assert.ok(message.includes("setup guide"), message);
@@ -93,7 +93,7 @@ describe("the message after copying", () => {
   it("also says notices are off by default, and offers Open Settings, while they're off", async () => {
     const { deps, calls } = fake(AgentTool.Cursor, { noticesOff: true });
     await copyHookSetup(deps);
-    assert.deepEqual(calls.messages, [{ message: copiedMessage(item(AgentTool.Cursor), true), offerSettings: true }]);
+    assert.deepEqual(calls.messages, [{ message: copiedMessage(item(AgentTool.Cursor), VS_CODE, true), offerSettings: true }]);
     const message = calls.messages[0]?.message ?? "";
     assert.ok(message.includes("Notices are off by default"), message);
     assert.equal(OPEN_SETTINGS, "Open Settings");
@@ -105,18 +105,67 @@ describe("the message after copying", () => {
     assert.equal(calls.settingsReads, 1);
   });
 
-  it("names the tool and tells players to merge into an existing hooks section", () => {
-    const message = copiedMessage(item(AgentTool.Codex), false);
-    assert.equal(
-      message,
-      '0xWORD: copied the Codex hook setup. Paste it into ~/.codex/hooks.json. If it already has a "hooks" section, add these entries to it instead of pasting a second object. For details, see the setup guide linked from 0xWORD\'s README.',
-    );
+  /** The guide's pointer, the end of every message while notices are on. */
+  const GUIDE = "For details, see the setup guide linked from 0xWORD's README.";
+
+  it("gives each tool its full message in VS Code, while notices are on", () => {
+    const merge =
+      "If the file already exists, don't paste a second object: merge these entries into its \"hooks\" section, adding to any list that's already there.";
+    const copilot =
+      "Save it as a new .json file in ~/.copilot/hooks/, for example ~/.copilot/hooks/0xword.json. If you already saved it for the other Copilot setup, you're done.";
+    const expected: Record<AgentTool, string> = {
+      [AgentTool.ClaudeCode]: `0xWORD: copied the Claude Code hook setup. Paste it into ~/.claude/settings.json. ${merge} ${GUIDE}`,
+      [AgentTool.CopilotVsCode]: `0xWORD: copied the GitHub Copilot agent hooks in VS Code hook setup. ${copilot} ${GUIDE}`,
+      [AgentTool.CopilotCli]: `0xWORD: copied the Copilot CLI hook setup. ${copilot} ${GUIDE}`,
+      [AgentTool.Cursor]:
+        "0xWORD: copied the Cursor hook setup. Paste it into ~/.cursor/hooks.json. If the file already exists, keep its one \"version\" and don't paste a second object: merge these entries into its \"hooks\" section, adding to any list that's already there. " +
+        `Cursor support isn't tested yet: check it before relying on it. ${GUIDE}`,
+      [AgentTool.Codex]: `0xWORD: copied the Codex hook setup. Paste it into ~/.codex/hooks.json. ${merge} ${GUIDE}`,
+    };
+    for (const { tool } of TOOL_ITEMS) {
+      assert.equal(copiedMessage(item(tool), VS_CODE, false), expected[tool], tool);
+    }
   });
 
-  it("tells Copilot players to save a new file in ~/.copilot/hooks/", () => {
-    for (const tool of [AgentTool.CopilotVsCode, AgentTool.CopilotCli]) {
-      assert.ok(copiedMessage(item(tool), false).includes("Save it as a new .json file in ~/.copilot/hooks/"), tool);
+  it("starts the merge advice from the file existing, never from a hooks section existing", () => {
+    for (const tool of [AgentTool.ClaudeCode, AgentTool.Cursor, AgentTool.Codex]) {
+      const message = copiedMessage(item(tool), VS_CODE, false);
+      assert.ok(message.includes("If the file already exists, "), tool);
+      assert.ok(message.includes("don't paste a second object"), tool);
+      assert.ok(message.includes("adding to any list that's already there"), tool);
+      assert.doesNotMatch(message, /If it already has|already has a "hooks"/, tool);
     }
+  });
+
+  it("tells Cursor players to keep the file's one version", () => {
+    assert.ok(copiedMessage(item(AgentTool.Cursor), VS_CODE, false).includes('keep its one "version"'));
+    assert.ok(!copiedMessage(item(AgentTool.Codex), VS_CODE, false).includes('"version"'));
+  });
+
+  it("tells Copilot players to save a new file in ~/.copilot/hooks/, once for both setups", () => {
+    for (const tool of [AgentTool.CopilotVsCode, AgentTool.CopilotCli]) {
+      const message = copiedMessage(item(tool), VS_CODE, false);
+      assert.ok(message.includes("Save it as a new .json file in ~/.copilot/hooks/"), tool);
+      assert.ok(message.includes("If you already saved it for the other Copilot setup, you're done."), tool);
+    }
+  });
+
+  it("says Cursor isn't tested yet for the Cursor item in any editor, and for every item in Cursor", async () => {
+    for (const { tool } of TOOL_ITEMS) {
+      for (const scheme of ["vscode", "vscode-insiders", "cursor"]) {
+        const { deps, calls } = fake(tool, { uriScheme: scheme });
+        await copyHookSetup(deps);
+        const message = calls.messages[0]?.message ?? "";
+        const cursor = tool === AgentTool.Cursor || scheme === "cursor";
+        assert.equal(message.includes(CURSOR_UNTESTED), cursor, `${tool} in ${scheme}`);
+      }
+    }
+    assert.equal(CURSOR_UNTESTED, "Cursor support isn't tested yet: check it before relying on it.");
+  });
+
+  it("puts the notices note last, after the guide", () => {
+    const message = copiedMessage(item(AgentTool.ClaudeCode), CURSOR, true);
+    assert.ok(message.endsWith(`${CURSOR_UNTESTED} ${GUIDE} Notices are off by default: turn them on in 0xWORD's settings.`), message);
   });
 
   it("shows a failure instead, and no success message, if the clipboard refuses", async () => {

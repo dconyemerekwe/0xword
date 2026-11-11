@@ -119,12 +119,38 @@ describe("the tool list", () => {
     }
   });
 
-  it("tells players to merge into an existing hooks section for the files they may already have", () => {
+  it("tells players to merge into the file if it already exists, for the files they may already have", () => {
     for (const item of TOOL_ITEMS) {
       const shared = item.tool === AgentTool.ClaudeCode || item.tool === AgentTool.Cursor || item.tool === AgentTool.Codex;
-      assert.equal(item.paste.includes('If it already has a "hooks" section'), shared, item.label);
-      assert.equal(item.paste.includes("instead of pasting a second object"), shared, item.label);
+      assert.equal(item.paste.includes("If the file already exists, "), shared, item.label);
+      assert.equal(item.paste.includes("don't paste a second object: merge these entries into its \"hooks\" section"), shared, item.label);
+      assert.equal(item.paste.includes("adding to any list that's already there."), shared, item.label);
     }
+  });
+
+  it("keys the merge advice on the file existing, not on a hooks section existing", () => {
+    for (const item of TOOL_ITEMS) {
+      assert.doesNotMatch(item.paste, /If it already has|already has a "hooks"/, item.label);
+      const advice = item.paste.indexOf("If the file already exists");
+      assert.ok(advice === -1 || advice < item.paste.indexOf('"hooks"'), item.label);
+    }
+  });
+
+  it("gives the exact paste text for each tool", () => {
+    const merge =
+      'If the file already exists, don\'t paste a second object: merge these entries into its "hooks" section, adding to any list that\'s already there.';
+    const copilot =
+      "Save it as a new .json file in ~/.copilot/hooks/, for example ~/.copilot/hooks/0xword.json. If you already saved it for the other Copilot setup, you're done.";
+    assert.deepEqual(
+      TOOL_ITEMS.map((item) => item.paste),
+      [
+        `Paste it into ~/.claude/settings.json. ${merge}`,
+        copilot,
+        copilot,
+        'Paste it into ~/.cursor/hooks.json. If the file already exists, keep its one "version" and don\'t paste a second object: merge these entries into its "hooks" section, adding to any list that\'s already there.',
+        `Paste it into ~/.codex/hooks.json. ${merge}`,
+      ],
+    );
   });
 });
 

@@ -5,13 +5,16 @@
 //
 // It never reads or writes a file: the hooks stay the player's to add.
 
-import { editorFor, hookSnippet, TOOL_ITEMS, type ToolItem } from "./hookSnippets.ts";
+import { AgentTool, CURSOR, editorFor, hookSnippet, TOOL_ITEMS, type Editor, type ToolItem } from "./hookSnippets.ts";
 
 /** The button that opens 0xWORD's settings, offered while notices are off. */
 export const OPEN_SETTINGS = "Open Settings";
 
 /** Where the message points for more help. */
 const GUIDE = "For details, see the setup guide linked from 0xWORD's README.";
+
+/** Added for the Cursor item, or in Cursor, whose scheme and launcher aren't tested yet. */
+export const CURSOR_UNTESTED = "Cursor support isn't tested yet: check it before relying on it.";
 
 /** Added to the message while notices are off. */
 const NOTICES_OFF = "Notices are off by default: turn them on in 0xWORD's settings.";
@@ -36,11 +39,16 @@ export interface CopyHookSetupDeps {
 }
 
 /**
- * The message after copying `item`'s snippet: where to paste it, where to
+ * The message after copying `item`'s snippet for `editor`: where to paste
+ * it, that Cursor isn't tested yet if the snippet signals Cursor, where to
  * read more and, while notices are off, that they're off by default.
  */
-export function copiedMessage(item: ToolItem, noticesOff: boolean): string {
-  const parts = [`0xWORD: copied the ${item.label} hook setup.`, item.paste, GUIDE];
+export function copiedMessage(item: ToolItem, editor: Editor, noticesOff: boolean): string {
+  const parts = [`0xWORD: copied the ${item.label} hook setup.`, item.paste];
+  if (item.tool === AgentTool.Cursor || editor === CURSOR) {
+    parts.push(CURSOR_UNTESTED);
+  }
+  parts.push(GUIDE);
   if (noticesOff) {
     parts.push(NOTICES_OFF);
   }
@@ -57,13 +65,14 @@ export async function copyHookSetup(deps: CopyHookSetupDeps): Promise<boolean> {
   if (item === undefined) {
     return false;
   }
+  const editor = editorFor(deps.uriScheme);
   try {
-    await deps.copy(hookSnippet(item.tool, editorFor(deps.uriScheme)));
+    await deps.copy(hookSnippet(item.tool, editor));
   } catch {
     deps.failed(COPY_FAILED);
     return false;
   }
   const off = deps.noticesOff();
-  deps.copied(copiedMessage(item, off), off);
+  deps.copied(copiedMessage(item, editor, off), off);
   return true;
 }

@@ -65,11 +65,21 @@ export interface ToolItem {
   readonly paste: string;
 }
 
-/** Said for a file the player may already have, as the guide says (#120). */
-const MERGE = 'If it already has a "hooks" section, add these entries to it instead of pasting a second object.';
+/**
+ * Said for a file the player may already have, as the guide says (#120):
+ * keyed on the file existing, not on it having a `hooks` section, so a file
+ * with no `hooks` doesn't get a second object pasted into it.
+ */
+const MERGE =
+  "If the file already exists, don't paste a second object: merge these entries into its \"hooks\" section, adding to any list that's already there.";
+
+/** Cursor's version of MERGE, which also keeps the file's one `"version"`. */
+const CURSOR_MERGE =
+  "If the file already exists, keep its one \"version\" and don't paste a second object: merge these entries into its \"hooks\" section, adding to any list that's already there.";
 
 /** Said for both Copilot setups, which share one new file. */
-const COPILOT_PASTE = "Save it as a new .json file in ~/.copilot/hooks/, for example ~/.copilot/hooks/0xword.json.";
+const COPILOT_PASTE =
+  "Save it as a new .json file in ~/.copilot/hooks/, for example ~/.copilot/hooks/0xword.json. If you already saved it for the other Copilot setup, you're done.";
 
 /** The tool list, in the guide's order. */
 export const TOOL_ITEMS: readonly ToolItem[] = [
@@ -95,7 +105,7 @@ export const TOOL_ITEMS: readonly ToolItem[] = [
     tool: AgentTool.Cursor,
     label: "Cursor",
     detail: "~/.cursor/hooks.json",
-    paste: `Paste it into ~/.cursor/hooks.json. ${MERGE}`,
+    paste: `Paste it into ~/.cursor/hooks.json. ${CURSOR_MERGE}`,
   },
   {
     tool: AgentTool.Codex,
