@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import { AgentState, RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
+import { OPEN_SETTINGS, copyHookSetup } from "./copyHookSetup.ts";
+import { EXTENSION_ID } from "./hookSnippets.ts";
 import {
   NewRoundRequests,
   answerWebview,
@@ -11,6 +13,7 @@ import {
   viewVisibilityChanged,
 } from "./newRoundRequests.ts";
 import {
+  AutoStartMode,
   SETTINGS_SECTION,
   agentStateFor,
   readNoticeSettings,
@@ -33,6 +36,9 @@ const VIEW_ID = "0xword.game";
 /** The "0xWORD: New Round" command, as contributed in package.json. */
 const NEW_ROUND_COMMAND = "0xword.newRound";
 
+/** The "0xWORD: Copy agent hook setup" command, as contributed in package.json. */
+const COPY_HOOK_SETUP_COMMAND = "0xword.copyHookSetup";
+
 /** The "0x Round ready" status-bar item's id. */
 const ROUND_READY_ID = "0xword.roundReady";
 
@@ -53,8 +59,42 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider),
     vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),
+    vscode.commands.registerCommand(COPY_HOOK_SETUP_COMMAND, () => copyAgentHookSetup()),
     ...agentSignals(provider),
   );
+}
+
+/**
+ * Runs "0xWORD: Copy agent hook setup" with VS Code's own calls: the tool
+ * list, the clipboard and non-modal messages. The steps are in the pure
+ * `copyHookSetup`. Reads no file and writes none; the mode is read through
+ * the settings reader, and the snippets follow the editor's link scheme.
+ */
+async function copyAgentHookSetup(): Promise<void> {
+  await copyHookSetup({
+    uriScheme: vscode.env.uriScheme,
+    pick: (items) =>
+      vscode.window.showQuickPick(items, {
+        title: "0xWORD: Copy agent hook setup",
+        placeHolder: "Pick your agent tool",
+        matchOnDetail: true,
+      }),
+    copy: (text) => vscode.env.clipboard.writeText(text),
+    noticesOff: () => noticeSettings().mode === AutoStartMode.Off,
+    copied: (message, offerSettings) => {
+      const buttons = offerSettings ? [OPEN_SETTINGS] : [];
+      // Not awaited, so the command ends at once; any failure is ignored.
+      vscode.window
+        .showInformationMessage(message, ...buttons)
+        .then((choice) =>
+          choice === OPEN_SETTINGS
+            ? vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${EXTENSION_ID}`)
+            : undefined,
+        )
+        .then(undefined, () => undefined);
+    },
+    failed: (message) => void vscode.window.showWarningMessage(message),
+  });
 }
 
 export function deactivate(): void {}

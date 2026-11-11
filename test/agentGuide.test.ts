@@ -2,11 +2,13 @@
 // short "Play while your agent works" section (#113): the guide's snippets
 // parse, every link is one the URI handler accepts, nothing a hook runs prints,
 // notices are said to be off by default, the settings screenshot is shown, and
-// the README leaves the setup to the guide.
+// the README leaves the setup to the guide. Also checks the snippets the copy
+// command copies (#114) are the guide's, and print nothing.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { readAgentSignal } from "../src/agentSignals.ts";
+import { AgentTool, CURSOR, TOOL_ITEMS, VS_CODE, editorFor, hookSnippet } from "../src/hookSnippets.ts";
 import { imageLinks } from "./markdown.ts";
 
 const root = new URL("../", import.meta.url);
@@ -272,7 +274,6 @@ describe("the guide is for players only", () => {
     /agent-checks/,
     /What's been checked/,
     /#\d+/,
-    /Copy agent hook setup/,
     /\bplanned\b|\bPhase \d/i,
     /\bthe owner\b/i,
   ];
@@ -288,7 +289,7 @@ describe("the guide is for players only", () => {
       "(expected; see check 5)",
       "see [agent-checks.md](agent-checks.md)",
       "planned for a later update (#114)",
-      "A **0xWORD: Copy agent hook setup** command",
+      "A **0xWORD: Copy agent hook setup** command is planned",
     ]) {
       assert.ok(MAINTAINER_ONLY.some((pattern) => pattern.test(text)), text);
     }
@@ -338,5 +339,63 @@ describe("copying a snippet into a config file that already exists (#120)", () =
 
   it("the Claude Code note adds to an existing UserPromptSubmit or Stop list instead of a second key", () => {
     assert.match(toolSection("Claude Code"), /already has a `(UserPromptSubmit|Stop)`|existing `(UserPromptSubmit|Stop)`/);
+  });
+});
+
+describe("the snippets 0xWORD: Copy agent hook setup copies (#114)", () => {
+  /** The guide's JSON block in a tool's section: its only one with a `hooks` key. */
+  function guideSnippet(tool: string): string {
+    const blocks = codeBlocks(toolSection(tool)).filter((block) => block.language === "json" && /"hooks"/.test(block.body));
+    assert.equal(blocks.length, 1, tool);
+    return blocks[0]?.body ?? "";
+  }
+
+  /** Every editor scheme the command knows, plus one it doesn't. */
+  const SCHEMES = ["vscode", "vscode-insiders", "vscodium", "cursor", "windsurf"];
+
+  it("lists the tools by the guide's section headings, each naming a file the section names", () => {
+    for (const item of TOOL_ITEMS) {
+      const section = toolSection(item.label);
+      const folder = item.detail.slice(0, item.detail.lastIndexOf("/") + 1);
+      assert.ok(section.includes(`\`${item.detail}\``) || section.includes(`\`${folder}\``), item.label);
+    }
+  });
+
+  it("in VS Code, are the guide's snippets word for word", () => {
+    for (const item of TOOL_ITEMS) {
+      assert.equal(`${hookSnippet(item.tool, editorFor("vscode"))}\n`, guideSnippet(item.label), item.label);
+    }
+  });
+
+  it("in Cursor, are the guide's Cursor snippet for Cursor, using Cursor's own scheme", () => {
+    assert.equal(`${hookSnippet(AgentTool.Cursor, editorFor("cursor"))}\n`, guideSnippet("Cursor"));
+    assert.equal(hookSnippet(AgentTool.Cursor, VS_CODE), hookSnippet(AgentTool.Cursor, CURSOR));
+  });
+
+  it("in an editor the command doesn't know, are the guide's snippets", () => {
+    for (const item of TOOL_ITEMS) {
+      assert.equal(`${hookSnippet(item.tool, editorFor("windsurf"))}\n`, guideSnippet(item.label), item.label);
+    }
+  });
+
+  it("print nothing, in every editor: every command just opens a signal link", () => {
+    for (const scheme of SCHEMES) {
+      for (const { tool } of TOOL_ITEMS) {
+        const snippet = hookSnippet(tool, editorFor(scheme));
+        assert.doesNotMatch(snippet, PRINTING, `${tool} in ${scheme}`);
+        const commands = hookCommands(JSON.parse(snippet));
+        assert.equal(commands.length, 2, `${tool} in ${scheme}`);
+        for (const command of commands) {
+          assert.match(command, /^[a-z-]+ --open-url "[a-z-]+:\/\/dconyemerekwe\.0xword\/agent-(started|finished)"$/, command);
+          assert.doesNotMatch(command, PRINTING, command);
+        }
+      }
+    }
+  });
+
+  it("the guide points players to the command in one line", () => {
+    const line = "You can also copy your tool's setup with **0xWORD: Copy agent hook setup**.";
+    assert.equal(guide.split("\n").filter((text) => text.includes("Copy agent hook setup")).length, 1);
+    assert.ok(guide.split("\n").includes(line));
   });
 });
