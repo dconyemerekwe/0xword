@@ -1,16 +1,18 @@
 import * as vscode from "vscode";
-import { RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
+import { AgentState, RoundReadyNotice, readAgentSignal } from "./agentSignals.ts";
 import {
   NewRoundRequests,
   answerWebview,
   sendAgentFinished,
   sendAgentOpen,
   sendAgentStarted,
+  sendAgentState,
   sendNewRound,
   viewVisibilityChanged,
 } from "./newRoundRequests.ts";
 import {
   SETTINGS_SECTION,
+  agentStateFor,
   readNoticeSettings,
   showPopup,
   tellAgentFinished,
@@ -72,6 +74,11 @@ export function deactivate(): void {}
  * progress, and a start that begins a run tells it to clear that message.
  * Neither opens, focuses or reloads the panel.
  *
+ * After every signal and every settings change, the panel is also told what
+ * the line under the result card says (#121): `agentStateFor` works it out
+ * from the last signal since VS Code started and the mode now. The last
+ * signal is kept in memory only, so a restart begins with no line.
+ *
  * In `open` mode (#111) no notice shows. Instead, once the agent has worked
  * for the set delay, the panel opens without taking keyboard focus (see
  * `GameViewProvider.agentOpen`), and the webview is told to keep the round in
@@ -101,6 +108,7 @@ function agentSignals(provider: GameViewProvider): vscode.Disposable[] {
       item.hide();
     }
     provider.setBadge(visible.badge);
+    provider.setAgentState(agentStateFor(notice.lastSignal, settings));
   };
   const handler = vscode.window.registerUriHandler({
     // Only plain strings reach the reader; any other link is ignored silently.
@@ -188,6 +196,11 @@ class GameViewProvider implements vscode.WebviewViewProvider {
   #view: vscode.WebviewView | undefined;
   /** Whether the badge should show; kept so a view resolved later gets it too. */
   #badge = false;
+  /**
+   * What the line under the result card says (#121); kept so every load gets
+   * the state as it is when `init` has been posted, never an older one.
+   */
+  #agentState: AgentState = AgentState.None;
 
   constructor(extensionUri: vscode.Uri, handlers: HostHandlers) {
     this.#extensionUri = extensionUri;
@@ -219,6 +232,7 @@ class GameViewProvider implements vscode.WebviewViewProvider {
         id,
         (message) => post(webview, message),
         this.#postToView,
+        this.#currentAgentState,
       );
     });
     // A hidden view's webview is unloaded, and sends `ready` again when shown.
@@ -318,6 +332,22 @@ class GameViewProvider implements vscode.WebviewViewProvider {
   agentStarted(): void {
     void sendAgentStarted(this.#requests, this.#postToView);
   }
+
+  /**
+   * Records what the line under the result card says (#121), and tells the
+   * webview, only if it's listening now, as `agentFinished` does. A webview
+   * that isn't gets the state as it is then after its next `init`. Called
+   * after every signal and settings change, even with no change: the webview
+   * ignores a state it already shows. Doesn't open or focus the view. Isn't
+   * awaited and never rejects.
+   */
+  setAgentState(state: AgentState): void {
+    this.#agentState = state;
+    void sendAgentState(this.#requests, this.#postToView, this.#currentAgentState);
+  }
+
+  /** The state `setAgentState` last recorded, read at every post. */
+  readonly #currentAgentState = (): AgentState => this.#agentState;
 
   /**
    * Shows or clears the badge on the 0xWORD icon. A badge needs a view, so

@@ -7,7 +7,7 @@
 // user's. A value typed into settings.json isn't checked by VS Code, so every
 // value is checked here, and an invalid one gets that setting's default.
 
-import { NoticeChange } from "./agentSignals.ts";
+import { AgentSignal, AgentState, NoticeChange } from "./agentSignals.ts";
 
 /** What happens when an agent starts working. */
 export const AutoStartMode = {
@@ -147,4 +147,18 @@ export function tellAgentFinished(change: NoticeChange | null, settings: NoticeS
  */
 export function tellAgentStarted(change: NoticeChange | null, settings: NoticeSettings): boolean {
   return change === NoticeChange.Show && settings.mode !== AutoStartMode.Off;
+}
+
+/**
+ * What the line under the result card says (#121), from the last signal
+ * since VS Code started (`RoundReadyNotice.lastSignal`) and the mode as it is
+ * now: nothing in `off` mode or before any signal, otherwise "working" after
+ * `started` and "finished" after `finished`. Worked out again after every
+ * signal and every settings change, so a mode change applies straight away.
+ */
+export function agentStateFor(lastSignal: AgentSignal | null, settings: Pick<NoticeSettings, "mode">): AgentState {
+  if (settings.mode === AutoStartMode.Off || lastSignal === null) {
+    return AgentState.None;
+  }
+  return lastSignal === AgentSignal.Started ? AgentState.Working : AgentState.Finished;
 }

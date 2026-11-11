@@ -225,7 +225,12 @@ The same as page 1 with Hints on: the Hints button is highlighted, and a **hint 
   - the line "3 of 6 rows attempted · 2 hints used" (owner's wording, #38): the rows used and the hint count. One hint reads "1 hint used"; any other count is plural, "0 hints used" included. This differs from the draft's "3 of 6 rows · 2 answer tries · no hints": answer tries are still counted and sent to the host, but no longer shown.
   - four tiles, each with the hex in blue (`42`), a down arrow, and the letter (`B`)
   - a blue **New round** button. The draft also has an outlined **Copy result** button: **on hold** by the owner, as an extra for a later release, so it isn't built (#24).
-- Under the card, in muted text: "Your agent is still working. Next round is ready when you are."
+- Under the card, in muted text, a line that follows the agent (#121), in three cases:
+  - in `notify` or `open` mode, while the agent is working (its last signal was `agent-started`): "Your agent is still working. Next round is ready when you are." (page 4's wording)
+  - in `notify` or `open` mode, once the agent has finished (its last signal was `agent-finished`): "Your agent has finished."
+  - in `off` mode, or when no agent signal has arrived since VS Code started: no line.
+
+  It changes straight away when a signal arrives or the mode changes while the card shows, and is read out politely to screen readers, without moving focus. A panel opened, reopened or reloaded on the card shows the agent's state as it is then.
 - **A failed round** gets the same card (#24): the outcome line "Unlucky!", the heading "The word was BYTE", the line "6 of 6 rows attempted · 0 hints used" (with the round's own hint count), the byte tiles and New round. The status line reads "4-letter word · out of rows" after row 6, or "4-letter word · not decoded" after a wrong word on a solved grid, which may leave rows unused (#46). Screen readers hear the same, "Out of rows" or "Not decoded", from the message line behind the card.
 - **Dark theme (#24):** the card is built in the dark palette first; the light theme (#26) draws it with the page 4 values above. The page 4 values map to existing dark tokens: the card is the decode panel colour `#1D2027` with a `#2F6FE4` outline, the byte tiles are `#1E2A45` (the Hints-on fill) with the hex in `#7EA8FF` (the dark theme's blue text) and the letter in `#E8EAF0`, and New round is `#2F6FE4` with white text. The owner should confirm these.
 

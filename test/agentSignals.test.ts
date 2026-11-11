@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   AgentSignal,
+  AgentState,
   NoticeChange,
   RoundReadyNotice,
+  isAgentState,
   readAgentSignal,
   type AgentLink,
 } from "../src/agentSignals.ts";
@@ -111,6 +113,62 @@ describe("RoundReadyNotice", () => {
       paths.map((path) => notice.apply(readAgentSignal(link(path)))),
       [NoticeChange.Show, null, NoticeChange.Hide],
     );
+  });
+});
+
+describe("RoundReadyNotice.lastSignal (#121)", () => {
+  it("is null until a signal arrives, as after VS Code starts", () => {
+    assert.equal(new RoundReadyNotice().lastSignal, null);
+  });
+
+  it("is started after a start, and finished after the run's finish", () => {
+    const notice = new RoundReadyNotice();
+    notice.apply(AgentSignal.Started);
+    assert.equal(notice.lastSignal, AgentSignal.Started);
+    notice.apply(AgentSignal.Finished);
+    assert.equal(notice.lastSignal, AgentSignal.Finished);
+  });
+
+  it("counts a finish with no start before it: the agent has finished", () => {
+    const notice = new RoundReadyNotice();
+    assert.equal(notice.apply(AgentSignal.Finished), null, "no notice change");
+    assert.equal(notice.lastSignal, AgentSignal.Finished);
+  });
+
+  it("keeps the last signal through repeats", () => {
+    const notice = new RoundReadyNotice();
+    for (const signal of [AgentSignal.Started, AgentSignal.Started]) {
+      notice.apply(signal);
+    }
+    assert.equal(notice.lastSignal, AgentSignal.Started);
+    for (const signal of [AgentSignal.Finished, AgentSignal.Finished]) {
+      notice.apply(signal);
+    }
+    assert.equal(notice.lastSignal, AgentSignal.Finished);
+  });
+
+  it("ignores a link that isn't a signal, before and after a real one", () => {
+    const notice = new RoundReadyNotice();
+    notice.apply(readAgentSignal(link("/agent-finished/")));
+    assert.equal(notice.lastSignal, null);
+    notice.apply(AgentSignal.Started);
+    notice.apply(readAgentSignal(link("/agent-finished", "x=1")));
+    assert.equal(notice.lastSignal, AgentSignal.Started);
+  });
+});
+
+describe("isAgentState (#121)", () => {
+  it("accepts the three states", () => {
+    assert.deepEqual(Object.values(AgentState), ["none", "working", "finished"]);
+    for (const state of Object.values(AgentState)) {
+      assert.equal(isAgentState(state), true, state);
+    }
+  });
+
+  it("rejects anything else", () => {
+    for (const value of ["", "Working", "FINISHED", " none", "started", "__proto__", "toString", null, undefined, true, 0, ["working"], {}]) {
+      assert.equal(isAgentState(value), false, String(value));
+    }
   });
 });
 

@@ -5,6 +5,7 @@
 // contains the answer, only the letters of bytes the player has fully decoded,
 // while hints are on. The answer joins it only once the round is over, in the
 // result card (`result`).
+import { AgentState } from "../agentSignals.ts";
 import { HEX_LENGTH, WORD_LENGTH, hexToWord, wordToHex } from "../game/hex.ts";
 import {
   MAX_ROWS,
@@ -151,8 +152,17 @@ export const NEW_ROUND_BUTTON = "New round";
  */
 export const NEW_ROUND_ANNOUNCEMENT = NEW_ROUND_BUTTON;
 
-/** Under the result card, in muted text (page 4). */
+/**
+ * Under the result card, in muted text (page 4), while the agent is working:
+ * its last signal was `agent-started`, in `notify` or `open` mode (#121).
+ */
 export const RESULT_NOTE = "Your agent is still working. Next round is ready when you are.";
+
+/**
+ * Under the result card in place of `RESULT_NOTE` once the agent has
+ * finished: its last signal was `agent-finished` (#121). The owner's wording.
+ */
+export const AGENT_FINISHED_NOTE = "Your agent has finished.";
 
 /**
  * On the message line, in its normal colour, when the agent finishes a run
@@ -196,7 +206,7 @@ export interface ResultView {
   /** One tile per byte of the answer, in order. */
   readonly bytes: readonly ResultByte[];
   readonly button: string;
-  /** Under the card. */
+  /** Under the card: `resultNote` of the agent's state, "" for no line. */
   readonly note: string;
 }
 
@@ -361,6 +371,12 @@ export class GameController {
   #noticeId = 0;
   /** How to play is open. Not saved: a reload shows the game. */
   #howToPlayOpen = false;
+  /**
+   * The agent's state, as the host last sent it (#121), for the line under
+   * the result card. UI only: never saved, so every load starts with `none`
+   * (no line) until the host says otherwise.
+   */
+  #agentState: AgentState = AgentState.None;
 
   constructor(session: Session, changed: Changed) {
     this.#session = session;
@@ -445,6 +461,23 @@ export class GameController {
     return true;
   }
 
+  /**
+   * The host's `agentState` (#121): records what the line under the result
+   * card says, kept for the rest of this load, through new rounds too.
+   * Returns true if the result card shows and its line changed, so the DOM
+   * layer draws that line alone. Before the card shows nothing is drawn: the
+   * card picks the state up when it appears.
+   *
+   * Like `agentFinished`, not a game action: the round, the session and the
+   * saved state stay exactly as they were, nothing is saved or posted, and
+   * no focus moves.
+   */
+  agentState(state: AgentState): boolean {
+    const before = resultNote(this.#agentState);
+    this.#agentState = state;
+    return this.#session.round?.isOver === true && resultNote(state) !== before;
+  }
+
   /** True while a round is in progress: guessing, or at the decode step. */
   #inProgress(): boolean {
     const phase = this.#session.round?.phase;
@@ -486,7 +519,7 @@ export class GameController {
       outOfRows: hexLocked && !hexSolved,
       panel: hexLocked ? FINAL_PANEL : DECODE_PANEL,
       hints: hintsView(round && !round.isOver ? round : null),
-      result: round?.isOver ? resultView(round.result()) : null,
+      result: round?.isOver ? resultView(round.result(), this.#agentState) : null,
       message: notice.text,
       messageIsError: notice.error,
       announcement: notice.announcement,
@@ -727,8 +760,9 @@ export function statusLine(phase: Phase | null, rowsUsed: number, hexSolved = fa
  * The result card for a finished round (page 4): the outcome, the word, the
  * rows used and the hint count, and each byte with its letter. Answer tries
  * stay in the result and `roundFinished` but aren't shown (owner's decision, #38).
+ * The line under it follows `agent`, the agent's state as the host sent it.
  */
-export function resultView(result: RoundResult): ResultView {
+export function resultView(result: RoundResult, agent: AgentState): ResultView {
   const word = result.answer;
   const hex = wordToHex(word);
   return {
@@ -740,8 +774,24 @@ export function resultView(result: RoundResult): ResultView {
       return { hex: byte, letter, label: `${byte} is ${letter}` };
     }),
     button: NEW_ROUND_BUTTON,
-    note: RESULT_NOTE,
+    note: resultNote(agent),
   };
+}
+
+/**
+ * The line under the result card for the agent's state (#121): `RESULT_NOTE`
+ * while it works, `AGENT_FINISHED_NOTE` once it has finished, and "" (no
+ * line) in `off` mode or before any signal since VS Code started.
+ */
+export function resultNote(agent: AgentState): string {
+  switch (agent) {
+    case AgentState.Working:
+      return RESULT_NOTE;
+    case AgentState.Finished:
+      return AGENT_FINISHED_NOTE;
+    case AgentState.None:
+      return "";
+  }
 }
 
 /** "1 hint used", or "0 hints used", "2 hints used" and so on (owner's wording, #38). */

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { AgentSignal, NoticeChange, RoundReadyNotice } from "../src/agentSignals.ts";
+import { AgentSignal, AgentState, NoticeChange, RoundReadyNotice } from "../src/agentSignals.ts";
 import {
   AutoStartMode,
   DEFAULT_NOTICE_SETTINGS,
   MAX_DELAY_SECONDS,
   SettingKey,
+  agentStateFor,
   readNoticeSettings,
   showPopup,
   tellAgentFinished,
@@ -416,11 +417,60 @@ describe("a run with live settings changes", () => {
   });
 });
 
+describe("agentStateFor: the line under the result card (#121)", () => {
+  const open: NoticeSettings = { ...DEFAULT_NOTICE_SETTINGS, mode: AutoStartMode.Open };
+  const off: NoticeSettings = DEFAULT_NOTICE_SETTINGS;
+
+  it("says working after a start, in notify and open mode", () => {
+    for (const settings of [notify(), open]) {
+      assert.equal(agentStateFor(AgentSignal.Started, settings), AgentState.Working, settings.mode);
+    }
+  });
+
+  it("says finished after a finish, in notify and open mode", () => {
+    for (const settings of [notify(), open]) {
+      assert.equal(agentStateFor(AgentSignal.Finished, settings), AgentState.Finished, settings.mode);
+    }
+  });
+
+  it("shows no line in off mode, the default, whatever the last signal", () => {
+    for (const signal of [AgentSignal.Started, AgentSignal.Finished, null]) {
+      assert.equal(agentStateFor(signal, off), AgentState.None, String(signal));
+    }
+  });
+
+  it("shows no line before any signal since VS Code started, in every mode", () => {
+    for (const settings of [notify(), open, off]) {
+      assert.equal(agentStateFor(null, settings), AgentState.None, settings.mode);
+    }
+  });
+
+  it("follows the notices' switches not at all: notify with every notice off still shows the line", () => {
+    assert.equal(agentStateFor(AgentSignal.Started, notify({ badge: false, statusBar: false, popup: false })), AgentState.Working);
+  });
+
+  it("follows a mode change mid-run: notify to off hides the line, and back to notify or open shows it again", () => {
+    const notice = new RoundReadyNotice();
+    notice.apply(AgentSignal.Started);
+    const states = [notify(), off, notify(), open].map((settings) => agentStateFor(notice.lastSignal, settings));
+    assert.deepEqual(states, [AgentState.Working, AgentState.None, AgentState.Working, AgentState.Working]);
+  });
+
+  it("goes from link to line end to end: start, finish, start again", () => {
+    const notice = new RoundReadyNotice();
+    const states = [AgentSignal.Started, AgentSignal.Finished, AgentSignal.Started].map((signal) => {
+      notice.apply(signal);
+      return agentStateFor(notice.lastSignal, notify());
+    });
+    assert.deepEqual(states, [AgentState.Working, AgentState.Finished, AgentState.Working]);
+  });
+});
+
 describe("the settings reader is pure", () => {
   it("has no vscode import and imports only the pure link reader", () => {
     const source = readFileSync(new URL("../src/noticeSettings.ts", import.meta.url), "utf8");
     assert.doesNotMatch(source, /from\s*["']vscode["']/);
-    assert.deepEqual(source.match(/^import\b.*$/gm), ['import { NoticeChange } from "./agentSignals.ts";']);
+    assert.deepEqual(source.match(/^import\b.*$/gm), ['import { AgentSignal, AgentState, NoticeChange } from "./agentSignals.ts";']);
   });
 
   it("keeps nothing in globalState", () => {

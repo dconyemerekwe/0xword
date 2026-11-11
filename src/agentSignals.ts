@@ -44,6 +44,30 @@ export function readAgentSignal(link: AgentLink): AgentSignal | null {
   return PATHS.get(link.path) ?? null;
 }
 
+/**
+ * What the line under the result card says about the agent (#121): nothing,
+ * "still working" or "finished". The host decides it from the last signal
+ * and the mode (`agentStateFor` in noticeSettings.ts) and sends it to the
+ * webview as `agentState`.
+ */
+export const AgentState = {
+  /** No line: `off` mode, or no signal has arrived since VS Code started. */
+  None: "none",
+  /** The last signal was `started`. */
+  Working: "working",
+  /** The last signal was `finished`. */
+  Finished: "finished",
+} as const;
+export type AgentState = (typeof AgentState)[keyof typeof AgentState];
+
+/** The states a message may carry. */
+const AGENT_STATES: ReadonlySet<unknown> = new Set(Object.values(AgentState));
+
+/** True if `value` is one of the agent states, exactly. */
+export function isAgentState(value: unknown): value is AgentState {
+  return AGENT_STATES.has(value);
+}
+
 /** What to do to the status-bar notice after a signal. */
 export const NoticeChange = {
   Show: "show",
@@ -61,10 +85,20 @@ export type NoticeChange = (typeof NoticeChange)[keyof typeof NoticeChange];
  */
 export class RoundReadyNotice {
   #showing = false;
+  #lastSignal: AgentSignal | null = null;
 
   /** True while the notice is due: from `started` until `finished`. */
   get showing(): boolean {
     return this.#showing;
+  }
+
+  /**
+   * The last signal since the extension started, repeats included, or null
+   * if none has arrived yet (#121). A link that isn't a signal doesn't count.
+   * Kept in memory only, so it starts again at null when VS Code restarts.
+   */
+  get lastSignal(): AgentSignal | null {
+    return this.#lastSignal;
   }
 
   /**
@@ -73,6 +107,9 @@ export class RoundReadyNotice {
    * signal).
    */
   apply(signal: AgentSignal | null): NoticeChange | null {
+    if (signal !== null) {
+      this.#lastSignal = signal;
+    }
     if (signal === AgentSignal.Started && !this.#showing) {
       this.#showing = true;
       return NoticeChange.Show;

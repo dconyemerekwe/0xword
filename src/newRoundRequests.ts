@@ -24,12 +24,18 @@
 // `agentFinished` and `agentStarted` (#112) are never kept: each goes only to
 // a webview listening when the agent finishes or starts (`sendIfListening`),
 // and a hidden or closed panel never gets it.
+//
+// `agentState` (#121) isn't kept either. It's sent the same way after every
+// signal and settings change, and after `init` on every load, read from the
+// host's current state at each post, so a load never gets an old one.
+import { AgentState } from "./agentSignals.ts";
 import { deliver, type PostMessage } from "./post.ts";
 import {
   handleWebviewMessage,
   type AgentFinishedMessage,
   type AgentOpenMessage,
   type AgentStartedMessage,
+  type AgentStateMessage,
   type HostHandlers,
   type HostMessage,
   type InitMessage,
@@ -254,7 +260,7 @@ export function sendAgentOpen(
  * `sendIfListening` does. Never rejects.
  */
 export function sendAgentFinished(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
-  return sendIfListening(requests, post, { type: "agentFinished" });
+  return sendIfListening(requests, post, () => ({ type: "agentFinished" }));
 }
 
 /**
@@ -262,28 +268,42 @@ export function sendAgentFinished(requests: NewRoundRequests, post: PostMessage)
  * `sendIfListening` does. Never rejects.
  */
 export function sendAgentStarted(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
-  return sendIfListening(requests, post, { type: "agentStarted" });
+  return sendIfListening(requests, post, () => ({ type: "agentStarted" }));
 }
 
 /**
- * Posts `message` only if the webview is listening now: under the current
- * generation, and again up to POST_RETRIES times while it fails and that same
- * load is still listening. It's never queued or kept, so a webview that isn't
- * listening now (hidden, closed or still loading) never gets it, not even on
- * its next `ready`. Resolves true if it was delivered; never rejects, and
- * logs nothing.
+ * Sends `agentState` (#121) with the agent's state, only if the webview is
+ * listening now, as `sendIfListening` does. `state` is read again for every
+ * post, retries included, so a post never carries a state older than the
+ * host's when it's made. Never rejects.
+ */
+export function sendAgentState(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  state: () => AgentState,
+): Promise<boolean> {
+  return sendIfListening(requests, post, () => ({ type: "agentState", state: state() }));
+}
+
+/**
+ * Posts the message `next` builds only if the webview is listening now: under
+ * the current generation, and again up to POST_RETRIES times while it fails
+ * and that same load is still listening. `next` is called for every post.
+ * It's never queued or kept, so a webview that isn't listening now (hidden,
+ * closed or still loading) never gets it, not even on its next `ready`.
+ * Resolves true if it was delivered; never rejects, and logs nothing.
  */
 async function sendIfListening(
   requests: NewRoundRequests,
   post: PostMessage,
-  message: AgentFinishedMessage | AgentStartedMessage,
+  next: () => AgentFinishedMessage | AgentStartedMessage | AgentStateMessage,
 ): Promise<boolean> {
   const generation = requests.isReady ? requests.generation : null;
   if (generation === null) {
     return false;
   }
   for (let attempt = 1; attempt <= POST_RETRIES + 1 && requests.isListening(generation); attempt++) {
-    if (await deliver(post, message)) {
+    if (await deliver(post, next())) {
       return true;
     }
   }
@@ -345,12 +365,19 @@ export async function sendInit(
 /**
  * Answers a message from view `view`, as `messagesAfter` decides: `init`
  * posted to that view's webview with `sendInit`, then, once it has been
- * delivered or given up, one `sendNewRound` per round queued while the webview
+ * delivered or given up, `sendAgentState` with the agent's state now (#121),
+ * then one `sendNewRound` per round queued while the webview
  * wasn't listening, then `sendAgentOpen` for a kept `agentOpen`. Each queued
  * round is recorded again as a run (`request`, or `requestOpen`),
  * so it's posted if the webview is still listening, or queued again if it
  * stopped while `init` was being retried. `toSender` posts to the webview that
- * sent the message, `toView` to the current view's. Never rejects.
+ * sent the message, `toView` to the current view's. `agentState` reads the
+ * host's current agent state. Never rejects.
+ *
+ * The agent's state is skipped when it's `none`: every load starts with no
+ * line, and a webview that stopped listening gets it on its next `ready`.
+ * It doesn't start or keep a round, so it can't change what the queued
+ * `newRound` and `agentOpen` do.
  */
 export async function answerWebview(
   raw: unknown,
@@ -359,6 +386,7 @@ export async function answerWebview(
   view: number,
   toSender: PostMessage,
   toView: PostMessage,
+  agentState: () => AgentState,
 ): Promise<void> {
   const [reply, ...queued] = messagesAfter(raw, handlers, requests, view);
   if (!reply) {
@@ -370,6 +398,9 @@ export async function answerWebview(
     return;
   }
   await sendInit(requests, toSender, reply, requests.listeningGeneration(view));
+  if (agentState() !== AgentState.None) {
+    await sendAgentState(requests, toView, agentState);
+  }
   for (const message of queued) {
     if (message.type === "agentOpen") {
       await sendAgentOpen(requests, toView, requests.requestOpen());
