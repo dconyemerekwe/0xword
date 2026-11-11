@@ -85,6 +85,8 @@ Agent tools change their hook systems often, and several are still in preview. E
 
 You can also copy your tool's setup with **0xWORD: Copy agent hook setup**.
 
+![VS Code's Command Palette listing the agent tools to copy a setup for: Claude Code, GitHub Copilot agent hooks in VS Code, Copilot CLI, Cursor and Codex, each with the file its setup goes in.](screenshots/copy-hook-setup.png)
+
 ### Claude Code
 
 Checked 2026-11-10 against [Claude Code's hooks reference](https://code.claude.com/docs/en/hooks).

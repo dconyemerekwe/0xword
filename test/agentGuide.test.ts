@@ -326,6 +326,27 @@ describe("the settings screenshot", () => {
   });
 });
 
+describe("the copy hook setup screenshot", () => {
+  const SCREENSHOT = "docs/screenshots/copy-hook-setup.png";
+  const link = "screenshots/copy-hook-setup.png";
+
+  it("is in the repo", () => {
+    assert.ok(existsSync(new URL(SCREENSHOT, root)));
+  });
+
+  it("the guide shows it once, right after the line naming the command, with plain alt text naming every tool", () => {
+    assert.equal(imageLinks(guide).filter((shown) => shown === link).length, 1);
+    const lines = guide.split("\n");
+    const at = lines.findIndex((line) => line.includes(`(${link})`));
+    assert.match(lines[at - 2] ?? "", /^You can also copy your tool's setup with /);
+    const alt = [...guide.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)].find((match) => match[2] === link)?.[1] ?? "";
+    assert.doesNotMatch(alt, /[*`_<>]/, "alt text is plain");
+    for (const tool of ["Claude Code", "GitHub Copilot agent hooks in VS Code", "Copilot CLI", "Cursor", "Codex"]) {
+      assert.ok(alt.includes(tool), `alt text doesn't name ${tool}`);
+    }
+  });
+});
+
 describe("copying a snippet into a config file that already exists (#120)", () => {
   it("each setup that adds to an existing file says how to merge into its hooks", () => {
     for (const [name, text] of [
