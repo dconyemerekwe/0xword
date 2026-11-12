@@ -82,4 +82,5 @@ End with these steps, filled in with the real version:
    git push origin v<new>
    ```
 3. Open the run in the repo's Actions tab, check `verify-tag` and `ci` passed, then approve the `publish` job: **Review deployments**, then **Approve and deploy**. It publishes the `.vsix` CI built with no token, then `github-release` creates the GitHub Release. **Reject** stops the release, and players see no change.
-4. Open a PR from `main` into `develop` so `develop` gets the version bump and changelog.
+4. Once `github-release` has created the GitHub Release, upload to Open VSX: download `0xword.vsix` from the `v<new>` GitHub Release, then on open-vsx.org choose **Publish** → **Publish Extension**, select the file and wait for scanning to finish. See "Open VSX" in `docs/release-pipeline.md`.
+5. Open a PR from `main` into `develop` so `develop` gets the version bump and changelog.

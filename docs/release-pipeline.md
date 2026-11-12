@@ -1,6 +1,6 @@
 # Release pipeline
 
-How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It was built in two parts: Phase 5 added everything that needs no Marketplace access, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). **A version tag on `main` can now publish a real version:** read [The `production` environment](#the-production-environment) before pushing any tag.
+How a version of 0xWORD gets from `develop` to the VS Code Marketplace, and then to [Open VSX](#open-vsx). It was built in two parts: Phase 5 added everything that needs no Marketplace access, and Phase 6 adds publishing (see [PLAN.md](PLAN.md)). **A version tag on `main` can now publish a real version:** read [The `production` environment](#the-production-environment) before pushing any tag.
 
 ## What's built
 
@@ -9,7 +9,7 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace. It was b
 | `ci.yml` runs on `workflow_call` | 5 | Built (#87) |
 | `release.yml` with `verify-tag`, `ci` and `github-release` | 5 | Built (#87). The owner runs the [test-tag checks](#test-tag-checks) once. |
 | `publish` job with Trusted Publishing | 6 | Built (#97), not yet run. **Needs [the `production` environment](#the-production-environment) before any tag is pushed.** `github-release` now follows `publish`. |
-| Open VSX | 6 | Not built |
+| Open VSX | 6 | The owner uploads each release on the website (#98). Nothing in the workflows. |
 
 The owner still has to make the repo public, create the environment and recreate the Trusted Publishing policy. None of that is in the workflows.
 
@@ -80,7 +80,8 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
    ```
    This starts `release.yml`.
 4. **Approve it:** open the run in the Actions tab and approve the `publish` job (**Review deployments**, then **Approve and deploy**). Rejecting it stops the release, and players see no change.
-5. **Sync `develop`:** open a PR from `main` into `develop` so it gets the version bump and changelog.
+5. **Upload it to Open VSX:** once `github-release` has created the GitHub Release, follow [Each release](#each-release).
+6. **Sync `develop`:** open a PR from `main` into `develop` so it gets the version bump and changelog.
 
 ### When something fails
 
@@ -308,6 +309,33 @@ While the repo is private, a new policy has to be used within 48 hours, or it st
 
 **If the Marketplace refuses `--oidc`:** download the `.vsix` from the run and upload it by hand on the manage page. `github-release` won't have run for that tag, so create the GitHub Release by hand too if it's wanted.
 
+## Open VSX
+
+Cursor, Windsurf and VSCodium install extensions from [Open VSX](https://open-vsx.org), not the VS Code Marketplace. **The owner uploads each release on the open-vsx.org website** (owner's decision, #98). There's no `ovsx` dependency, no Open VSX job in the workflows and no stored Open VSX token. The steps follow Open VSX's [Publishing Extensions](https://github.com/EclipseFdn/open-vsx.org/wiki/Publishing-Extensions) page.
+
+### One-time setup
+
+The owner does these once, in order:
+
+1. Create an [eclipse.org](https://accounts.eclipse.org) account, and fill in its **GitHub Username** field with `dconyemerekwe`.
+2. Log in to [open-vsx.org](https://open-vsx.org) with GitHub.
+3. On your open-vsx.org profile page, choose **Log in with Eclipse** and log in with the eclipse.org account.
+4. Sign the **Publisher Agreement** when open-vsx.org shows it.
+
+### Each release
+
+After `github-release` has created the GitHub Release:
+
+1. Download `0xword.vsix` from the GitHub Release for the tag.
+2. On open-vsx.org, choose **Publish** → **Publish Extension** and select that file.
+3. Wait for scanning to finish. Open VSX scans every upload, and the version isn't available until it's done.
+
+Taking the file from the GitHub Release means Open VSX gets the same `.vsix` that CI built and tested and the Marketplace accepted.
+
+### The namespace
+
+The first upload creates the namespace on the website, matching the GitHub ID (`dconyemerekwe`, also the `publisher` in `package.json`), with contributor rights for the owner. Open VSX shows an unverified-publisher warning on the extension until the owner has owner rights. **Removing the warning takes a separate request for owner rights** on the namespace, as the Publishing Extensions page describes.
+
 ## The design
 
 The workflows, with every action pinned to a full commit SHA. `test/workflows.test.ts` fails if this `release.yml` differs from the real one, apart from comments on their own line and the pins.
@@ -430,5 +458,5 @@ jobs:
 
 ## Not included yet
 
-- **Open VSX** (for Cursor, Windsurf and VSCodium). A second publish job, after the `ovsx` decision in Phase 6: either a pinned dev dependency or `npx ovsx@<exact version>`.
+- **Automated Open VSX uploads.** The owner uploads each release on the website ([Open VSX](#open-vsx)), so there's no `ovsx` dependency and no stored token. Automating it, with `ovsx` or a third-party action, would need the owner's decision first.
 - **Pre-releases.** Every approved tag goes to all players. A pre-release channel can be added later with `vsce`'s `--pre-release` flag and a version-number convention.
