@@ -159,6 +159,54 @@ describe("the first-release checklist in docs/release-pipeline.md", () => {
   });
 });
 
+describe("the test-tag checks in step 1 and the Test-tag checks section", () => {
+  const checks = section(pipeline, "Test-tag checks");
+
+  it("step 1 skips check 2, because 3037813 is already on main", () => {
+    assert.match(checklist[0] ?? "", /check 2 can't run; skip it/);
+    assert.ok(checks.includes("**It is on `main` now** (checked 2026-11-12), so skip this check"));
+  });
+
+  it("step 1 says 3A alone satisfies the matching-tag check, and 3B is optional and follows step 3", () => {
+    const first = checklist[0] ?? "";
+    assert.match(first, /Check 3A alone satisfies "at least one"/);
+    assert.ok(first.includes("**Check 3B is optional and needs step 3 first,**"));
+    assert.ok(first.includes("as `v0.0.1`, a throwaway"));
+    assert.match(first, /you reject it/);
+  });
+
+  it("step 1 runs 3B before the policy is recreated", () => {
+    assert.match(checklist[0] ?? "", /Run it before step 4/);
+  });
+
+  it("check 3A no longer waits for a merge into main", () => {
+    assert.ok(!checks.includes("reaches `main` with the first merge"));
+    assert.ok(checks.includes("already on `main` (checked 2026-11-12), so this check can run now"));
+  });
+
+  it("check 3B is optional, uses the throwaway v0.0.1 and doesn't need the release merged", () => {
+    const body = checks.split("**Check 3B:")[1] ?? "";
+    assert.ok(body.includes("Optional."));
+    assert.ok(body.includes("`v0.0.1` now, which is not the first release's version (`0.1.0`)"));
+    assert.match(checks, /3B is optional/);
+  });
+
+  it("step 5 doesn't run check 3B, and says to delete a stale test tag first", () => {
+    const release = checklist[4] ?? "";
+    assert.doesNotMatch(release, /3B/);
+    assert.match(release, /no test tag is left over/);
+    assert.match(release, /git ls-remote --tags origin/);
+    assert.match(release, /a stale one must be deleted first/);
+  });
+});
+
+describe("lag after approval", () => {
+  it("steps 8 and 9 say the Marketplace can lag, so wait and refresh before assuming a failure", () => {
+    assert.match(checklist[7] ?? "", /lag a few minutes after you approve, so wait and refresh before assuming the publish failed/);
+    assert.match(checklist[8] ?? "", /lag a few minutes after approval too: wait and search again before assuming the publish failed/);
+  });
+});
+
 describe("the fallback when the Marketplace refuses --oidc", () => {
   const fallback = section(section(pipeline, "Trusted Publishing"), "If the Marketplace refuses `--oidc`", 3);
 
