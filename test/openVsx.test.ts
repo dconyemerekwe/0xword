@@ -37,7 +37,7 @@ const openVsx = section(pipeline, "Open VSX");
 describe("the one-time Open VSX setup in docs/release-pipeline.md", () => {
   const setup = steps(section(openVsx, "One-time setup", 3));
 
-  it("has four steps, in order", () => {
+  it("has four steps", () => {
     assert.equal(setup.length, 4);
   });
 
@@ -87,7 +87,36 @@ describe("the upload step for each release", () => {
     assert.match(upload, /download `0xword\.vsix` from the `v<new>` GitHub Release/);
     assert.match(upload, /\*\*Publish\*\* → \*\*Publish Extension\*\*/);
     assert.match(upload, /wait for scanning to finish/);
-    assert.ok(closing.indexOf(upload) > closing.findIndex((step) => step.includes("approve the `publish` job")));
+    const approve = closing.findIndex((step) => step.includes("approve the `publish` job"));
+    const sync = closing.findIndex((step) => step.includes("from `main` into `develop`"));
+    assert.ok(approve >= 0, "the approve step is there");
+    assert.ok(closing.indexOf(upload) > approve, "upload comes after approve");
+    assert.ok(sync > closing.indexOf(upload), "upload comes before the develop sync");
+  });
+});
+
+describe("when there's no GitHub Release for the tag", () => {
+  const fallback = /If there's no GitHub Release for the tag, download the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention/i;
+
+  it("docs/release-pipeline.md's upload step says to download the run's artifact instead", () => {
+    const first = steps(section(openVsx, "Each release", 3))[0] ?? "";
+    assert.match(first, fallback);
+  });
+
+  it("/release's upload step says the same", () => {
+    const closing = steps(section(read(".claude/skills/release/SKILL.md"), "6. Tell the owner what happens next"));
+    assert.match(closing.find((step) => step.includes("upload to Open VSX")) ?? "", fallback);
+  });
+});
+
+describe("a failed Open VSX upload", () => {
+  it("is under When something fails: the Marketplace release stands, retry the upload, re-run nothing", () => {
+    const making = section(pipeline, "Making a release");
+    const failing = making.split("### When something fails")[1] ?? "";
+    const bullet = failing.split("\n").find((line) => line.startsWith("- **The Open VSX upload fails:**")) ?? "";
+    assert.match(bullet, /the Marketplace release stands/);
+    assert.match(bullet, /Try the upload again on open-vsx\.org/);
+    assert.match(bullet, /nothing in the workflows needs re-running/);
   });
 });
 
