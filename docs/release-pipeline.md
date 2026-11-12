@@ -11,7 +11,7 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace, and then
 | `publish` job with Trusted Publishing | 6 | Built (#97), not yet run. **Needs [the `production` environment](#the-production-environment) before any tag is pushed.** `github-release` now follows `publish`. |
 | Open VSX | 6 | The owner uploads each release on the website (#98). Nothing in the workflows. |
 
-The owner still has to make the repo public, create the environment and recreate the Trusted Publishing policy. None of that is in the workflows.
+The owner still has to make the repo public, create the environment and recreate the Trusted Publishing policy, in the order of the [First release](#first-release) checklist. None of that is in the workflows.
 
 ## In short
 
@@ -91,6 +91,31 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 - **`publish` fails after approval:** `github-release` is skipped and no release is created. Read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number. If it says the artifact is missing, the approval came after CI's 14-day retention, and nothing went out. Delete the tag and push the same tag again, with `git push origin :refs/tags/v<x>` and `git push origin v<x>`, which starts a new run that builds a new `.vsix`. A new tag name with the same version would fail `verify-tag`.
 - **`github-release` fails:** read the job log. By then the version is on the Marketplace, so don't release it again: choose **Re-run failed jobs** on the same run, which leaves `publish` alone. **Re-run all jobs** would try to publish again, and the Marketplace would refuse the version. If a release for the tag already exists, `gh` refuses to create another; delete it first.
 - **The Open VSX upload fails:** the Marketplace release stands. Try the upload again on open-vsx.org ([Each release](#each-release)); nothing in the workflows needs re-running.
+
+## First release
+
+The owner does these once, in order, for the first version (#99). Each step links to the section that has the details. **Publishing can't be undone:** the Marketplace never accepts the same version number twice, so once a version goes out, its number can't be used again.
+
+1. **Phase 5 checks:** run the [install check](#install-check) on a `.vsix`, and the [test-tag checks](#test-tag-checks). Checks 1, 2 and 3A tag `3037813`, which has no `publish` job, so they're safe before the environment exists; follow each check's guard, which says when it can't run. Check 3B needs the environment (step 3) and the release merged into `main` (step 5), so run it there, before the real tag.
+2. **Make the repo public:** follow [Making the repo public](#making-the-repo-public). The Marketplace README loads its images from `main` on GitHub, so they only show once the repo is public.
+3. **The `production` environment:** create it with the owner as required reviewer, as in [The `production` environment](#the-production-environment), and run its environment check.
+4. **Recreate the Trusted Publishing policy** just before tagging, with the values in [Trusted Publishing](#trusted-publishing). A new policy has to be used within 48 hours, or it stays inactive, so if step 5 takes longer, recreate it again.
+5. **`/release minor`, then merge, tag and approve:** follow steps 1 to 4 of [Making a release](#making-a-release). Between the merge and the tag:
+   - run check 3B if you're going to ([Test-tag checks](#test-tag-checks));
+   - re-check that the ID `dconyemerekwe.0xword` is still free on both stores, because an ID isn't reserved until its first publish: `https://marketplace.visualstudio.com/items?itemName=dconyemerekwe.0xword` must show no extension, and `https://open-vsx.org/api/dconyemerekwe/0xword` must return 404. If either is taken, stop.
+
+   If `publish` fails because the Marketplace refuses `--oidc`, on a first publish or with `--packagePath`, follow [If the Marketplace refuses `--oidc`](#if-the-marketplace-refuses---oidc): upload the same CI-built `.vsix` by hand on the manage page, and record what happened in [What happened on the first release](#what-happened-on-the-first-release).
+6. **The Open VSX upload:** do the [one-time setup](#one-time-setup) first, then [Each release](#each-release).
+7. **The sync PR back to `develop`:** step 6 of [Making a release](#making-a-release).
+8. **Check the Marketplace page:** open `https://marketplace.visualstudio.com/items?itemName=dconyemerekwe.0xword` and check it shows the icon, the wordmark, the screenshots and the README.
+9. **Install from the Marketplace in a clean profile:** open an empty folder with `code --profile 0xword-release <empty folder>`, search the Extensions view for `0xWORD`, install it, and play a round to the result card, as in the [install check](#install-check). Then uninstall it and delete the profile (**Profiles: Delete Profile**).
+10. **Mark Phases 5 and 6 done** in `docs/PLAN.md`, in a follow-up commit, and fill in [What happened on the first release](#what-happened-on-the-first-release).
+
+### What happened on the first release
+
+Not released yet. The owner records here how the first publish went: whether `--oidc` worked, or the `.vsix` was uploaded by hand, and anything that differed from these docs.
+
+- **The ID (2026-11-12):** `dconyemerekwe.0xword` was free on both stores. The Marketplace's extension query returned no results, and Open VSX returned 404 for the extension and the `dconyemerekwe` namespace. Recorded on #99.
 
 ## Test-tag checks
 
@@ -299,7 +324,7 @@ The `publish` job proves its identity to the Marketplace through GitHub's OpenID
 | Workflow | `release.yml` |
 | Environment | `production` |
 
-While the repo is private, a new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
+A new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
 
 **What `vsce` 4.1.0 does with `--oidc`,** from its source (`out/oidc.js`, `out/publish.js`, `out/main.js`, `out/ciProvider.js`, `out/util.js`, #96). Microsoft's docs don't cover this, and none of it has run against the real Marketplace yet:
 
@@ -308,7 +333,16 @@ While the repo is private, a new policy has to be used within 48 hours, or it st
 - **On a first publish:** vsce doesn't need the extension to exist. The token exchange sends only the publisher's name, and if looking up the extension returns 404, vsce creates it. Any other error from that lookup stops the publish. **Still unproven:** whether the Marketplace answers that lookup with 404 and accepts the create with this credential, which only a real first publish can show.
 - **Other settings:** `--oidc` ignores `VSCE_PAT`, and refuses `--pat` and `--azure-credential`. `VSCE_MARKETPLACE_URL` changes where the GitHub token is sent, so the `publish` job must never set it. vsce also sends an `X-Market-CI-Provider: github-actions` header on its Marketplace calls, for Microsoft's statistics. That happens only at publish, not in the extension.
 
-**If the Marketplace refuses `--oidc`:** download the `.vsix` from the run and upload it by hand on the manage page. `github-release` won't have run for that tag, so create the GitHub Release by hand too if it's wanted.
+### If the Marketplace refuses `--oidc`
+
+If `publish` fails because the Marketplace refuses `--oidc`, on a first publish or with `--packagePath`, upload the same CI-built `.vsix` by hand:
+
+1. Check the publisher's [manage page](https://marketplace.visualstudio.com/manage) first. If the version is already there, it went out: don't upload it again.
+2. Download the `0xword-vsix` artifact from the release run in the Actions tab, within CI's 14-day retention. It downloads as a zip: unzip it and take the `0xword.vsix` inside.
+3. Upload that `0xword.vsix` by hand on the manage page. Select the `.vsix` itself, not the zip.
+4. Record what happened in [What happened on the first release](#what-happened-on-the-first-release), or for a later release in a PR that updates this section.
+
+`github-release` won't have run for that tag, so create the GitHub Release by hand too if it's wanted.
 
 ## Open VSX
 
