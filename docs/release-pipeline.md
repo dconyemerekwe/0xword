@@ -80,7 +80,7 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
    ```
    This starts `release.yml`.
 4. **Approve it:** open the run in the Actions tab and approve the `publish` job (**Review deployments**, then **Approve and deploy**). Rejecting it stops the release, and players see no change.
-5. **Upload it to Open VSX:** once `github-release` has created the GitHub Release, follow [Each release](#each-release).
+5. **Upload it to Open VSX:** once the version is on the Marketplace, follow [Each release](#each-release).
 6. **Sync `develop`:** open a PR from `main` into `develop` so it gets the version bump and changelog.
 
 ### When something fails
@@ -325,13 +325,13 @@ The owner does these once, in order:
 
 ### Each release
 
-After `github-release` has created the GitHub Release:
+After the version is on the Marketplace:
 
-1. Download `0xword.vsix` from the GitHub Release for the tag. If there's no GitHub Release for the tag, download the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention: it holds the same `0xword.vsix`.
+1. Download `0xword.vsix` from the GitHub Release for the tag. If there's no GitHub Release for the tag, download and unzip the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention: it holds the same `0xword.vsix`. Select the `.vsix` itself in **Publish Extension**, not the zip.
 2. On open-vsx.org, choose **Publish** → **Publish Extension** and select that file.
 3. Wait for scanning to finish. Open VSX scans every upload, and the version isn't available until it's done.
 
-Taking the file from the GitHub Release means Open VSX gets the same `.vsix` that CI built and tested and the Marketplace accepted.
+Taking the file from the release run, through its GitHub Release or its artifact, means Open VSX gets the same `.vsix` that CI built and tested and the Marketplace accepted.
 
 ### The namespace
 

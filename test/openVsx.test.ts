@@ -83,7 +83,7 @@ describe("the upload step for each release", () => {
   it("/release's closing steps include it after the GitHub Release exists", () => {
     const closing = steps(section(read(".claude/skills/release/SKILL.md"), "6. Tell the owner what happens next"));
     const upload = closing.find((step) => step.includes("upload to Open VSX")) ?? "";
-    assert.match(upload, /Once `github-release` has created the GitHub Release/);
+    assert.match(upload, /Once the version is on the Marketplace/);
     assert.match(upload, /download `0xword\.vsix` from the `v<new>` GitHub Release/);
     assert.match(upload, /\*\*Publish\*\* → \*\*Publish Extension\*\*/);
     assert.match(upload, /wait for scanning to finish/);
@@ -96,7 +96,7 @@ describe("the upload step for each release", () => {
 });
 
 describe("when there's no GitHub Release for the tag", () => {
-  const fallback = /If there's no GitHub Release for the tag, download the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention/i;
+  const fallback = /If there's no GitHub Release for the tag, download and unzip the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention/i;
 
   it("docs/release-pipeline.md's upload step says to download the run's artifact instead", () => {
     const first = steps(section(openVsx, "Each release", 3))[0] ?? "";
