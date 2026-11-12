@@ -10,7 +10,7 @@ Each phase is split into story issues with `/plan-phase <n>`. Each story is buil
 | 3 | Game UI, screen by screen | Done (#19; stories #20–#34, #38, #46, #50, #53; bugs #32, #43) |
 | 4 | Hardening and accessibility | Done (#57; stories #58–#64; bugs #74, #76; #65 and #80 not planned) |
 | 5 | Packaging | In progress (#82; stories #83–#87 built; the owner's install check and test-tag checks remain) |
-| 6 | Publish | In progress (#94; #95, #96 and #97 built) |
+| 6 | Publish | In progress (#94; #95–#98 built; the owner's Open VSX setup remains) |
 | 7 | Agent integration | In progress (#108; stories #109–#114 built; the owner's checks 3 and 5 remain) |
 
 ## CI (GitHub Actions)
@@ -171,7 +171,7 @@ The owner handles the accounts. Publishing uses the Marketplace's Trusted Publis
 - **`vsce`:** `@vscode/vsce` is pinned to 4.1.0, whose `publish --help` lists `--oidc` (#96). 4.0.0 hides the option from its help. `test/vsce.test.ts` fails on any bump, to force a re-check.
 - **Release workflow, second part** (see [release-pipeline.md](release-pipeline.md)): add the `publish` job to `release.yml`, between `ci` and `github-release`. It waits for the owner's approval, then publishes the `.vsix` CI built and tested, with `vsce publish --oidc --packagePath`. Only this job gets `id-token: write`. It's here because it needs the publisher and policy from the steps above. **Built (#97):** `test/workflows.test.ts` compares the job line by line, and `test/workflows-mutations.test.ts` proves harmful edits fail, such as a removed `environment`, `id-token` on another job, a stored token or a rebuild. It hasn't run for real: no tag has been pushed. **To check on the first release:** vsce 4.1.0's source supports `--oidc` with `--packagePath` and a first publish ([what it does](release-pipeline.md#trusted-publishing), #96), but whether the Marketplace accepts a first publish through Trusted Publishing only shows on a real one. If it doesn't, the fallback is to upload the CI-built `.vsix` by hand on the publisher's manage page.
 - **`/release`'s last steps (#97):** step 3 now says to approve the `publish` job in the Actions tab, not to publish by hand.
-- For Open VSX: create an Eclipse account, sign the publisher agreement, then publish with `ovsx`. Trusted Publishing doesn't cover it, so check what credential it needs. **Open issue:** `ovsx` isn't on the dev-dependency allowlist (security rule 3), and a bare `npx ovsx` runs an unpinned version. Decide before publishing: add it as a pinned dev dependency, or run `npx ovsx@<exact version>`.
+- **Open VSX (#98):** the owner uploads each release by hand on the open-vsx.org website (owner's decision). There's no `ovsx` dependency, no workflow job and no stored token, so security rule 3's allowlist is unchanged. The one-time setup (an eclipse.org account with its GitHub Username filled in, GitHub login on open-vsx.org, **Log in with Eclipse**, the Publisher Agreement) and the upload after each release are in [release-pipeline.md](release-pipeline.md#open-vsx). The first upload creates the `dconyemerekwe` namespace with contributor rights; removing the unverified-publisher warning takes a separate request for owner rights.
 - Before publishing, check that the extension ID (`dconyemerekwe.0xword`, permanent) is free in both registries.
 
 ## Phase 7: Agent integration

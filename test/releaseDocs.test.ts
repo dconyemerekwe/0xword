@@ -42,8 +42,8 @@ describe("/release's closing steps", () => {
   const closing = section(read(".claude/skills/release/SKILL.md"), "6. Tell the owner what happens next");
   const steps = closing.match(/^\d+\. .+$/gm) ?? [];
 
-  it("keep the four steps", () => {
-    assert.equal(steps.length, 4);
+  it("keep the five steps, with the Open VSX upload added by #98", () => {
+    assert.equal(steps.length, 5);
   });
 
   it("say to approve the publish job in the Actions tab", () => {
