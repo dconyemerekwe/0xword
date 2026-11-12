@@ -193,6 +193,10 @@ describe("media/styles.css page 3: the hex locked and the final answer", () => {
     assert.equal(DARK_PALETTE.wrongText, DARK_PALETTE.wrong);
   });
 
+  it("draws a message that isn't an error, such as the agent's (#112), in the body text colour", () => {
+    assert.match(block(".message"), /color: var\(--ox-text\);/);
+  });
+
   it("makes Submit orange with dark text", () => {
     assert.match(block(".decode-final .decode-button"), /background: var\(--ox-wrong\);[\s\S]*color: var\(--ox-on-wrong\);/);
   });

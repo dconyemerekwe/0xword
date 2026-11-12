@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { AgentState } from "../src/agentSignals.ts";
 import { MAX_HINTS, MAX_ROWS, Round, WORD_LIST_SIZE, wordToHex } from "../src/game/index.ts";
 import {
   handleWebviewMessage,
@@ -77,6 +78,11 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["an unknown type", { type: "deleteFiles" }],
   ["setTheme in the wrong case", { type: "SetTheme", theme: "dark" }],
   ["newRound, which only the host sends", { type: "newRound" }],
+  ["agentOpen, which only the host sends", { type: "agentOpen" }],
+  ["agentFinished, which only the host sends", { type: "agentFinished" }],
+  ["agentStarted, which only the host sends", { type: "agentStarted" }],
+  ["agentState, which only the host sends (#121)", { type: "agentState", state: "working" }],
+  ["agentState with no line, which only the host sends (#121)", { type: "agentState", state: "none" }],
   ["init, which only the host sends", { type: "init" }],
   ["a type in the wrong case", { type: "Ready" }],
   ["a non-string type", { type: 1 }],
@@ -434,7 +440,109 @@ describe("parseHostMessage", () => {
     assert.notEqual(parseHostMessage(raw), raw);
   });
 
+  it("accepts agentOpen (#111)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentOpen" }), { type: "agentOpen" });
+  });
+
+  it("returns a new agentOpen object, not the one it was given", () => {
+    const raw = { type: "agentOpen" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  it("accepts agentFinished (#112)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentFinished" }), { type: "agentFinished" });
+  });
+
+  it("returns a new agentFinished object, not the one it was given", () => {
+    const raw = { type: "agentFinished" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  it("accepts agentStarted (#112)", () => {
+    assert.deepEqual(parseHostMessage({ type: "agentStarted" }), { type: "agentStarted" });
+  });
+
+  it("returns a new agentStarted object, not the one it was given", () => {
+    const raw = { type: "agentStarted" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  for (const state of Object.values(AgentState)) {
+    it(`accepts agentState with the state "${state}" (#121)`, () => {
+      assert.deepEqual(parseHostMessage({ type: "agentState", state }), { type: "agentState", state });
+    });
+  }
+
+  it("returns a new agentState object, not the one it was given (#121)", () => {
+    const raw = { type: "agentState", state: "finished" };
+    assert.notEqual(parseHostMessage(raw), raw);
+  });
+
+  describe("rejects agentState in any other shape (#121)", () => {
+    const rejected: readonly (readonly [string, unknown])[] = [
+      ["no state", { type: "agentState" }],
+      ["an unknown state", { type: "agentState", state: "paused" }],
+      ["the state in the wrong case", { type: "agentState", state: "Working" }],
+      ["the state with a space", { type: "agentState", state: "working " }],
+      ["the empty state", { type: "agentState", state: "" }],
+      ["the state as null", { type: "agentState", state: null }],
+      ["the state as a boolean", { type: "agentState", state: true }],
+      ["the state as a number", { type: "agentState", state: 1 }],
+      ["the state as an array", { type: "agentState", state: ["working"] }],
+      ["the state as an object", { type: "agentState", state: { toString: () => "working" } }],
+      ["the state as a key of Object.prototype", { type: "agentState", state: "__proto__" }],
+      ["a working flag instead of the state", { type: "agentState", working: true }],
+      ["an extra field", { type: "agentState", state: "working", text: "<b>Done</b>" }],
+      ["an undefined extra field", { type: "agentState", state: "finished", note: undefined }],
+      ["a path", { type: "agentState", state: "working", path: "/agent-started" }],
+      ["a command", { type: "agentState", state: "working", command: "0xword.newRound" }],
+      ["the type in the wrong case", { type: "AgentState", state: "working" }],
+      ["a JSON-parsed __proto__ key", JSON.parse('{"type":"agentState","state":"working","__proto__":{"polluted":true}}')],
+      ["a JSON-parsed constructor key", JSON.parse('{"type":"agentState","state":"working","constructor":{}}')],
+      ["fields inherited from a prototype", Object.create({ type: "agentState", state: "working" })],
+      [
+        "a getter for the state",
+        Object.defineProperty({ type: "agentState" }, "state", { enumerable: true, get: () => "working" }),
+      ],
+      ["a string agentState", "agentState"],
+      ["a JSON string", '{"type":"agentState","state":"working"}'],
+    ];
+    for (const [name, raw] of rejected) {
+      it(name, () => {
+        assert.equal(parseHostMessage(raw), null);
+      });
+    }
+  });
+
   const invalid: readonly (readonly [string, unknown])[] = [
+    ["agentStarted with an extra field", { type: "agentStarted", text: "<b>Working</b>" }],
+    ["agentStarted with an undefined extra field", { type: "agentStarted", message: undefined }],
+    ["agentStarted with a path", { type: "agentStarted", path: "/agent-started" }],
+    ["agentStarted with a command", { type: "agentStarted", command: "0xword.newRound" }],
+    ["agentStarted in the wrong case", { type: "AgentStarted" }],
+    ["agentStarted with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentStarted","__proto__":{"polluted":true}}')],
+    ["agentStarted with a JSON-parsed constructor key", JSON.parse('{"type":"agentStarted","constructor":{}}')],
+    ["agentStarted inherited from a prototype", Object.create({ type: "agentStarted" })],
+    ["a string agentStarted", "agentStarted"],
+    ["agentFinished with an extra field", { type: "agentFinished", text: "<b>Done</b>" }],
+    ["agentFinished with an undefined extra field", { type: "agentFinished", message: undefined }],
+    ["agentFinished with a path", { type: "agentFinished", path: "/agent-finished" }],
+    ["agentFinished with a command", { type: "agentFinished", command: "0xword.newRound" }],
+    ["agentFinished in the wrong case", { type: "AgentFinished" }],
+    ["agentFinished with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentFinished","__proto__":{"polluted":true}}')],
+    ["agentFinished with a JSON-parsed constructor key", JSON.parse('{"type":"agentFinished","constructor":{}}')],
+    ["agentFinished inherited from a prototype", Object.create({ type: "agentFinished" })],
+    ["a string agentFinished", "agentFinished"],
+    ["agentOpen with an extra field", { type: "agentOpen", answer: "BYTE" }],
+    ["agentOpen with an undefined extra field", { type: "agentOpen", round: undefined }],
+    ["agentOpen with a delay", { type: "agentOpen", delaySeconds: 20 }],
+    ["agentOpen with a path", { type: "agentOpen", path: "/agent-started" }],
+    ["agentOpen with a command", { type: "agentOpen", command: "0xword.newRound" }],
+    ["agentOpen in the wrong case", { type: "AgentOpen" }],
+    ["agentOpen with a JSON-parsed __proto__ key", JSON.parse('{"type":"agentOpen","__proto__":{"polluted":true}}')],
+    ["agentOpen with a JSON-parsed constructor key", JSON.parse('{"type":"agentOpen","constructor":{}}')],
+    ["agentOpen inherited from a prototype", Object.create({ type: "agentOpen" })],
+    ["a string agentOpen", "agentOpen"],
     ["an unknown type", { type: "setTheme" }],
     ["a webview message", { type: "ready" }],
     ["newRound with an extra field", { type: "newRound", answer: "BYTE" }],

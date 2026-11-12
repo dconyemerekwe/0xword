@@ -56,7 +56,7 @@ These protect the developers who install the extension. Check every change again
 - **Webview:** plain HTML, CSS and TypeScript in `media/`, with no framework, bundled by esbuild. It talks to the extension host with `postMessage`.
 - **Round state lives in the webview** and is saved with `vscode.setState` and restored with `vscode.getState()`. **Every game action** (new round, guess, answer, hints) **must go through the `changed()` save helper** in `media/main.ts`, or the move is lost when the panel is hidden.
 - **Game engine:** pure TypeScript with no VS Code dependency, including the hard-coded word list, so it can be unit-tested with `node --test` (Node 24 runs `.ts` files directly).
-- **Distribution:** VS Code Marketplace (`vsce`) and Open VSX (`ovsx`) for Cursor, Windsurf and VSCodium.
+- **Distribution:** VS Code Marketplace (`vsce`) and Open VSX (uploaded on the website) for Cursor, Windsurf and VSCodium.
 - **Later:** Claude Code hooks that open a `vscode://` link to start a round when a prompt is sent.
 
 ## Workflow
@@ -65,5 +65,5 @@ These protect the developers who install the extension. Check every change again
 - Commit messages use Conventional Commits, e.g. `feat:`, `fix:`, `docs(readme):`, `style(docs):`, `chore:`.
 - Pull before starting work on a shared branch. To reword pushed commits, rebase only over commits that contain no merges, and push with `--force-with-lease`.
 - Only commit or push when the owner asks.
-- The owner runs the Marketplace and Open VSX logins and handles their access tokens.
+- The owner runs the Marketplace and Open VSX logins.
 - Windows machine: PowerShell is the main shell and Git Bash is also available. `.gitattributes` should force LF line endings.

@@ -4,6 +4,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { matchesGlob } from "node:path/posix";
 import { describe, it } from "node:test";
+import {
+  DEFAULT_NOTICE_SETTINGS,
+  MAX_DELAY_SECONDS,
+  SETTINGS_SECTION,
+  readNoticeSettings,
+} from "../src/noticeSettings.ts";
 import { MEDIA_FOLDER, SCRIPT_PATH, STYLE_PATH } from "../src/webview/html.ts";
 
 const root = new URL("../", import.meta.url);
@@ -26,6 +32,19 @@ interface Command {
   category?: string;
 }
 
+interface Setting {
+  type?: string;
+  enum?: string[];
+  enumDescriptions?: string[];
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  order?: number;
+  scope?: string;
+  description?: string;
+  markdownDescription?: string;
+}
+
 interface Manifest {
   name?: string;
   publisher?: string;
@@ -41,6 +60,7 @@ interface Manifest {
     commands?: Command[];
     viewsContainers?: { activitybar?: ViewContainer[] };
     views?: Record<string, View[]>;
+    configuration?: { title?: string; properties?: Record<string, Setting> };
   };
 }
 
@@ -243,13 +263,37 @@ describe("package.json commands", () => {
     assert.ok(extensionSource.includes("registerCommand(NEW_ROUND_COMMAND,"));
   });
 
+  it('contributes 0xword.copyHookSetup, shown in the palette as "0xWORD: Copy agent hook setup" (#114)', () => {
+    const copy = commands.find((c) => c.command === "0xword.copyHookSetup");
+    assert.ok(copy);
+    assert.equal(paletteLabel(copy), "0xWORD: Copy agent hook setup");
+  });
+
+  it("registers the copyHookSetup command under the id it contributes, and pushes it into the subscriptions (#114)", () => {
+    assert.ok(extensionSource.includes('const COPY_HOOK_SETUP_COMMAND = "0xword.copyHookSetup";'));
+    assert.ok(
+      extensionSource.includes(
+        "context.subscriptions.push(\n    vscode.window.registerWebviewViewProvider(VIEW_ID, provider),\n    vscode.commands.registerCommand(NEW_ROUND_COMMAND, () => provider.newRound()),\n    vscode.commands.registerCommand(COPY_HOOK_SETUP_COMMAND, () => copyAgentHookSetup()),\n",
+      ),
+    );
+  });
+
+  it("registers every contributed command, and contributes every registered one", () => {
+    const registered = [...code(extensionSource).matchAll(/registerCommand\((\w+),/g)].map((match) => {
+      const name = match[1] ?? "";
+      return new RegExp(`const ${name} = "([^"]+)";`).exec(extensionSource)?.[1];
+    });
+    assert.deepEqual(registered.sort(), commands.map((c) => c.command).sort());
+  });
+
   it("registers exactly as many commands as it contributes", () => {
     const registered = extensionSource.match(/registerCommand\(/g) ?? [];
     assert.equal(registered.length, commands.length);
   });
 
-  it("relies on the implicit onCommand activation, with no extra activation events", () => {
-    assert.deepEqual(manifest.activationEvents ?? [], []);
+  it("relies on the implicit onCommand activation, with onUri as the only extra activation event", () => {
+    // URI handlers have no contribution point, so VS Code can't add onUri itself.
+    assert.deepEqual(manifest.activationEvents ?? [], ["onUri"]);
   });
 
   it("supports untrusted workspaces for the command", () => {
@@ -257,14 +301,430 @@ describe("package.json commands", () => {
   });
 });
 
+describe("agent links (#109)", () => {
+  const agentCode = code(extensionSource);
+
+  it("registers one URI handler and pushes it and the status-bar item into the subscriptions", () => {
+    assert.equal(agentCode.match(/registerUriHandler\(/g)?.length, 1);
+    // #110 passes the view provider in, for the badge, and adds the settings listener.
+    assert.ok(agentCode.includes("...agentSignals(provider),"));
+    // #111 adds the open-mode timer's disposable.
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
+  });
+
+  it("reads links only through the pure reader, passing plain strings", () => {
+    assert.ok(
+      agentCode.includes("readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment })"),
+    );
+  });
+
+  it('shows "0x Round ready" with a tooltip and accessible name', () => {
+    assert.ok(agentCode.includes('item.text = "0x Round ready";'));
+    assert.ok(agentCode.includes('const ROUND_READY_LABEL = "0xWORD: a round is ready. Open the panel.";'));
+    assert.ok(agentCode.includes("item.tooltip = ROUND_READY_LABEL;"));
+    assert.ok(agentCode.includes("label: ROUND_READY_LABEL"));
+  });
+
+  it("opens the panel on click by focusing the view, never by starting a new round", () => {
+    assert.ok(agentCode.includes("item.command = { command: `${VIEW_ID}.focus`"));
+    assert.doesNotMatch(agentCode, /item\.command\s*=\s*NEW_ROUND_COMMAND/);
+    assert.doesNotMatch(agentCode, /command:\s*NEW_ROUND_COMMAND/);
+  });
+
+  it("never focuses or touches the round from the link handler, and shows a message only as the pop-up, when showPopup allows it", () => {
+    const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0];
+    assert.ok(handler);
+    for (const call of ["showErrorMessage", "showWarningMessage", "showInformationMessage", "newRound", "focus"]) {
+      assert.ok(!handler.includes(call), call);
+    }
+    // #110: the pop-up is the only message, and only inside the showPopup check.
+    assert.equal(handler.match(/roundReadyPopup\(\)/g)?.length, 1);
+    assert.match(handler, /\n {6}if \(showPopup\(change, settings\)\) \{\n {8}roundReadyPopup\(\);\n {6}\}\n/);
+  });
+});
+
+describe("notice settings (#110)", () => {
+  const configuration = manifest.contributes?.configuration;
+  const properties = configuration?.properties ?? {};
+  const agentCode = code(extensionSource);
+
+  /** A setting's description, plain or markdown. */
+  function describedAs(setting: Setting | undefined): string {
+    return setting?.markdownDescription ?? setting?.description ?? "";
+  }
+
+  it("lists exactly the five settings under 0xWORD", () => {
+    assert.equal(configuration?.title, "0xWORD");
+    assert.deepEqual(Object.keys(properties).sort(), [
+      "0xword.autoStart.delaySeconds",
+      "0xword.autoStart.mode",
+      "0xword.notify.badge",
+      "0xword.notify.popup",
+      "0xword.notify.statusBar",
+    ]);
+  });
+
+  it("makes autoStart.mode a choice of off, notify or open, off by default, with a description for each", () => {
+    const mode = properties["0xword.autoStart.mode"];
+    assert.equal(mode?.type, "string");
+    assert.deepEqual(mode?.enum, ["off", "notify", "open"]);
+    assert.equal(mode?.default, "off");
+    assert.equal(mode?.enumDescriptions?.length, 3);
+    for (const text of mode?.enumDescriptions ?? []) {
+      assert.ok(text.trim().length > 0);
+    }
+  });
+
+  it("says in the mode's description that notices are off by default and to choose notify to turn them on", () => {
+    const text = describedAs(properties["0xword.autoStart.mode"]);
+    assert.match(text, /`off` by default/);
+    assert.match(text, /Choose `notify` to turn them on/);
+    assert.match(text, /`open` to open the panel/);
+    assert.match(
+      text,
+      /`open` is agent-driven: when your agent's hooks report it has started, 0xWORD waits `delaySeconds`, then opens the panel and starts a new round if none is in progress\. A round in progress is kept as it is\.$/,
+    );
+  });
+
+  it("makes autoStart.delaySeconds a number of seconds, 20 by default, from 0 to an hour, only for open mode (#111)", () => {
+    const delay = properties["0xword.autoStart.delaySeconds"];
+    assert.equal(delay?.type, "number");
+    assert.equal(delay?.default, 20);
+    assert.equal(delay?.minimum, 0);
+    assert.equal(delay?.maximum, MAX_DELAY_SECONDS);
+    assert.equal(delay?.scope, "window");
+    assert.match(describedAs(delay), /^Only in `open` mode/);
+  });
+
+  it("describes open mode as agent-driven, opening the panel and showing none of the notices (#111, #112)", () => {
+    const mode = properties["0xword.autoStart.mode"];
+    const open = mode?.enumDescriptions?.[mode.enum?.indexOf("open") ?? -1] ?? "";
+    assert.match(
+      open,
+      /^Agent-driven: when your agent's hooks report that it has started working, 0xWORD waits Delay Seconds, then opens its panel and starts a new round if none is in progress\. A round in progress is kept as it is\. If your agent finishes first, nothing opens\. Shows none of the notices\.$/,
+    );
+    assert.match(open, /none of the notices/);
+    for (const key of ["0xword.notify.badge", "0xword.notify.statusBar", "0xword.notify.popup"]) {
+      assert.match(describedAs(properties[key]), /^In `notify` mode/, key);
+    }
+  });
+
+  it("orders the settings: mode, delay, then the notices", () => {
+    const order = Object.entries(properties)
+      .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
+      .map(([key]) => key);
+    assert.deepEqual(order, [
+      "0xword.autoStart.mode",
+      "0xword.autoStart.delaySeconds",
+      "0xword.notify.badge",
+      "0xword.notify.statusBar",
+      "0xword.notify.popup",
+    ]);
+  });
+
+  it("makes the badge and status bar on by default and the pop-up off, all on/off", () => {
+    const defaults: readonly (readonly [string, boolean])[] = [
+      ["0xword.notify.badge", true],
+      ["0xword.notify.statusBar", true],
+      ["0xword.notify.popup", false],
+    ];
+    for (const [key, value] of defaults) {
+      assert.equal(properties[key]?.type, "boolean", key);
+      assert.equal(properties[key]?.default, value, key);
+    }
+  });
+
+  it("gives every setting a plain description", () => {
+    for (const [key, setting] of Object.entries(properties)) {
+      assert.ok(describedAs(setting).length > 20, key);
+    }
+  });
+
+  it("lets a workspace value override the user's: no setting is application or machine scoped", () => {
+    for (const [key, setting] of Object.entries(properties)) {
+      assert.ok(setting.scope === undefined || ["window", "resource"].includes(setting.scope), key);
+    }
+  });
+
+  it("gives the same defaults as the settings reader", () => {
+    assert.equal(properties["0xword.autoStart.mode"]?.default, DEFAULT_NOTICE_SETTINGS.mode);
+    assert.equal(properties["0xword.notify.badge"]?.default, DEFAULT_NOTICE_SETTINGS.badge);
+    assert.equal(properties["0xword.notify.statusBar"]?.default, DEFAULT_NOTICE_SETTINGS.statusBar);
+    assert.equal(properties["0xword.notify.popup"]?.default, DEFAULT_NOTICE_SETTINGS.popup);
+    assert.equal(properties["0xword.autoStart.delaySeconds"]?.default, DEFAULT_NOTICE_SETTINGS.delaySeconds);
+  });
+
+  it("matches each setting the reader asks for to a contributed one", () => {
+    const asked: string[] = [];
+    readNoticeSettings((key) => {
+      asked.push(`${SETTINGS_SECTION}.${key}`);
+      return undefined;
+    });
+    assert.deepEqual(asked.sort(), Object.keys(properties).sort());
+  });
+
+  it("reads the settings with workspace.getConfiguration, through the pure reader", () => {
+    assert.ok(agentCode.includes("vscode.workspace.getConfiguration(SETTINGS_SECTION)"));
+    assert.ok(agentCode.includes("readNoticeSettings((key) => config.get<unknown>(key))"));
+    assert.equal(agentCode.match(/getConfiguration\(/g)?.length, 1);
+  });
+
+  it("applies a change straight away with onDidChangeConfiguration, and disposes the listener", () => {
+    assert.ok(agentCode.includes("const settingsListener = vscode.workspace.onDidChangeConfiguration("));
+    assert.ok(agentCode.includes("event.affectsConfiguration(SETTINGS_SECTION)"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
+  });
+
+  it("keeps nothing about the settings in globalState", () => {
+    const uses = agentCode.match(/globalState/g) ?? [];
+    // Only the stats and theme stores, as before #110.
+    assert.equal(uses.length, 2);
+    assert.ok(agentCode.includes("new StatsStore(context.globalState), new ThemeStore(context.globalState)"));
+  });
+
+  it("gives the badge the number 1 and an accessible label, and clears it when the extension stops", () => {
+    assert.ok(agentCode.includes('const BADGE_LABEL = "0xWORD: a round is ready";'));
+    assert.ok(agentCode.includes("{ value: 1, tooltip: BADGE_LABEL }"));
+    assert.ok(agentCode.includes("new vscode.Disposable(() => provider.setBadge(false))"));
+  });
+
+  it("sets the badge when the view resolves, in case the agent is already working", () => {
+    const resolve = /resolveWebviewView\(view: vscode\.WebviewView\): void \{[\s\S]*?\n {2}\}/.exec(agentCode)?.[0];
+    assert.ok(resolve);
+    assert.ok(resolve.includes("this.#applyBadge();"));
+  });
+
+  it("shows the pop-up with Play and Not now, unawaited, and Play only focuses the view", () => {
+    const popup = /function roundReadyPopup\(\): void \{[\s\S]*?\n\}/.exec(agentCode)?.[0];
+    assert.ok(popup);
+    assert.ok(agentCode.includes('const POPUP_PLAY = "Play";'));
+    assert.ok(agentCode.includes('const POPUP_NOT_NOW = "Not now";'));
+    assert.ok(popup.includes("showInformationMessage(POPUP_MESSAGE, POPUP_PLAY, POPUP_NOT_NOW)"));
+    assert.ok(popup.includes("executeCommand(`${VIEW_ID}.focus`)"));
+    assert.ok(!popup.includes("NEW_ROUND_COMMAND") && !popup.includes("newRound"));
+    assert.ok(!popup.includes("await"));
+    assert.ok(popup.includes(".then(undefined, () => undefined)"));
+  });
+
+  it("shows the pop-up only after a signal, never from a settings change", () => {
+    assert.equal(agentCode.match(/roundReadyPopup\(\);/g)?.length, 1);
+    assert.ok(agentCode.includes("if (showPopup(change, settings)) {"));
+  });
+
+  it("puts nothing from a link into a notice: every message is a fixed string", () => {
+    assert.match(agentCode, /const POPUP_MESSAGE = "[^"`$]*";/);
+    // The pop-up, and since #114 the copy command's message, which no link reaches.
+    assert.deepEqual(
+      [...agentCode.matchAll(/showInformationMessage\(([^)]*)\)/g)].map((match) => match[1]),
+      ["message, ...buttons", "POPUP_MESSAGE, POPUP_PLAY, POPUP_NOT_NOW"],
+    );
+    const copy = /async function copyAgentHookSetup\(\)[\s\S]*?\n\}\n/.exec(agentCode)?.[0] ?? "";
+    assert.ok(copy.includes(".showInformationMessage(message, ...buttons)"));
+  });
+});
+
+describe("open mode (#111)", () => {
+  const agentCode = code(extensionSource);
+  /** The provider's `agentOpen` method, which the timer calls. */
+  const agentOpen = /\n {2}agentOpen\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("makes one OpenTimer with the real clock, which opens through the provider", () => {
+    assert.equal(agentCode.match(/new OpenTimer\(/g)?.length, 1);
+    assert.ok(agentCode.includes("const timer = new OpenTimer(schedule, () => provider.agentOpen());"));
+    assert.match(agentCode, /const handle = setTimeout\(callback, milliseconds\);\n\s*return \(\) => clearTimeout\(handle\);/);
+  });
+
+  it("gives the timer every signal and every settings change", () => {
+    const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+    assert.ok(handler.includes("timer.signal(signal, settings);"));
+    assert.ok(handler.includes("readAgentSignal({ path: uri.path, query: uri.query, fragment: uri.fragment })"));
+    const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+    assert.ok(listener.includes("timer.settingsChanged(settings);"));
+  });
+
+  it("disposes the timer with the extension, so a wait in progress is cancelled", () => {
+    assert.ok(agentCode.includes("const openWait = new vscode.Disposable(() => timer.dispose());"));
+    assert.ok(agentCode.includes("return [item, handler, settingsListener, badge, openWait];"));
+  });
+
+  it("opens a resolved view without taking keyboard focus, and returns before any focus command", () => {
+    assert.ok(agentOpen, "the provider has an agentOpen method");
+    assert.match(
+      agentOpen,
+      /\n {4}if \(this\.#view\) \{\n {6}try \{\n {8}this\.#view\.show\(true\);\n {8}return;\n {6}\} catch \{\s*\}\n {4}\}\n/,
+    );
+    // Nothing else in the method shows or focuses the view.
+    assert.equal(agentOpen.match(/\.show\(/g)?.length, 1);
+    assert.doesNotMatch(agentOpen, /\.show\(\s*(false)?\s*\)/);
+    assert.doesNotMatch(agentOpen, /preserveFocus:\s*false/);
+  });
+
+  it("uses the view's focus command only as the fallback for a view never resolved, after the show(true) path", () => {
+    const focusCalls = agentOpen.match(/executeCommand\(`\$\{VIEW_ID\}\.focus`\)/g) ?? [];
+    assert.equal(focusCalls.length, 1);
+    assert.ok(agentOpen.indexOf("this.#view.show(true);") < agentOpen.indexOf("executeCommand(`${VIEW_ID}.focus`)"));
+    // The fallback is the method's last statement, outside the `if (this.#view)` block.
+    assert.match(agentOpen, /\n {4}vscode\.commands\.executeCommand\(`\$\{VIEW_ID\}\.focus`\)\.then\(undefined, \(\) => undefined\);\n {2}\}\n$/);
+  });
+
+  it("never starts a round with New Round when opening", () => {
+    assert.ok(agentOpen, "the provider has an agentOpen method");
+    for (const banned of ["NEW_ROUND_COMMAND", "newRound", "sendNewRound", "this.#requests.request()"]) {
+      assert.ok(!agentOpen.includes(banned), banned);
+    }
+    assert.equal(agentCode.match(/provider\.agentOpen\(\)/g)?.length, 1, "only the timer calls it");
+  });
+
+  it("sends the webview only the fixed agentOpen message, now or once it's ready", () => {
+    assert.ok(agentOpen.includes("void sendAgentOpen(this.#requests, this.#postToView, this.#requests.requestOpen());"));
+    assert.ok(!agentOpen.includes("await"), "the timer never waits");
+    assert.ok(agentOpen.includes(".then(undefined, () => undefined)"), "a failed focus is ignored");
+  });
+});
+
+describe("the agent-finished message (#112)", () => {
+  const agentCode = code(extensionSource);
+  /** The provider's `agentFinished` method, which the link handler calls. */
+  const agentFinished = /\n {2}agentFinished\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+  const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+
+  it("tells the provider only from the link handler, inside the tellAgentFinished check", () => {
+    assert.match(handler, /\n {6}if \(tellAgentFinished\(change, settings\)\) \{\n {8}provider\.agentFinished\(\);\n {6}\}\n/);
+    assert.equal(agentCode.match(/provider\.agentFinished\(\)/g)?.length, 1, "only the link handler calls it");
+    const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+    assert.ok(listener, "the settings listener");
+    assert.ok(!listener.includes("agentFinished"), "a settings change never sends it");
+  });
+
+  it("only posts the fixed message, if the webview is listening now, and never waits", () => {
+    assert.ok(agentFinished, "the provider has an agentFinished method");
+    assert.match(agentFinished, /^\n {2}agentFinished\(\): void \{\n {4}void sendAgentFinished\(this\.#requests, this\.#postToView\);\n {2}\}\n$/);
+  });
+
+  it("never opens, focuses or starts a round, and keeps nothing for later", () => {
+    for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "requestOpen", "request()", "await"]) {
+      assert.ok(!agentFinished.includes(banned), banned);
+    }
+  });
+
+  describe("agentStarted, which clears it when a new run starts", () => {
+    const agentStarted = /\n {2}agentStarted\(\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+    it("tells the provider only from the link handler, inside the tellAgentStarted check", () => {
+      assert.match(handler, /\n {6}if \(tellAgentStarted\(change, settings\)\) \{\n {8}provider\.agentStarted\(\);\n {6}\}\n/);
+      assert.equal(agentCode.match(/provider\.agentStarted\(\)/g)?.length, 1, "only the link handler calls it");
+      const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+      assert.ok(!listener.includes("agentStarted"), "a settings change never sends it");
+    });
+
+    it("only posts the fixed message, if the webview is listening now, and never waits", () => {
+      assert.match(agentStarted, /^\n {2}agentStarted\(\): void \{\n {4}void sendAgentStarted\(this\.#requests, this\.#postToView\);\n {2}\}\n$/);
+    });
+
+    it("never opens, focuses or starts a round, and keeps nothing for later", () => {
+      assert.ok(agentStarted, "the provider has an agentStarted method");
+      for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "requestOpen", "request()", "await"]) {
+        assert.ok(!agentStarted.includes(banned), banned);
+      }
+    });
+  });
+});
+
+describe("the result-card line follows the agent (#121)", () => {
+  const agentCode = code(extensionSource);
+  /** `update`, which both the link handler and the settings listener call. */
+  const update = /const update = \(settings: NoticeSettings\): void => \{[\s\S]*?\n {2}\};/.exec(agentCode)?.[0] ?? "";
+  const handler = /handleUri: \(uri\) => \{[\s\S]*?\n {4}\},/.exec(agentCode)?.[0] ?? "";
+  const listener = /onDidChangeConfiguration\(\(event\) => \{[\s\S]*?\n {2}\}\);/.exec(agentCode)?.[0] ?? "";
+  /** The provider's `setAgentState` method. */
+  const setAgentState = /\n {2}setAgentState\(state: AgentState\): void \{[\s\S]*?\n {2}\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("records the state from the last signal and the mode in update, after every signal and settings change", () => {
+    assert.ok(update, "update");
+    assert.ok(update.includes("provider.setAgentState(agentStateFor(notice.lastSignal, settings));"));
+    assert.equal(agentCode.match(/provider\.setAgentState\(/g)?.length, 1, "only update calls it");
+    assert.match(handler, /\n {6}update\(settings\);\n/, "the link handler runs update");
+    assert.match(listener, /\n {6}update\(settings\);\n/, "the settings listener runs update");
+  });
+
+  it("keeps the state and posts it only if the webview is listening now, read at each post", () => {
+    assert.ok(setAgentState, "the provider has a setAgentState method");
+    assert.match(
+      setAgentState,
+      /^\n {2}setAgentState\(state: AgentState\): void \{\n {4}this\.#agentState = state;\n {4}void sendAgentState\(this\.#requests, this\.#postToView, this\.#currentAgentState\);\n {2}\}\n$/,
+    );
+    assert.ok(agentCode.includes("readonly #currentAgentState = (): AgentState => this.#agentState;"));
+    assert.ok(agentCode.includes("#agentState: AgentState = AgentState.None;"), "no line until a signal arrives");
+  });
+
+  it("never opens, focuses or starts a round", () => {
+    for (const banned of ["focus", "show(", "executeCommand", "newRound", "requestOpen", "request()", "await"]) {
+      assert.ok(!setAgentState.includes(banned), banned);
+    }
+  });
+
+  it("gives every load the current state: answerWebview reads #currentAgentState", () => {
+    const answer = /void answerWebview\(([\s\S]*?)\);/.exec(agentCode)?.[1] ?? "";
+    assert.ok(answer, "the message listener calls answerWebview");
+    assert.match(answer, /this\.#postToView,\s*this\.#currentAgentState,\s*$/);
+  });
+});
+
+describe("the Copy agent hook setup command (#114)", () => {
+  const agentCode = code(extensionSource);
+  /** The function the command runs, up to the next top-level declaration. */
+  const command = /async function copyAgentHookSetup\(\): Promise<void> \{[\s\S]*?\n\}\n/.exec(agentCode)?.[0] ?? "";
+
+  it("runs the pure copyHookSetup with VS Code's tool list, clipboard and editor scheme", () => {
+    assert.ok(command, "copyAgentHookSetup is defined");
+    assert.ok(command.includes("await copyHookSetup({"));
+    assert.ok(command.includes("uriScheme: vscode.env.uriScheme,"));
+    assert.ok(command.includes("vscode.window.showQuickPick(items, {"));
+    assert.ok(command.includes("copy: (text) => vscode.env.clipboard.writeText(text),"));
+  });
+
+  it("reads whether notices are off through the settings reader", () => {
+    assert.ok(command.includes("noticesOff: () => noticeSettings().mode === AutoStartMode.Off,"));
+    assert.ok(!command.includes("getConfiguration"));
+  });
+
+  it("shows a non-modal message whose Open Settings button opens 0xWORD's settings, unawaited", () => {
+    assert.ok(command.includes("vscode.window\n        .showInformationMessage(message, ...buttons)"));
+    assert.ok(!command.includes("modal"));
+    assert.ok(command.includes('vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${EXTENSION_ID}`)'));
+    assert.ok(command.includes("const buttons = offerSettings ? [OPEN_SETTINGS] : [];"));
+  });
+
+  it("never opens, focuses or starts a round", () => {
+    for (const banned of ["focus", "show(", "newRound", "NEW_ROUND_COMMAND", "provider"]) {
+      assert.ok(!command.includes(banned), banned);
+    }
+  });
+
+  it("keeps its modules in the file-access scan", () => {
+    const files = sourceFiles();
+    for (const file of ["src/copyHookSetup.ts", "src/hookSnippets.ts"]) {
+      assert.ok(files.includes(file), file);
+      assert.doesNotMatch(readFileSync(new URL(file, root), "utf8"), /from\s*["']vscode["']/, file);
+    }
+  });
+});
+
 /**
  * Code that would reach the user's workspace or files (CLAUDE.md security
- * rule 8): the `workspace` API however it's imported, `fs` in any form, and
- * any `require` or dynamic `import`, which could load either.
+ * rule 8): the `workspace` API however it's imported or reached, `fs` in any
+ * form, and any `require` or dynamic `import`, which could load either. Also
+ * any settings write: `ConfigurationTarget` and any `.update(` call, since a
+ * workspace-level write creates `.vscode/settings.json` in the user's project.
  */
 const FILE_ACCESS: readonly RegExp[] = [
   /\.\s*workspace\b/, // vscode.workspace
   /\{[^}]*\bworkspace\b[^}]*\}\s*from\s*["']vscode["']/, // import { workspace } from "vscode"
+  /\{[^}]*\bworkspace\b[^}]*\}\s*=/, // const { workspace } = vscode
+  /\[\s*["'`]workspace["'`]\s*\]/, // vscode["workspace"]
+  /\bworkspace\b/, // the word anywhere else in code, outside comments
+  /\bConfigurationTarget\b/,
+  /\.\s*update\s*\(/, // a settings write, chained or through a variable
   /from\s*["'](node:)?fs(\/promises)?["']/,
   /\brequire\s*\(/,
   /\bimport\s*\(/,
@@ -273,6 +733,25 @@ const FILE_ACCESS: readonly RegExp[] = [
 /** The source without comments, so docs may mention the workspace. */
 function code(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+/**
+ * The only `workspace` calls allowed (#110): reading 0xWORD's own settings
+ * and hearing when they change. Neither reaches the user's files. Each must
+ * be written out in full, so any other use of `workspace` is still caught.
+ */
+const SETTINGS_CALLS = /\bvscode\.workspace\.(?:getConfiguration\(SETTINGS_SECTION\)|onDidChangeConfiguration\()/g;
+
+/**
+ * The only `.update(` calls allowed: the stats and theme stores saving to
+ * `globalState`, through their own `#storage` field. A test below keeps them
+ * to src/stats.ts and src/theme.ts.
+ */
+const STORAGE_UPDATES = /\bthis\.#storage\.update\(/g;
+
+/** The code the file-access scan reads: no comments, settings reads or store saves. */
+function scanned(source: string): string {
+  return code(source).replace(SETTINGS_CALLS, "").replace(STORAGE_UPDATES, "");
 }
 
 /** Every TypeScript file in src/ and the webview's media/, without the built bundle. */
@@ -294,12 +773,26 @@ describe("no workspace or file access (untrusted workspaces)", () => {
 
   for (const file of sourceFiles()) {
     it(`${file} doesn't touch the workspace or the file system`, () => {
-      const source = code(readFileSync(new URL(file, root), "utf8"));
+      const source = scanned(readFileSync(new URL(file, root), "utf8"));
       for (const pattern of FILE_ACCESS) {
         assert.doesNotMatch(source, pattern);
       }
     });
   }
+
+  it("allows the settings calls only in src/extension.ts", () => {
+    const users = sourceFiles().filter((file) =>
+      code(readFileSync(new URL(file, root), "utf8")).match(SETTINGS_CALLS),
+    );
+    assert.deepEqual(users, ["src/extension.ts"]);
+  });
+
+  it("allows store saves only in src/stats.ts and src/theme.ts", () => {
+    const users = sourceFiles().filter((file) =>
+      code(readFileSync(new URL(file, root), "utf8")).match(STORAGE_UPDATES),
+    );
+    assert.deepEqual(users.sort(), ["src/stats.ts", "src/theme.ts"]);
+  });
 
   describe("the scan catches", () => {
     const caught: readonly (readonly [string, string])[] = [
@@ -310,16 +803,54 @@ describe("no workspace or file access (untrusted workspaces)", () => {
       ["node:fs/promises", 'import { readFile } from "node:fs/promises";'],
       ["require", 'const fs = require("fs");'],
       ["a dynamic import", 'const fs = await import("node:fs");'],
+      ["the workspace folders", "const folders = vscode.workspace.workspaceFolders;"],
+      ["finding files", 'void vscode.workspace.findFiles("**/*");'],
+      ["the workspace kept in a variable", "const ws = vscode.workspace;"],
+      ["another settings section", 'vscode.workspace.getConfiguration("files");'],
+      ["file access after a settings call", "vscode.workspace.getConfiguration(SETTINGS_SECTION); vscode.workspace.fs;"],
+      ["a settings call not written out in full", "const c = vscode.workspace\n.getConfiguration(SETTINGS_SECTION);"],
+      [
+        "a workspace settings write chained after a settings read",
+        'void vscode.workspace.getConfiguration(SETTINGS_SECTION).update("autoStart.mode", "notify", vscode.ConfigurationTarget.Workspace);',
+      ],
+      [
+        "a settings write chained after a settings read, with no target",
+        'void vscode.workspace.getConfiguration(SETTINGS_SECTION).update("autoStart.mode", "notify");',
+      ],
+      [
+        "a settings write through a variable",
+        'const config = vscode.workspace.getConfiguration(SETTINGS_SECTION);\nvoid config.update("notify.popup", true);',
+      ],
+      ["a settings write with a space before the bracket", 'config.update ("notify.popup", true);'],
+      ["a configuration target", "const target = vscode.ConfigurationTarget.Workspace;"],
+      ["a configuration target imported by name", 'import { ConfigurationTarget } from "vscode";'],
+      ["a destructured workspace", "const { workspace } = vscode;"],
+      ["a destructured workspace among others", "const { window, workspace: ws } = vscode;"],
+      ["the workspace by bracket", 'const ws = vscode["workspace"];'],
+      ["the workspace by bracket in single quotes", "const ws = vscode['workspace'];"],
+      ["a store save from another field", "void this.#other.update(KEY, value);"],
     ];
     for (const [name, line] of caught) {
       it(name, () => {
-        assert.ok(FILE_ACCESS.some((pattern) => pattern.test(code(line))));
+        assert.ok(FILE_ACCESS.some((pattern) => pattern.test(scanned(line))));
       });
     }
 
     it("but not the word workspace in a comment", () => {
       const source = "// Works in untrusted workspaces.\n/** Never reads the workspace. */\nconst a = 1;";
-      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(code(source))));
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
+    });
+
+    it("nor reading 0xWORD's own settings and hearing when they change", () => {
+      const source =
+        "const config = vscode.workspace.getConfiguration(SETTINGS_SECTION);\n" +
+        "const listener = vscode.workspace.onDidChangeConfiguration((event) => {});";
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
+    });
+
+    it("nor a stats or theme store saving through its own field", () => {
+      const source = "await this.#storage.update(STATS_KEY, value);";
+      assert.ok(!FILE_ACCESS.some((pattern) => pattern.test(scanned(source))));
     });
   });
 });

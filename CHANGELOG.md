@@ -2,7 +2,7 @@
 
 All notable changes to 0xWORD are listed here, newest first.
 
-## [Unreleased]
+## [1.0.0] - 2026-11-12
 
 ### Added
 - A 0xWORD panel in the activity bar: guess a hidden 4-letter word from its ASCII hex, 8 digits per row, in up to 6 rows.
@@ -19,3 +19,9 @@ All notable changes to 0xWORD are listed here, newest first.
 - The round in progress is kept when you hide the panel or reload VS Code.
 - Bundled DM Sans and JetBrains Mono fonts, so nothing is downloaded. No network access and no telemetry.
 - The Marketplace and activity-bar icons.
+- Play while your agent works: hooks you add to Claude Code, GitHub Copilot, Copilot CLI, Cursor (not yet tested) or Codex tell 0xWORD when your agent starts and finishes, with a setup guide for each tool. Notices are off by default: set **Auto Start: Mode** to `notify` or `open` in 0xWORD's settings to turn them on.
+- `notify` mode: while your agent works, a badge on the 0xWORD icon, `0x Round ready` in the status bar, and an optional pop-up with **Play** and **Not now**, each switched on or off in the settings. They go away when the agent finishes.
+- `open` mode: once your agent has worked for a while (20 seconds by default), the 0xWORD panel opens by itself, keeping a round in progress as it is.
+- When your agent finishes mid-round, the panel says "Your agent has finished. Your round is still here."
+- In `notify` and `open` mode, the line under the result card says whether your agent is still working or has finished, and updates as soon as that changes. In `off` mode, or before your agent has sent anything, there's no line.
+- The **0xWORD: Copy agent hook setup** command: pick your agent tool and its hook setup is copied to the clipboard, with a note on where to paste it. 0xWORD never edits your agent tool's files.

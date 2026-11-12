@@ -16,8 +16,31 @@
 // threw) is posted again up to POST_RETRIES times per load. A `newRound`
 // is then queued for the next `ready`, and an `init` is dropped. Neither is
 // ever retried forever, and a `newRound` is never sent twice.
+//
+// `open` mode's `agentOpen` (#111) is delivered the same way, with one
+// difference: it isn't counted. However many are asked for while the webview
+// isn't listening, it gets one, after `init` and any queued `newRound`.
+//
+// `agentFinished` and `agentStarted` (#112) are never kept: each goes only to
+// a webview listening when the agent finishes or starts (`sendIfListening`),
+// and a hidden or closed panel never gets it.
+//
+// `agentState` (#121) isn't kept either. It's sent the same way after every
+// signal and settings change, and after `init` on every load, read from the
+// host's current state at each post, so a load never gets an old one.
+import { AgentState } from "./agentSignals.ts";
 import { deliver, type PostMessage } from "./post.ts";
-import { handleWebviewMessage, type HostHandlers, type HostMessage, type InitMessage } from "./protocol.ts";
+import {
+  handleWebviewMessage,
+  type AgentFinishedMessage,
+  type AgentOpenMessage,
+  type AgentStartedMessage,
+  type AgentStateMessage,
+  type HostHandlers,
+  type HostMessage,
+  type InitMessage,
+  type NewRoundMessage,
+} from "./protocol.ts";
 
 /**
  * How many times a failed `newRound` or `init` is posted again to the same
@@ -31,10 +54,16 @@ export class NewRoundRequests {
   #generation = 0;
   #ready = false;
   #pending = 0;
+  #openPending = false;
 
   /** Requests waiting for the webview to become ready. */
   get pending(): number {
     return this.#pending;
+  }
+
+  /** True while an `agentOpen` is waiting for the webview to become ready. */
+  get openPending(): boolean {
+    return this.#openPending;
   }
 
   /** True between the current view's `ready` and its next `reset`. */
@@ -67,6 +96,31 @@ export class NewRoundRequests {
     }
     this.#pending++;
     return null;
+  }
+
+  /**
+   * Records one `agentOpen`. Returns the generation to post it under now, or
+   * null if it was kept for the next `ready`. One kept already stays one.
+   */
+  requestOpen(): number | null {
+    if (this.#ready) {
+      return this.#generation;
+    }
+    this.#openPending = true;
+    return null;
+  }
+
+  /**
+   * After view `view`'s `ready`: true, once, if an `agentOpen` was kept for
+   * it, and clears it so it's never sent twice. False and changes nothing if
+   * `view` isn't listening (its `ready` was ignored as stale).
+   */
+  takeOpen(view: number): boolean {
+    if (!this.#openPending || this.listeningGeneration(view) === null) {
+      return false;
+    }
+    this.#openPending = false;
+    return true;
   }
 
   /**
@@ -130,6 +184,19 @@ export class NewRoundRequests {
     return this.request();
   }
 
+  /**
+   * Like `retryOrQueue`, for a failed `agentOpen` post: posts it again, or
+   * keeps it for the next `ready` once POST_RETRIES retries are used up.
+   */
+  retryOrQueueOpen(generation: number, attempt: number): number | null {
+    if (generation === this.#generation && attempt > POST_RETRIES) {
+      this.#stopListening();
+      this.#openPending = true;
+      return null;
+    }
+    return this.requestOpen();
+  }
+
   #stopListening(): void {
     this.#generation++;
     this.#ready = false;
@@ -163,18 +230,103 @@ export function viewVisibilityChanged(requests: NewRoundRequests, view: number, 
  * current view's webview, or resolves false if there's none. Resolves once the
  * run is delivered or queued; never rejects, and logs nothing.
  */
-export async function sendNewRound(
+export function sendNewRound(
   requests: NewRoundRequests,
   post: PostMessage,
   generation: number | null,
 ): Promise<void> {
+  return sendOrKeep(post, { type: "newRound" }, generation, (current, attempt) =>
+    requests.retryOrQueue(current, attempt),
+  );
+}
+
+/**
+ * Sends one `agentOpen`, as `sendNewRound` sends a `newRound`: posted under
+ * `generation` (null means it was kept for the next `ready`), then posted
+ * again or kept, as `retryOrQueueOpen` decides. Never rejects.
+ */
+export function sendAgentOpen(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  generation: number | null,
+): Promise<void> {
+  return sendOrKeep(post, { type: "agentOpen" }, generation, (current, attempt) =>
+    requests.retryOrQueueOpen(current, attempt),
+  );
+}
+
+/**
+ * Sends `agentFinished` (#112), only if the webview is listening now, as
+ * `sendIfListening` does. Never rejects.
+ */
+export function sendAgentFinished(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
+  return sendIfListening(requests, post, () => ({ type: "agentFinished" }));
+}
+
+/**
+ * Sends `agentStarted` (#112), only if the webview is listening now, as
+ * `sendIfListening` does. Never rejects.
+ */
+export function sendAgentStarted(requests: NewRoundRequests, post: PostMessage): Promise<boolean> {
+  return sendIfListening(requests, post, () => ({ type: "agentStarted" }));
+}
+
+/**
+ * Sends `agentState` (#121) with the agent's state, only if the webview is
+ * listening now, as `sendIfListening` does. `state` is read again for every
+ * post, retries included, so a post never carries a state older than the
+ * host's when it's made. Never rejects.
+ */
+export function sendAgentState(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  state: () => AgentState,
+): Promise<boolean> {
+  return sendIfListening(requests, post, () => ({ type: "agentState", state: state() }));
+}
+
+/**
+ * Posts the message `next` builds only if the webview is listening now: under
+ * the current generation, and again up to POST_RETRIES times while it fails
+ * and that same load is still listening. `next` is called for every post.
+ * It's never queued or kept, so a webview that isn't listening now (hidden,
+ * closed or still loading) never gets it, not even on its next `ready`.
+ * Resolves true if it was delivered; never rejects, and logs nothing.
+ */
+async function sendIfListening(
+  requests: NewRoundRequests,
+  post: PostMessage,
+  next: () => AgentFinishedMessage | AgentStartedMessage | AgentStateMessage,
+): Promise<boolean> {
+  const generation = requests.isReady ? requests.generation : null;
+  if (generation === null) {
+    return false;
+  }
+  for (let attempt = 1; attempt <= POST_RETRIES + 1 && requests.isListening(generation); attempt++) {
+    if (await deliver(post, next())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Posts `message` under `generation` until it's delivered or `retryOrKeep`
+ * keeps it for the next `ready` (returns null). Never rejects.
+ */
+async function sendOrKeep(
+  post: PostMessage,
+  message: NewRoundMessage | AgentOpenMessage,
+  generation: number | null,
+  retryOrKeep: (generation: number, attempt: number) => number | null,
+): Promise<void> {
   let current = generation;
   let attempt = 1;
   while (current !== null) {
-    if (await deliver(post, { type: "newRound" })) {
+    if (await deliver(post, message)) {
       return;
     }
-    const next = requests.retryOrQueue(current, attempt);
+    const next = retryOrKeep(current, attempt);
     // Attempts are counted per load: a newer load starts again from 1.
     attempt = next === current ? attempt + 1 : 1;
     current = next;
@@ -213,11 +365,19 @@ export async function sendInit(
 /**
  * Answers a message from view `view`, as `messagesAfter` decides: `init`
  * posted to that view's webview with `sendInit`, then, once it has been
- * delivered or given up, one `sendNewRound` per round queued while the webview
- * wasn't listening. Each queued round is recorded again as a run (`request`),
+ * delivered or given up, `sendAgentState` with the agent's state now (#121),
+ * then one `sendNewRound` per round queued while the webview
+ * wasn't listening, then `sendAgentOpen` for a kept `agentOpen`. Each queued
+ * round is recorded again as a run (`request`, or `requestOpen`),
  * so it's posted if the webview is still listening, or queued again if it
  * stopped while `init` was being retried. `toSender` posts to the webview that
- * sent the message, `toView` to the current view's. Never rejects.
+ * sent the message, `toView` to the current view's. `agentState` reads the
+ * host's current agent state. Never rejects.
+ *
+ * The agent's state is skipped when it's `none`: every load starts with no
+ * line, and a webview that stopped listening gets it on its next `ready`.
+ * It doesn't start or keep a round, so it can't change what the queued
+ * `newRound` and `agentOpen` do.
  */
 export async function answerWebview(
   raw: unknown,
@@ -226,8 +386,9 @@ export async function answerWebview(
   view: number,
   toSender: PostMessage,
   toView: PostMessage,
+  agentState: () => AgentState,
 ): Promise<void> {
-  const [reply, ...rounds] = messagesAfter(raw, handlers, requests, view);
+  const [reply, ...queued] = messagesAfter(raw, handlers, requests, view);
   if (!reply) {
     return;
   }
@@ -237,16 +398,25 @@ export async function answerWebview(
     return;
   }
   await sendInit(requests, toSender, reply, requests.listeningGeneration(view));
-  for (let i = 0; i < rounds.length; i++) {
-    await sendNewRound(requests, toView, requests.request());
+  if (agentState() !== AgentState.None) {
+    await sendAgentState(requests, toView, agentState);
+  }
+  for (const message of queued) {
+    if (message.type === "agentOpen") {
+      await sendAgentOpen(requests, toView, requests.requestOpen());
+    } else {
+      await sendNewRound(requests, toView, requests.request());
+    }
   }
 }
 
 /**
  * The host's full answer to a message from view `view`: the protocol's reply,
  * and after an `init`, one `newRound` per request queued while the webview
- * wasn't listening. `init` must come first, so the webview's first round
- * doesn't swallow a requested one.
+ * wasn't listening, then the kept `agentOpen`, if there is one. `init` must
+ * come first, so the webview's first round doesn't swallow a requested one.
+ * `agentOpen` comes last: after a requested new round it leaves that round
+ * alone, so it never starts a second one.
  */
 export function messagesAfter(
   raw: unknown,
@@ -262,6 +432,9 @@ export function messagesAfter(
   if (reply.type === "init") {
     for (let i = requests.ready(view); i > 0; i--) {
       messages.push({ type: "newRound" });
+    }
+    if (requests.takeOpen(view)) {
+      messages.push({ type: "agentOpen" });
     }
   }
   return messages;

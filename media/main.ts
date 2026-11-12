@@ -133,6 +133,8 @@ let drawnMessage: string | null = null;
 let drawnAnnouncement: string | null = null;
 /** Like `messageWrites`, for the hidden announcement region. */
 let announcementWrites = 0;
+/** The text the line under the result card shows; null before the first draw. */
+let drawnResultNote: string | null = null;
 /**
  * How to play was opened from the keyboard (Enter or Space on `?`), so
  * closing it gives focus back to `?`. Opened with the mouse, focus goes back
@@ -141,6 +143,13 @@ let announcementWrites = 0;
 let howToPlayOpenedByKeyboard = false;
 /** The last button click came from the keyboard: a click event's `detail` is 0. */
 let lastClickByKeyboard = false;
+/**
+ * A focus move `render` skipped because the panel didn't have keyboard focus
+ * (#111): the decode box at the decode step, or New round on the result
+ * card. It's made when the panel gains focus, if it still applies. Declared
+ * before the first `render` below, which may set it.
+ */
+let deferredFocus: HTMLElement | null = null;
 /**
  * The player's theme choice. The host puts a forced one on <body> in the
  * HTML (read here, untrusted like any input), and sends it again in `init`.
@@ -604,7 +613,13 @@ function buildScreen(app: HTMLElement): Screen {
   const resultHead = element("div", "result-head");
   resultHead.append(resultOutcome, resultHeading, resultLine);
   result.append(resultHead, resultList, resultButton);
+  // What the agent is doing (#121), from the host. A polite live region, so
+  // a change while the card shows is read out without interrupting. Shown
+  // with the card even when empty, so it's already on the page when a line
+  // first appears.
   const resultNote = element("p", "result-note");
+  resultNote.setAttribute("role", "status");
+  resultNote.setAttribute("aria-live", "polite");
   resultNote.hidden = true;
 
   const game = element("div", "game");
@@ -788,7 +803,42 @@ function render(view: ScreenView): void {
   ui.tryNote.textContent = view.panel.note;
 
   drawResult(view.result);
+  drawNotice(view);
 
+  const opening = view.howToPlayOpen && !howToPlayWasOpen;
+  const closing = !view.howToPlayOpen && howToPlayWasOpen;
+  if (opening) {
+    // Focus moves to the back arrow.
+    howToPlayOpenedByKeyboard = lastClickByKeyboard;
+    ui.backButton.focus();
+  } else if (closing && howToPlayOpenedByKeyboard) {
+    // Opened from the keyboard: focus goes back to the `?` that opened it.
+    ui.howToPlayButton.focus();
+  } else {
+    if (closing) {
+      // Opened with the mouse: focus goes back to the page, as after any
+      // clicked button, so Enter enters the row instead of reopening it.
+      ui.backButton.blur();
+    }
+    // The decode step: the hex is locked and the decode box takes the
+    // keyboard. Before that the box is locked and focus stays put. Only while
+    // the panel has focus: see `focusWhenPanelFocused`.
+    if (!view.howToPlayOpen && view.hexLocked && document.activeElement !== ui.decodeInput) {
+      focusWhenPanelFocused(ui.decodeInput);
+    }
+  }
+}
+
+/**
+ * Draws the message line and the hidden announcement region, both polite
+ * live regions, with `textContent`. Part of `render`, and called on its own
+ * to show or clear the agent's message (#112), which changes nothing else on
+ * screen and must not move focus.
+ */
+function drawNotice(view: ScreenView): void {
+  if (!ui) {
+    return;
+  }
   ui.message.classList.toggle("message-error", view.messageIsError);
   // A message restored with the round (#34) is written by the first render,
   // in the same task that puts the live region on the page, so like the
@@ -833,28 +883,6 @@ function render(view: ScreenView): void {
     ui.announcement.textContent = view.announcement;
   }
   drawnAnnouncement = view.announcement;
-
-  const opening = view.howToPlayOpen && !howToPlayWasOpen;
-  const closing = !view.howToPlayOpen && howToPlayWasOpen;
-  if (opening) {
-    // Focus moves to the back arrow.
-    howToPlayOpenedByKeyboard = lastClickByKeyboard;
-    ui.backButton.focus();
-  } else if (closing && howToPlayOpenedByKeyboard) {
-    // Opened from the keyboard: focus goes back to the `?` that opened it.
-    ui.howToPlayButton.focus();
-  } else {
-    if (closing) {
-      // Opened with the mouse: focus goes back to the page, as after any
-      // clicked button, so Enter enters the row instead of reopening it.
-      ui.backButton.blur();
-    }
-    // The decode step: the hex is locked and the decode box takes the
-    // keyboard. Before that the box is locked and focus stays put.
-    if (!view.howToPlayOpen && view.hexLocked && document.activeElement !== ui.decodeInput) {
-      ui.decodeInput.focus();
-    }
-  }
 }
 
 /**
@@ -893,11 +921,80 @@ function drawResult(result: ScreenView["result"]): void {
     byte.label.textContent = model?.label ?? "";
   });
   ui.resultButton.textContent = result?.button ?? NEW_ROUND_BUTTON;
-  ui.resultNote.textContent = result?.note ?? "";
+  drawResultNote(result);
   if (appearing) {
-    ui.resultButton.focus();
+    focusWhenPanelFocused(ui.resultButton);
   }
 }
+
+/**
+ * Writes the line under the result card (#121) with `textContent`, only when
+ * its text changes, so the live region reads each change out once and a
+ * redraw never repeats it. Part of `drawResult`, and called on its own when
+ * the host's `agentState` changes the line while the card shows, which
+ * changes nothing else on screen and must not move focus.
+ */
+function drawResultNote(result: ScreenView["result"]): void {
+  const note = result?.note ?? "";
+  if (ui && note !== drawnResultNote) {
+    ui.resultNote.textContent = note;
+    drawnResultNote = note;
+  }
+}
+
+/**
+ * Reads a new line under the result card out from the hidden announcement
+ * region (#121), while How to play hides the card's own live region. A line
+ * that goes away clears the region, with nothing read out. Takes any
+ * re-announce still waiting, and records the text as drawn, so the next
+ * `render` doesn't write it again: it only clears it, which isn't read out.
+ */
+function announceResultNote(note: string): void {
+  if (!ui) {
+    return;
+  }
+  ++announcementWrites;
+  ui.announcement.textContent = note;
+  drawnAnnouncement = note;
+}
+
+/**
+ * Focuses `target`, the decode box or New round, which `render` moves focus
+ * to by itself, only if the panel has keyboard focus (#111). `open` mode can
+ * show and reload the panel while the player types somewhere else in VS Code,
+ * such as an agent's prompt box. Focusing the decode box then would take
+ * their keys, and Enter would submit them as the round's one try. Otherwise
+ * the move waits in `deferredFocus` until the panel gains focus.
+ */
+function focusWhenPanelFocused(target: HTMLElement): void {
+  if (document.hasFocus()) {
+    deferredFocus = null;
+    target.focus();
+  } else {
+    deferredFocus = target;
+  }
+}
+
+/**
+ * The panel gained focus: makes the focus move `render` skipped, if it still
+ * applies (the decode step, or the result card, with How to play closed) and
+ * the player hasn't focused something else in the panel themselves.
+ */
+function applyDeferredFocus(): void {
+  const target = deferredFocus;
+  deferredFocus = null;
+  if (!target || !ui) {
+    return;
+  }
+  const view = controller.view();
+  const due = target === ui.decodeInput ? view.hexLocked : view.result !== null;
+  const active = document.activeElement;
+  if (due && !view.howToPlayOpen && (active === null || active === document.body)) {
+    target.focus();
+  }
+}
+
+window.addEventListener("focus", applyDeferredFocus);
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   const message = parseHostMessage(event.data);
@@ -915,6 +1012,45 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     case "newRound":
       controller.dispatch({ type: "newRound" });
       break;
+    case "agentOpen":
+      // `open` mode opened the panel: the controller keeps a round in
+      // progress, and starts one only after the result card or before the
+      // first round. Saved by `changed()` like every action.
+      controller.dispatch({ type: "agentOpen" });
+      break;
+    case "agentFinished":
+      // The agent finished mid-round (#112): only the message line changes.
+      // Not a game action, so not through `changed()`: nothing is saved or
+      // posted, and no focus moves. The controller ignores it on the result
+      // card and before the first round.
+      if (controller.agentFinished()) {
+        drawNotice(controller.view());
+      }
+      break;
+    case "agentStarted":
+      // The agent started again (#112): a "finished" message from the last
+      // run is cleared, so a later finish is read out afresh. The same path
+      // as `agentFinished`: nothing saved or posted, no focus move.
+      if (controller.agentStarted()) {
+        drawNotice(controller.view());
+      }
+      break;
+    case "agentState": {
+      // What the line under the result card says (#121). UI only, like
+      // `agentFinished`: not through `changed()`, so nothing is saved or
+      // posted, and no focus moves. Only that line is drawn, and only if the
+      // card shows and its text changed. While How to play hides the card,
+      // the line is still updated for the return, and the always visible
+      // announcement region reads the change out instead, as for #112.
+      if (controller.agentState(message.state)) {
+        const view = controller.view();
+        drawResultNote(view.result);
+        if (view.howToPlayOpen) {
+          announceResultNote(view.result?.note ?? "");
+        }
+      }
+      break;
+    }
   }
 });
 
