@@ -2,7 +2,7 @@
 
 All notable changes to 0xWORD are listed here, newest first.
 
-## [Unreleased]
+## [1.0.0] - 2026-11-12
 
 ### Added
 - A 0xWORD panel in the activity bar: guess a hidden 4-letter word from its ASCII hex, 8 digits per row, in up to 6 rows.
