@@ -11,7 +11,7 @@ How a version of 0xWORD gets from `develop` to the VS Code Marketplace, and then
 | `publish` job with Trusted Publishing | 6 | Built (#97), not yet run. **Needs [the `production` environment](#the-production-environment) before any tag is pushed.** `github-release` now follows `publish`. |
 | Open VSX | 6 | The owner uploads each release on the website (#98). Nothing in the workflows. |
 
-The owner still has to make the repo public, create the environment and recreate the Trusted Publishing policy. None of that is in the workflows.
+The owner still has to make the repo public, create the environment and recreate the Trusted Publishing policy, in the order of the [First release](#first-release) checklist. None of that is in the workflows.
 
 ## In short
 
@@ -92,6 +92,31 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 - **`github-release` fails:** read the job log. By then the version is on the Marketplace, so don't release it again: choose **Re-run failed jobs** on the same run, which leaves `publish` alone. **Re-run all jobs** would try to publish again, and the Marketplace would refuse the version. If a release for the tag already exists, `gh` refuses to create another; delete it first.
 - **The Open VSX upload fails:** the Marketplace release stands. Try the upload again on open-vsx.org ([Each release](#each-release)); nothing in the workflows needs re-running.
 
+## First release
+
+The owner does these once, in order, for the first version (#99). Each step links to the section that has the details. **Publishing can't be undone:** the Marketplace never accepts the same version number twice, so once a version goes out, its number can't be used again.
+
+1. **Phase 5 checks:** run the [install check](#install-check) on a `.vsix`, and the [test-tag checks](#test-tag-checks). Checks 1 and 3A tag `3037813`, which has no `publish` job, so they're safe before the environment exists. `3037813` is already on `main` (2026-11-12), so check 2 can't run; skip it. Check 3A alone satisfies "at least one" matching-tag check. **Check 3B is optional and needs step 3 first,** so run it after step 3 if you want it: it tags `origin/main` as `v0.0.1`, a throwaway that isn't the release's version (the first release is `0.1.0`), and you reject it. Run it before step 4, so the Trusted Publishing policy isn't running down its 48 hours.
+2. **Make the repo public:** follow [Making the repo public](#making-the-repo-public). The Marketplace README loads its images from `main` on GitHub, so they only show once the repo is public.
+3. **The `production` environment:** create it with the owner as required reviewer, as in [The `production` environment](#the-production-environment), and run its environment check.
+4. **Recreate the Trusted Publishing policy** just before tagging, with the values in [Trusted Publishing](#trusted-publishing). A new policy has to be used within 48 hours, or it stays inactive, so if step 5 takes longer, recreate it again.
+5. **`/release minor`, then merge, tag and approve:** follow steps 1 to 4 of [Making a release](#making-a-release). Between the merge and the tag:
+   - make sure no test tag is left over: `git ls-remote --tags origin` must show no tag for the version you're releasing, and a stale one must be deleted first ([Test-tag checks](#test-tag-checks));
+   - re-check that the ID `dconyemerekwe.0xword` is still free on both stores, because an ID isn't reserved until its first publish: `https://marketplace.visualstudio.com/items?itemName=dconyemerekwe.0xword` must show no extension, and `https://open-vsx.org/api/dconyemerekwe/0xword` must return 404. If either is taken, stop.
+
+   If `publish` fails because the Marketplace refuses `--oidc`, on a first publish or with `--packagePath`, follow [If the Marketplace refuses `--oidc`](#if-the-marketplace-refuses---oidc): upload the same CI-built `.vsix` by hand on the manage page, and record what happened in [What happened on the first release](#what-happened-on-the-first-release).
+6. **The Open VSX upload:** do the [one-time setup](#one-time-setup) first, then [Each release](#each-release).
+7. **The sync PR back to `develop`:** step 6 of [Making a release](#making-a-release).
+8. **Check the Marketplace page:** open `https://marketplace.visualstudio.com/items?itemName=dconyemerekwe.0xword` and check it shows the icon, the wordmark, the screenshots and the README. The page can lag a few minutes after you approve, so wait and refresh before assuming the publish failed.
+9. **Install from the Marketplace in a clean profile:** open an empty folder with `code --profile 0xword-release <empty folder>`, search the Extensions view for `0xWORD`, install it, and play a round to the result card, as in the [install check](#install-check). Search can lag a few minutes after approval too: wait and search again before assuming the publish failed. Then uninstall it and delete the profile (**Profiles: Delete Profile**).
+10. **Mark Phases 5 and 6 done** in `docs/PLAN.md`, in a follow-up commit, and fill in [What happened on the first release](#what-happened-on-the-first-release).
+
+### What happened on the first release
+
+Not released yet. The owner records here how the first publish went: whether `--oidc` worked, or the `.vsix` was uploaded by hand, and anything that differed from these docs.
+
+- **The ID (2026-11-12):** `dconyemerekwe.0xword` was free on both stores. The Marketplace's extension query returned no results, and Open VSX returned 404 for the extension and the `dconyemerekwe` namespace. Recorded on #99.
+
 ## Test-tag checks
 
 The owner runs these once, to check `release.yml` for real. **Agents never push tags.** A deleted tag can be used again, as long as nothing reached the Marketplace.
@@ -104,8 +129,8 @@ The owner runs these once, to check `release.yml` for real. **Agents never push 
 | Check | Tag | What must happen | Can it publish? |
 |---|---|---|---|
 | 1. Tag doesn't match `package.json` | `v9.9.9` on `3037813` | Fails at `verify-tag`. | No: no `publish` job. |
-| 2. Tag not on `main` | `v<x>` on `3037813`, while that commit isn't on `main` | Fails at `verify-tag`. | No: no `publish` job. |
-| 3A. Matching tag on `main`, no `publish` job | `v<x>` on `3037813`, once that commit is on `main` | All three jobs pass and a GitHub Release appears. | No: no `publish` job. |
+| 2. Tag not on `main` | `v<x>` on `3037813`, while that commit isn't on `main` (it is now, so this can't run) | Fails at `verify-tag`. | No: no `publish` job. |
+| 3A. Matching tag on `main`, no `publish` job | `v0.0.1` on `3037813` (on `main` now) | All three jobs pass and a GitHub Release appears. | No: no `publish` job. |
 | 3B. Matching tag on `main`, rejected | `v<x>` on `origin/main` | `publish` waits; the owner rejects it. `github-release` is skipped and no release appears. | **Yes, if it's approved or the approval rule is missing.** |
 
 **Check 3 is 3A or 3B.** Tagging `main` can no longer show `github-release` succeeding without publishing, so:
@@ -113,7 +138,7 @@ The owner runs these once, to check `release.yml` for real. **Agents never push 
 - **3A** shows `github-release` working, on a commit with no `publish` job. It doesn't test the approval.
 - **3B** shows the approval stops a release. It can't show `github-release` working: that first happens on the first real release, where a failure is safe to re-run ([When something fails](#when-something-fails)).
 
-Run both if you can, and at least one before the first real release. Always tag the exact commit written in the check: a plain `git tag v<x>` on `main` tags a commit with the `publish` job.
+3A alone is enough: run at least one before the first real release. 3B is optional, for seeing the approval stop a release. Always tag the exact commit written in the check: a plain `git tag v<x>` on `main` tags a commit with the `publish` job.
 
 **Check 1: a tag that doesn't match `package.json`.**
 
@@ -130,7 +155,7 @@ git push origin :refs/tags/v9.9.9
 git tag -d v9.9.9
 ```
 
-**Check 2: a matching tag on a commit not on `main`.** Run this only while `3037813` isn't on `main`. Check first, by counting that commit's history that `main` doesn't have:
+**Check 2: a matching tag on a commit not on `main`.** Run this only while `3037813` isn't on `main`. **It is on `main` now** (checked 2026-11-12), so skip this check. Check first, by counting that commit's history that `main` doesn't have:
 
 ```bash
 git fetch origin
@@ -146,7 +171,7 @@ git push origin v<x>
 
 The run must fail at `verify-tag`, this time on *Tagged commit is on main*, with the later jobs skipped and no release. Delete the tag the same way, with `git push origin :refs/tags/v<x>` and `git tag -d v<x>`.
 
-**Check 3A: a matching tag on `main`, on a commit with no `publish` job.** `3037813` reaches `main` with the first merge from `develop` into `main` (the first `/release` PR, or a `develop` to `main` PR), as long as that PR is merged with **Create a merge commit**. A squash or rebase leaves it off `main` for good, and then this check can't run: use 3B. Check first, by counting that commit's history that `main` doesn't have:
+**Check 3A: a matching tag on `main`, on a commit with no `publish` job.** `3037813` is already on `main` (checked 2026-11-12), so this check can run now, with `v0.0.1`, the version in that commit's `package.json`. Check first, by counting that commit's history that `main` doesn't have:
 
 ```bash
 git fetch origin
@@ -167,7 +192,7 @@ gh release delete v<x> --cleanup-tag --yes
 git tag -d v<x>
 ```
 
-**Check 3B: a matching tag on `main`, rejected at the approval step.** Here `v<x>` is the version in `package.json` on `main`, the version a real release would publish, so this run can really publish it. First run the [environment check](#the-production-environment), and stop unless it prints `PUBLIC` and `dconyemerekwe`. Then:
+**Check 3B: a matching tag on `main`, rejected at the approval step.** Optional. Here `v<x>` is the version in `package.json` on `main`: `v0.0.1` now, which is not the first release's version (`0.1.0`). This run can still really publish that version if it's approved, and the number could never be used again. It needs [the `production` environment](#the-production-environment). First run the [environment check](#the-production-environment), and stop unless it prints `PUBLIC` and `dconyemerekwe`. Then:
 
 ```bash
 git fetch origin
@@ -177,7 +202,7 @@ git push origin v<x>
 
 `verify-tag` and `ci` must pass, and `publish` must then wait for review. Open the run, choose **Review deployments**, select `production` and choose **Reject**. **Don't choose Approve and deploy or Start all waiting jobs:** either one publishes a real version, and the Marketplace never accepts that version number again.
 
-`github-release` must stay skipped, and no release must appear. GitHub's docs say a rejected job makes the workflow fail, but not how the job itself displays, so go by those two. Nothing reached the Marketplace, so the same tag can be used for the real release later. Delete the tag:
+`github-release` must stay skipped, and no release must appear. GitHub's docs say a rejected job makes the workflow fail, but not how the job itself displays, so go by those two. Nothing reached the Marketplace, so the tag can be used again. Delete the tag, and never leave it behind:
 
 ```bash
 git push origin :refs/tags/v<x>
@@ -299,7 +324,7 @@ The `publish` job proves its identity to the Marketplace through GitHub's OpenID
 | Workflow | `release.yml` |
 | Environment | `production` |
 
-While the repo is private, a new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
+A new policy has to be used within 48 hours, or it stays inactive. The owner recreates it just before the first release tag.
 
 **What `vsce` 4.1.0 does with `--oidc`,** from its source (`out/oidc.js`, `out/publish.js`, `out/main.js`, `out/ciProvider.js`, `out/util.js`, #96). Microsoft's docs don't cover this, and none of it has run against the real Marketplace yet:
 
@@ -308,7 +333,16 @@ While the repo is private, a new policy has to be used within 48 hours, or it st
 - **On a first publish:** vsce doesn't need the extension to exist. The token exchange sends only the publisher's name, and if looking up the extension returns 404, vsce creates it. Any other error from that lookup stops the publish. **Still unproven:** whether the Marketplace answers that lookup with 404 and accepts the create with this credential, which only a real first publish can show.
 - **Other settings:** `--oidc` ignores `VSCE_PAT`, and refuses `--pat` and `--azure-credential`. `VSCE_MARKETPLACE_URL` changes where the GitHub token is sent, so the `publish` job must never set it. vsce also sends an `X-Market-CI-Provider: github-actions` header on its Marketplace calls, for Microsoft's statistics. That happens only at publish, not in the extension.
 
-**If the Marketplace refuses `--oidc`:** download the `.vsix` from the run and upload it by hand on the manage page. `github-release` won't have run for that tag, so create the GitHub Release by hand too if it's wanted.
+### If the Marketplace refuses `--oidc`
+
+If `publish` fails because the Marketplace refuses `--oidc`, on a first publish or with `--packagePath`, upload the same CI-built `.vsix` by hand:
+
+1. Check the publisher's [manage page](https://marketplace.visualstudio.com/manage) first. If the version is already there, it went out: don't upload it again.
+2. Download the `0xword-vsix` artifact from the release run in the Actions tab, within CI's 14-day retention. It downloads as a zip: unzip it and take the `0xword.vsix` inside.
+3. Upload that `0xword.vsix` by hand on the manage page. Select the `.vsix` itself, not the zip.
+4. Record what happened in [What happened on the first release](#what-happened-on-the-first-release), or for a later release in a PR that updates this section.
+
+`github-release` won't have run for that tag, so create the GitHub Release by hand too if it's wanted.
 
 ## Open VSX
 
