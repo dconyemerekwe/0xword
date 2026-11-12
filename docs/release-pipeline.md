@@ -90,6 +90,7 @@ The `.vsix` travels inside the run: `ci.yml` uploads the single file `0xword.vsi
 - **`publish` is rejected:** `github-release` is skipped, no release is created and players see no change. Delete the tag (as for `verify-tag`). The version number is still free.
 - **`publish` fails after approval:** `github-release` is skipped and no release is created. Read the job log. The Marketplace never accepts the same version twice, so if the version did go out, the next release needs a new version number. If it says the artifact is missing, the approval came after CI's 14-day retention, and nothing went out. Delete the tag and push the same tag again, with `git push origin :refs/tags/v<x>` and `git push origin v<x>`, which starts a new run that builds a new `.vsix`. A new tag name with the same version would fail `verify-tag`.
 - **`github-release` fails:** read the job log. By then the version is on the Marketplace, so don't release it again: choose **Re-run failed jobs** on the same run, which leaves `publish` alone. **Re-run all jobs** would try to publish again, and the Marketplace would refuse the version. If a release for the tag already exists, `gh` refuses to create another; delete it first.
+- **The Open VSX upload fails:** the Marketplace release stands. Try the upload again on open-vsx.org ([Each release](#each-release)); nothing in the workflows needs re-running.
 
 ## Test-tag checks
 
@@ -326,7 +327,7 @@ The owner does these once, in order:
 
 After `github-release` has created the GitHub Release:
 
-1. Download `0xword.vsix` from the GitHub Release for the tag.
+1. Download `0xword.vsix` from the GitHub Release for the tag. If there's no GitHub Release for the tag, download the `0xword-vsix` artifact from the release run in the Actions tab instead, within CI's 14-day retention: it holds the same `0xword.vsix`.
 2. On open-vsx.org, choose **Publish** → **Publish Extension** and select that file.
 3. Wait for scanning to finish. Open VSX scans every upload, and the version isn't available until it's done.
 
